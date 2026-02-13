@@ -24,11 +24,12 @@ publish_images() {
 publish_chart() {
   info "Publishing Helm chart to OCI..."
 
-  local chart_version
-  chart_version="$(grep '^version:' "$HELM_CHART_DIR/Chart.yaml" | awk '{print $2}')"
+  # Strip leading 'v' from version for Helm (semver without prefix)
+  local chart_version="${VERSION#v}"
 
-  # Package the chart
-  helm package "$HELM_CHART_DIR" --destination "$REPO_ROOT/dist/" --app-version "$VERSION"
+  # Package the chart with version and appVersion from git tag
+  helm package "$HELM_CHART_DIR" --destination "$REPO_ROOT/dist/" \
+    --version "$chart_version" --app-version "$chart_version"
 
   # Push to GHCR OCI
   helm push "$REPO_ROOT/dist/bamf-${chart_version}.tgz" "oci://${REGISTRY}"
