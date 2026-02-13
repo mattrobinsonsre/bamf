@@ -72,31 +72,24 @@ build_packages() {
   done
 
   for arch in amd64 arm64; do
-    local nfpm_arch="$arch"
-    [[ "$arch" == "amd64" ]] && nfpm_arch="x86_64" || nfpm_arch="aarch64"
-
     info "  Packaging ${arch}..."
-    docker run --rm \
-      -v "$REPO_ROOT:/build" \
-      -w /build \
-      -e "VERSION=${VERSION}" \
-      -e "ARCH=${arch}" \
-      goreleaser/nfpm:latest \
-      package \
-        --config packaging/bamf-agent.yaml \
-        --target "dist/" \
-        --packager deb
 
-    docker run --rm \
-      -v "$REPO_ROOT:/build" \
-      -w /build \
-      -e "VERSION=${VERSION}" \
-      -e "ARCH=${arch}" \
-      goreleaser/nfpm:latest \
-      package \
-        --config packaging/bamf-agent.yaml \
-        --target "dist/" \
-        --packager rpm
+    # nfpm doesn't expand env vars in contents.src — pre-expand the config
+    local nfpm_config="$REPO_ROOT/dist/bamf-agent-${arch}.yaml"
+    ARCH="$arch" VERSION="$VERSION" envsubst < "$REPO_ROOT/packaging/bamf-agent.yaml" > "$nfpm_config"
+
+    for fmt in deb rpm; do
+      docker run --rm \
+        -v "$REPO_ROOT:/build" \
+        -w /build \
+        goreleaser/nfpm:latest \
+        package \
+          --config "dist/bamf-agent-${arch}.yaml" \
+          --target "dist/" \
+          --packager "$fmt"
+    done
+
+    rm -f "$nfpm_config"
   done
 
   success "Packages written to dist/"
