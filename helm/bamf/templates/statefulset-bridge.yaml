@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bamf.fullname" . }}-bridge
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bridge
+spec:
+  serviceName: {{ include "bamf.fullname" . }}-bridge-headless
+  {{- if not .Values.bridge.autoscaling.enabled }}
+  replicas: {{ .Values.bridge.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "bamf.bridge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.bridge.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.bridge.terminationGracePeriodSeconds }}
+      containers:
+        - name: bridge
+          image: {{ include "bamf.bridge.image" . }}
+          imagePullPolicy: {{ .Values.bridge.image.pullPolicy }}
+          ports:
+            - name: tunnel
+              containerPort: {{ .Values.bridge.tunnelPort }}
+              protocol: TCP
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: BAMF_API_URL
+              value: http://{{ include "bamf.fullname" . }}-api:8000
+            - name: BAMF_TUNNEL_ADDR
+              value: ":{{ .Values.bridge.tunnelPort }}"
+            - name: BAMF_HEALTH_ADDR
+              value: ":8080"
+            - name: BAMF_TUNNEL_DOMAIN
+              value: {{ .Values.gateway.tunnelDomain | quote }}
+            # Pod name is predictable: {statefulset}-{ordinal}
+            # Bridge extracts ordinal from pod name for bridge ID
+            - name: BAMF_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: BAMF_BRIDGE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- if .Values.bridge.bootstrap.enabled }}
+            - name: BAMF_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
+                  key: {{ .Values.bridge.bootstrap.tokenKey | default "token" }}
+            - name: BAMF_DATA_DIR
+              value: /var/lib/bamf/bridge
+            - name: BAMF_TLS_CERT
+              value: /var/lib/bamf/bridge/tls.crt
+            - name: BAMF_TLS_KEY
+              value: /var/lib/bamf/bridge/tls.key
+            - name: BAMF_CA_CERT
+              value: /var/lib/bamf/bridge/ca.crt
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.bridge.bootstrap.enabled }}
+            - name: data
+              mountPath: /var/lib/bamf/bridge
+            {{- else }}
+            - name: tls
+              mountPath: /etc/bamf/tls
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.bridge.resources | nindent 12 }}
+      volumes:
+        {{- if .Values.bridge.bootstrap.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- else }}
+        - name: tls
+          secret:
+            {{- if .Values.tls.existingSecret }}
+            secretName: {{ .Values.tls.existingSecret }}
+            {{- else }}
+            secretName: {{ include "bamf.fullname" . }}-tls
+            {{- end }}
+        {{- end }}
+      {{- with .Values.bridge.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bridge.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bridge.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

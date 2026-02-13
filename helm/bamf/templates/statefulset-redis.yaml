@@ -1,0 +1,73 @@
+{{- if .Values.redis.bundled.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bamf.fullname" . }}-redis
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ include "bamf.fullname" . }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "bamf.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.bundled.image.repository }}:{{ .Values.redis.bundled.image.tag }}
+          imagePullPolicy: {{ .Values.redis.bundled.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: tcp-redis
+              containerPort: 6379
+              protocol: TCP
+          {{- if .Values.redis.bundled.auth.enabled }}
+          args:
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.fullname" . }}-redis
+                  key: password
+          {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.redis.bundled.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.redis.bundled.persistence.storageClass }}
+        storageClassName: {{ .Values.redis.bundled.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.bundled.persistence.size }}
+{{- end }}

@@ -1,0 +1,19 @@
+{{- if .Values.redis.bundled.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bamf.fullname" . }}-redis
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: tcp-redis
+      protocol: TCP
+      name: tcp-redis
+  selector:
+    {{- include "bamf.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+{{- end }}

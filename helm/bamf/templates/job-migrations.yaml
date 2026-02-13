@@ -1,0 +1,50 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "bamf.fullname" . }}-migrations-{{ .Release.Revision }}
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrations
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrations
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      containers:
+        - name: migrations
+          image: {{ include "bamf.api.image" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          workingDir: /app/alembic
+          command:
+            - alembic
+            - upgrade
+            - head
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.databaseSecretName" . }}
+                  key: {{ include "bamf.databaseSecretKey" . }}
+            - name: DATABASE_URL
+              value: {{ include "bamf.databaseUrl" . | quote }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- end }}

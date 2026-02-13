@@ -1,0 +1,49 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "bamf.fullname" . }}
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  listeners:
+    # HTTPS listener for all HTTP traffic: API, Web UI, and web app proxy.
+    # No hostname restriction — route-level hostname matching handles it.
+    # This MUST be a single listener because browsers coalesce HTTP/2
+    # connections when the same IP, port, and TLS certificate serve multiple
+    # hostnames.  Separate listeners would bind routes to the wrong listener
+    # when Chrome reuses a connection.
+    - name: https
+      port: {{ .Values.gateway.ports.https | default 443 }}
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.tls.existingSecret | default (printf "%s-tls" (include "bamf.fullname" .)) }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    {{- if .Values.gateway.tunnelDomain }}
+    # TLS passthrough for mTLS tunnel connections (SSH, DB, generic TCP)
+    # Same port as HTTPS — Gateway uses SNI to distinguish terminate vs passthrough.
+    # Bridges live under *.bridge.{tunnelDomain} to avoid collision with web app
+    # hostnames under *.{tunnelDomain} (e.g., a resource named "bridge-foo").
+    - name: tunnel
+      port: {{ .Values.gateway.ports.https | default 443 }}
+      protocol: TLS
+      hostname: "*.bridge.{{ .Values.gateway.tunnelDomain }}"
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - kind: TLSRoute
+    {{- end }}
+{{- end }}

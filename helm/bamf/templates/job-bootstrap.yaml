@@ -1,0 +1,72 @@
+{{- if .Values.bootstrap }}
+{{- if or (and .Values.bootstrap.adminEmail .Values.bootstrap.adminPassword) .Values.bootstrap.existingSecret }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "bamf.fullname" . }}-bootstrap-{{ .Release.Revision }}
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.labels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: {{ include "bamf.api.image" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - bamf.cli.bootstrap
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.databaseSecretName" . }}
+                  key: {{ include "bamf.databaseSecretKey" . }}
+            - name: DATABASE_URL
+              value: {{ include "bamf.databaseUrl" . | quote }}
+            {{- if .Values.bootstrap.existingSecret }}
+            - name: BAMF_BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.existingSecret }}
+                  key: {{ .Values.bootstrap.emailKey | default "email" }}
+            - name: BAMF_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.existingSecret }}
+                  key: {{ .Values.bootstrap.passwordKey | default "password" }}
+            {{- else }}
+            - name: BAMF_BOOTSTRAP_ADMIN_EMAIL
+              value: {{ .Values.bootstrap.adminEmail | quote }}
+            - name: BAMF_BOOTSTRAP_ADMIN_PASSWORD
+              value: {{ .Values.bootstrap.adminPassword | quote }}
+            {{- end }}
+            {{- if .Values.bootstrap.joinToken }}
+            - name: BAMF_BOOTSTRAP_JOIN_TOKEN
+              value: {{ .Values.bootstrap.joinToken | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- end }}
+{{- end }}

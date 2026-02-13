@@ -1,0 +1,33 @@
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      exclude-functions:
+        # Close on io.Closer implementations — idiomatic to ignore in defer.
+        # Includes net.Conn, net.Listener, *os.File, *tls.Conn, resp.Body, etc.
+        - (*net/http.Server).Shutdown
+        - (*os).Remove
+        - os.Remove
+        - os.Setenv
+        - os.Unsetenv
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - io.WriteString
+        - (*text/tabwriter.Writer).Flush
+
+  exclusions:
+    generated: strict
+    rules:
+      # Ignore Close() errcheck in all files — extremely common Go idiom
+      # for defer conn.Close(), defer resp.Body.Close(), defer listener.Close(), etc.
+      - linters:
+          - errcheck
+        text: "Error return value of `.*\\.Close` is not checked"
+      # Ignore w.Write in HTTP handlers — writing to ResponseWriter after
+      # WriteHeader; error is not actionable.
+      - linters:
+          - errcheck
+        text: "Error return value of `w\\.Write` is not checked"

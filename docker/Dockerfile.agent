@@ -1,0 +1,46 @@
+# BAMF Agent Dockerfile
+# Builds the Go agent binary
+
+FROM golang:1.23-alpine AS builder
+
+# Install git for go mod download
+RUN apk add --no-cache git
+
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY cmd/ ./cmd/
+COPY pkg/ ./pkg/
+
+# Build the binary
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+    -o bamf-agent \
+    ./cmd/bamf-agent
+
+# Final image
+FROM scratch
+
+# Copy CA certificates for TLS
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the binary
+COPY --from=builder /build/bamf-agent /bamf-agent
+
+# Create data directory
+VOLUME ["/var/lib/bamf-agent"]
+
+# Run the agent
+ENTRYPOINT ["/bamf-agent"]

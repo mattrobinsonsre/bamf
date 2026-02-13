@@ -1,0 +1,379 @@
+# BAMF Helm Chart Values
+# Default configuration for production deployment
+
+# Global settings
+global:
+  imagePullSecrets: []
+
+# ── API Server (Python/FastAPI) ───────────────────────────────────────────────
+api:
+  replicas: 2
+
+  image:
+    repository: ghcr.io/mattrobinsonsre/bamf-api
+    tag: ""  # Defaults to appVersion
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Configuration mounted as /etc/bamf/config.yaml
+  config:
+    log_level: info
+    certificates:
+      user_ttl_hours: 12
+      agent_ttl_hours: 8760
+      bridge_ttl_hours: 24
+    audit:
+      retention_days: 90
+
+  # Pod termination settings for graceful shutdown
+  terminationGracePeriodSeconds: 120
+
+  # Spot instance handling
+  preStopSleepSeconds: 15
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+# ── Bridge Server (Go TCP tunnel gateway) ────────────────────────────────────
+bridge:
+  replicas: 2
+
+  image:
+    repository: ghcr.io/mattrobinsonsre/bamf-bridge
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  service:
+    type: LoadBalancer
+    annotations: {}
+
+  # Single tunnel port — bridge is protocol-agnostic, all tunnels use one mTLS port
+  tunnelPort: 8443
+
+  terminationGracePeriodSeconds: 120
+
+  # Bootstrap configuration for certificate issuance
+  # When enabled, bridges request their certificates from the API on startup
+  bootstrap:
+    enabled: true  # Set to false if using pre-provisioned TLS secrets
+    # Bootstrap token for authenticating with the API
+    # Required when enabled=true and tokenSecret is not set
+    token: ""
+    # Name of the K8s Secret containing the bootstrap token (optional)
+    # If not set, the chart creates a secret from bootstrap.token
+    tokenSecret: ""
+    tokenKey: "token"
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+web:
+  # Set to true to deploy web UI as standalone pods
+  # When false, web UI is served by the bridge
+  standalone: false
+
+  replicas: 2
+
+  image:
+    repository: ghcr.io/mattrobinsonsre/bamf-web
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  livenessProbe: {}
+  readinessProbe: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ── Agent ─────────────────────────────────────────────────────────────────────
+# Deploy agents within this cluster to provide access to cluster resources.
+# For external agents (VMs, bare metal), deploy separately with a join token.
+agent:
+  # Set to true to deploy an agent in this cluster
+  enabled: false
+
+  # Number of replicas (1-2 for HA; agents are stateless)
+  replicas: 1
+
+  image:
+    repository: ghcr.io/mattrobinsonsre/bamf-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Agent configuration
+  config:
+    # Agent name (must be unique across the platform)
+    name: ""  # Required when enabled
+    # Labels for RBAC matching
+    labels: {}
+    # Resources this agent provides access to
+    # Example:
+    #   resources:
+    #     - name: k8s-api
+    #       type: kubernetes
+    #       labels:
+    #         env: prod
+    #     - name: internal-web
+    #       type: http
+    #       hostname: internal-app.default.svc
+    #       port: 8080
+    #       labels:
+    #         app: internal
+    resources: []
+
+  # Join token for registering with the platform
+  # Required when enabled
+  joinToken: ""
+  # Or reference an existing secret containing the join token
+  joinTokenSecret: ""
+  joinTokenKey: "token"
+
+  # Platform URL (defaults to in-cluster API service)
+  platformUrl: ""
+
+  # Cluster-internal: when true, the API sends in-cluster K8s service hostnames
+  # for bridge connections instead of external DNS names. Set to true for agents
+  # deployed within the same Kubernetes cluster as the platform.
+  clusterInternal: false
+
+  # Kubernetes impersonation — enable when agent provides K8s cluster access
+  kubernetes:
+    impersonation:
+      enabled: false  # Set true when agent provides K8s access
+
+  # Data directory for local certificate cache (emptyDir, certs persisted in K8s Secret)
+  dataDir: /var/lib/bamf-agent
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ── Gateway (Istio Gateway API) ───────────────────────────────────────────────
+# Replaces traditional Ingress with Istio Gateway + HTTPRoute/TLSRoute
+gateway:
+  enabled: true
+  className: istio  # Gateway class name
+  hostname: ""      # Required: e.g., bamf.example.com
+  tunnelDomain: ""  # Required: e.g., tunnel.bamf.example.com
+  annotations: {}
+  ports:
+    https: 443      # Override for local dev (e.g., 8443 to avoid Traefik conflict)
+
+# ── Ingress (legacy, disabled by default) ─────────────────────────────────────
+# Use gateway.enabled=true (default) instead. This is kept for backwards
+# compatibility but will be removed in a future version.
+ingress:
+  external:
+    enabled: false
+    className: nginx
+    hostname: ""  # Required: e.g., bamf.example.com
+    tls: true
+    certManager: true
+    annotations: {}
+
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+# Production: use external PostgreSQL (RDS, Aurora, Cloud SQL, etc.)
+# Bundled mode is for dev/staging only.
+postgresql:
+  bundled:
+    enabled: false
+    image:
+      repository: public.ecr.aws/docker/library/postgres
+      tag: "16-alpine"
+      pullPolicy: IfNotPresent
+    auth:
+      database: bamf
+      username: bamf
+      password: ""  # Required when bundled
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    persistence:
+      size: 20Gi
+      storageClass: ""
+
+  external:
+    enabled: true
+    host: ""  # Required when enabled
+    port: 5432
+    database: bamf
+    username: bamf
+    sslmode: require
+
+    # Credential options (choose one):
+    # 1. Inline password (creates K8s Secret)
+    # password: ""
+
+    # 2. Pre-existing K8s Secret
+    existingSecret: ""
+    existingSecretKey: password
+
+    # 3. ExternalSecrets operator
+    externalSecret:
+      enabled: false
+      secretStoreRef:
+        name: ""
+        kind: ClusterSecretStore
+      remoteRef:
+        key: ""
+        property: password
+
+    # Read replica — optional, routes read-only queries to a separate endpoint.
+    # When disabled (default), all reads go to the primary. Fields that are not
+    # set inherit from the parent external block (username, port, database, sslmode).
+    readReplica:
+      enabled: false
+      host: ""  # Required when enabled (e.g., bamf-db-ro.cluster-xxx.rds.amazonaws.com)
+      port: ""  # Inherits from external.port if empty
+      database: ""  # Inherits from external.database if empty
+      username: ""  # Inherits from external.username if empty
+      sslmode: ""  # Inherits from external.sslmode if empty
+
+      # Credential options (choose one — same pattern as primary):
+      # password: ""          # Inline (creates K8s Secret)
+      existingSecret: ""      # Pre-existing K8s Secret
+      existingSecretKey: password
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+# Production: use external Redis (ElastiCache, Memorystore, etc.)
+# Bundled mode is for dev/staging only.
+redis:
+  bundled:
+    enabled: false
+    image:
+      repository: public.ecr.aws/docker/library/redis
+      tag: "7-alpine"
+      pullPolicy: IfNotPresent
+    auth:
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    persistence:
+      size: 8Gi
+      storageClass: ""
+
+  external:
+    enabled: true
+    host: ""  # Required when enabled
+    port: 6379
+    existingSecret: ""
+    existingSecretKey: password
+
+# ── Auth0 / SSO ───────────────────────────────────────────────────────────────
+auth:
+  # Local authentication
+  local:
+    enabled: true
+
+  # SSO configuration
+  sso:
+    defaultProvider: auth0
+    auth0:
+      enabled: false
+      issuerUrl: ""
+      clientId: ""
+      externalSecret:
+        enabled: false
+        secretStoreRef:
+          name: ""
+          kind: ClusterSecretStore
+        remoteRef:
+          key: ""
+          property: client_secret
+
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
+# Creates an initial admin user and agent join token on first install.
+# Only used for local dev or initial setup; disable for production once
+# admin users are created via SSO.
+# bootstrap:
+#   adminEmail: admin@example.com
+#   adminPassword: ""  # Required when enabled
+#   joinToken: ""      # Optional: pre-create a join token for agents
+
+# ── Migrations ────────────────────────────────────────────────────────────────
+migrations:
+  enabled: true
+
+# ── TLS ───────────────────────────────────────────────────────────────────────
+tls:
+  certManager:
+    enabled: true
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+  existingSecret: ""
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    labels: {}

@@ -1,0 +1,24 @@
+apiVersion: v2
+name: bamf
+description: BAMF - Bridge Access Management Fabric
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - access-management
+  - infrastructure
+  - ssh
+  - kubernetes
+  - security
+
+home: https://github.com/mattrobinsonsre/bamf
+sources:
+  - https://github.com/mattrobinsonsre/bamf
+
+maintainers:
+  - name: Matt Robinson
+    email: matt@example.com
+
+# No subchart dependencies — PostgreSQL and Redis are simple StatefulSets
+# using standard container images. External instances are supported via config.

@@ -1,0 +1,36 @@
+{{- if and .Values.gateway.enabled .Values.gateway.tunnelDomain }}
+{{- $fullName := include "bamf.fullname" . -}}
+{{- $labels := include "bamf.labels" . -}}
+{{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelDomain := .Values.gateway.tunnelDomain -}}
+{{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+
+# TLSRoutes for SNI-based routing to individual bridge pods
+# One route per bridge — bridge is protocol-agnostic (single tunnel port)
+# SNI hostname format: {ordinal}.bridge.{tunnelDomain}
+# e.g., 0.bridge.tunnel.bamf.example.com
+# The "bridge." subdomain separates bridge SNI from web app hostnames
+# (which live directly under *.{tunnelDomain}).
+
+{{- range $i := until $maxReplicas }}
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: {{ $fullName }}-bridge-{{ $i }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: bridge
+    bamf.io/bridge-ordinal: "{{ $i }}"
+spec:
+  parentRefs:
+    - name: {{ $fullName }}
+      sectionName: tunnel
+  hostnames:
+    - "{{ $i }}.bridge.{{ $tunnelDomain }}"
+  rules:
+    - backendRefs:
+        - name: {{ $fullName }}-bridge-{{ $i }}
+          port: {{ $tunnelPort }}
+{{- end }}
+{{- end }}

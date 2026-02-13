@@ -1,0 +1,109 @@
+{{- include "bamf.validateConfig" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bamf.fullname" . }}-api
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "bamf.api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-api.yaml") . | sha256sum }}
+      labels:
+        {{- include "bamf.api.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bamf.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      containers:
+        - name: api
+          image: {{ include "bamf.api.image" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          {{- with .Values.api.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.databaseSecretName" . }}
+                  key: {{ include "bamf.databaseSecretKey" . }}
+            - name: BAMF_DATABASE_URL
+              value: {{ include "bamf.databaseUrl" . | quote }}
+            {{- if and .Values.postgresql.external.enabled .Values.postgresql.external.readReplica.enabled }}
+            - name: DATABASE_READ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.databaseReadSecretName" . }}
+                  key: {{ include "bamf.databaseReadSecretKey" . }}
+            - name: BAMF_DATABASE_READ_URL
+              value: {{ include "bamf.databaseReadUrl" . | quote }}
+            {{- end }}
+            - name: BAMF_REDIS_URL
+              value: {{ include "bamf.redisUrl" . | quote }}
+            {{- if .Values.bridge.bootstrap.enabled }}
+            - name: BAMF_BRIDGE_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
+                  key: {{ .Values.bridge.bootstrap.tokenKey | default "token" }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/bamf
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- if gt (int .Values.api.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.api.preStopSleepSeconds }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "bamf.fullname" . }}-api-config
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

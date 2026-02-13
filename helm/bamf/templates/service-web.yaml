@@ -1,0 +1,18 @@
+{{- if .Values.web.standalone }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bamf.fullname" . }}-web
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "bamf.web.selectorLabels" . | nindent 4 }}
+{{- end }}

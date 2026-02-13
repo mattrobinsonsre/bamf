@@ -1,0 +1,31 @@
+{{- if .Values.gateway.enabled }}
+{{- $fullName := include "bamf.fullname" . -}}
+{{- $labels := include "bamf.labels" . -}}
+{{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+
+# Per-pod Services for SNI-based routing
+# Each bridge pod gets its own Service so TLSRoute can target it specifically
+# Pre-created for pods 0 through maxReplicas-1 so HPA scaling works instantly
+
+{{- range $i := until $maxReplicas }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullName }}-bridge-{{ $i }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: bridge
+    bamf.io/bridge-ordinal: "{{ $i }}"
+spec:
+  selector:
+    # StatefulSet automatically adds this label to each pod
+    statefulset.kubernetes.io/pod-name: {{ $fullName }}-bridge-{{ $i }}
+  ports:
+    - name: tunnel
+      port: {{ $tunnelPort }}
+      targetPort: tunnel
+      protocol: TCP
+{{- end }}
+{{- end }}

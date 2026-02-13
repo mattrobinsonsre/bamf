@@ -1,0 +1,49 @@
+# BAMF API Server Dockerfile
+# Builds the Python FastAPI application
+
+FROM python:3.13-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install --no-cache-dir poetry==1.8.4
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependency files
+COPY services/pyproject.toml services/poetry.lock* ./
+
+# Install dependencies
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --only main
+
+# Copy application code
+COPY services/bamf ./bamf
+COPY alembic ./alembic
+
+# Create non-root user and CA data directory
+RUN useradd --create-home --shell /bin/bash bamf \
+    && mkdir -p /var/lib/bamf/ca \
+    && chown -R bamf:bamf /app /var/lib/bamf
+
+USER bamf
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    PORT=8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["uvicorn", "bamf.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

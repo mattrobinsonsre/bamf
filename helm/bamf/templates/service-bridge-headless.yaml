@@ -1,0 +1,22 @@
+# Headless service for StatefulSet DNS resolution
+# Provides DNS entries: {pod-name}.{service-name}.{namespace}.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bamf.fullname" . }}-bridge-headless
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bridge
+spec:
+  clusterIP: None
+  selector:
+    {{- include "bamf.bridge.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: tunnel
+      port: {{ .Values.bridge.tunnelPort }}
+      targetPort: tunnel
+      protocol: TCP
+    - name: health
+      port: 8080
+      targetPort: health
+      protocol: TCP

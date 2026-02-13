@@ -1,0 +1,49 @@
+# BAMF containerized test runner
+# Usage: docker compose -f docker-compose.test.yml run --rm test
+#    or: make test-docker
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bamf_test
+      POSTGRES_USER: bamf
+      POSTGRES_PASSWORD: bamf-test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bamf"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    environment:
+      BAMF_DATABASE_URL: "postgresql+asyncpg://bamf:bamf-test@postgres:5432/bamf_test"
+      BAMF_REDIS_URL: "redis://redis:6379"
+      BAMF_LOG_LEVEL: "DEBUG"
+      BAMF_JSON_LOGS: "false"
+      BAMF_CA_DATA_DIR: "/var/lib/bamf/ca"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  lint:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    command: >
+      sh -c "ruff check . && ruff format --check ."

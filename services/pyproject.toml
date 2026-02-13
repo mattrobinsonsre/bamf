@@ -1,0 +1,77 @@
+[tool.poetry]
+name = "bamf"
+version = "0.1.0"
+description = "Beyond Access Management Framework - API Server"
+authors = ["Matt Robinson"]
+license = "Apache-2.0"
+readme = "README.md"
+packages = [{include = "bamf"}]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
+pydantic = {extras = ["email"], version = "^2.10.0"}
+pydantic-settings = "^2.7.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.0"}
+asyncpg = "^0.30.0"
+alembic = "^1.14.0"
+structlog = "^24.4.0"
+httpx = "^0.28.0"
+authlib = "^1.4.0"
+cryptography = "^44.0.0"
+python-multipart = "^0.0.19"
+pyyaml = "^6.0.0"
+redis = "^5.2.0"
+zxcvbn = "^4.5.0"
+
+[tool.poetry.group.dev.dependencies]
+aiosqlite = "^0.20.0"
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-xdist = "^3.5.0"
+pytest-cov = "^6.0.0"
+ruff = "^0.8.0"
+mypy = "^1.14.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # Depends() in function defaults is idiomatic FastAPI
+]
+
+[tool.ruff.lint.per-file-ignores]
+# app.py imports routers below shutdown_event = asyncio.Event() to avoid
+# circular imports — the module-level statement must come first.
+"bamf/api/app.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bamf"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true

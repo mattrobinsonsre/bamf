@@ -1,0 +1,74 @@
+{{- if .Values.postgresql.bundled.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bamf.fullname" . }}-postgresql
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: {{ include "bamf.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "bamf.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: {{ .Values.postgresql.bundled.image.repository }}:{{ .Values.postgresql.bundled.image.tag }}
+          imagePullPolicy: {{ .Values.postgresql.bundled.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: tcp-postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.bundled.auth.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.bundled.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.fullname" . }}-postgresql
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U {{ .Values.postgresql.bundled.auth.username }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U {{ .Values.postgresql.bundled.auth.username }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            {{- toYaml .Values.postgresql.bundled.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.postgresql.bundled.persistence.storageClass }}
+        storageClassName: {{ .Values.postgresql.bundled.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.bundled.persistence.size }}
+{{- end }}

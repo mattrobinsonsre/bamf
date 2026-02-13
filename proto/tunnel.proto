@@ -1,0 +1,77 @@
+// BAMF Tunnel Service Protocol
+//
+// This protocol defines the gRPC communication between agents and bridges.
+// Generated code is checked into the repository - regenerate with `make proto`
+
+syntax = "proto3";
+
+package bamf.tunnel.v1;
+
+option go_package = "github.com/mattrobinsonsre/bamf/pkg/pb/tunnel/v1;tunnelv1";
+
+// TunnelService handles tunnel establishment between agents and bridges
+service TunnelService {
+  // EstablishTunnel creates a bidirectional tunnel for data transfer
+  // The agent initiates this RPC when instructed by the API server
+  rpc EstablishTunnel(stream TunnelData) returns (stream TunnelData);
+
+  // Heartbeat allows agents to maintain connection health with bridges
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// TunnelData carries tunnel traffic in both directions
+message TunnelData {
+  // Session token identifying the tunnel
+  string session_token = 1;
+
+  // Data payload
+  bytes data = 2;
+
+  // Control messages (only used for tunnel lifecycle)
+  oneof control {
+    TunnelInit init = 10;
+    TunnelClose close = 11;
+  }
+}
+
+// TunnelInit is sent as the first message to initialize the tunnel
+message TunnelInit {
+  // Session token from the API server
+  string session_token = 1;
+
+  // Agent ID establishing the tunnel
+  string agent_id = 2;
+
+  // Resource being accessed
+  string resource_name = 3;
+
+  // Protocol type (ssh, database, kubernetes, web)
+  string protocol = 4;
+}
+
+// TunnelClose signals tunnel termination
+message TunnelClose {
+  // Reason for closing
+  string reason = 1;
+
+  // Total bytes sent from agent to bridge
+  int64 bytes_sent = 2;
+
+  // Total bytes received by agent from bridge
+  int64 bytes_received = 3;
+}
+
+// HeartbeatRequest is sent periodically to maintain connection
+message HeartbeatRequest {
+  // Agent ID
+  string agent_id = 1;
+
+  // Number of active tunnels on this connection
+  int32 active_tunnels = 2;
+}
+
+// HeartbeatResponse acknowledges the heartbeat
+message HeartbeatResponse {
+  // Server timestamp (UTC, RFC3339)
+  string timestamp = 1;
+}

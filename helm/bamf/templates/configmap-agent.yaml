@@ -1,0 +1,59 @@
+{{- if .Values.agent.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent-config
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+data:
+  agent.yaml: |
+    # Platform URL - where to connect to the BAMF API
+    # Default: in-cluster API service
+    platform_url: {{ .Values.agent.platformUrl | default (printf "http://%s-api:8000" (include "bamf.fullname" .)) | quote }}
+
+    # Agent name (required, must be unique)
+    agent_name: {{ required "agent.config.name is required when agent.enabled=true" .Values.agent.config.name | quote }}
+
+    # Data directory for storing certificates
+    data_dir: {{ .Values.agent.dataDir | quote }}
+
+    # Cluster-internal: when true, API sends in-cluster bridge hostnames
+    {{- if .Values.agent.clusterInternal }}
+    cluster_internal: true
+    {{- end }}
+
+    # Labels for RBAC matching
+    {{- if .Values.agent.config.labels }}
+    labels:
+      {{- toYaml .Values.agent.config.labels | nindent 6 }}
+    {{- else }}
+    labels: {}
+    {{- end }}
+
+    # Resources this agent provides access to
+    {{- if .Values.agent.config.resources }}
+    resources:
+      {{- range .Values.agent.config.resources }}
+      {{ .type }}:
+        {{- if .name }}
+        name: {{ .name | quote }}
+        {{- end }}
+        {{- if .hostname }}
+        hostname: {{ .hostname | quote }}
+        {{- end }}
+        {{- if .port }}
+        port: {{ .port }}
+        {{- end }}
+        {{- if .tunnel_hostname }}
+        tunnel_hostname: {{ .tunnel_hostname | quote }}
+        {{- end }}
+        {{- if .labels }}
+        labels:
+          {{- toYaml .labels | nindent 10 }}
+        {{- end }}
+      {{- end }}
+    {{- else }}
+    resources: {}
+    {{- end }}
+{{- end }}

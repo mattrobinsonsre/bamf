@@ -1,0 +1,23 @@
+{{- if and .Values.gateway.enabled .Values.gateway.tunnelDomain }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "bamf.fullname" . }}-tunnel-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "bamf.fullname" . }}
+      sectionName: https
+  hostnames:
+    - "*.{{ .Values.gateway.tunnelDomain }}"
+  rules:
+    # All web app proxy traffic goes to API service (proxy routes handle it)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "bamf.fullname" . }}-api
+          port: 8000
+{{- end }}

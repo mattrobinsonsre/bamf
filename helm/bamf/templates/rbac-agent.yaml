@@ -1,0 +1,78 @@
+{{- if .Values.agent.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+rules:
+  # Agent needs to read/write its own certificate secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ include "bamf.fullname" . }}-agent-certs"]
+    verbs: ["get", "update", "patch"]
+  # Agent needs to create the secret on first run
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "bamf.fullname" . }}-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "bamf.fullname" . }}-agent
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.agent.kubernetes.impersonation.enabled }}
+---
+# ClusterRole for Kubernetes API impersonation.
+# The agent impersonates users/groups when proxying K8s requests.
+# BAMF's RBAC controls which groups a user is allowed to impersonate;
+# the agent trusts the API proxy to send correct headers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent-impersonator
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent-impersonator
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "bamf.fullname" . }}-agent-impersonator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "bamf.fullname" . }}-agent
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

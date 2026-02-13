@@ -1,0 +1,98 @@
+// BAMF Agent Service Protocol
+//
+// This protocol defines internal communication for agent management.
+// Generated code is checked into the repository - regenerate with `make proto`
+
+syntax = "proto3";
+
+package bamf.agent.v1;
+
+option go_package = "github.com/mattrobinsonsre/bamf/pkg/pb/agent/v1;agentv1";
+
+// AgentService provides internal APIs for agent-bridge communication
+service AgentService {
+  // AgentEvents streams events from API to agent (tunnel requests, etc.)
+  // This is used when agent connects via gRPC instead of SSE
+  rpc AgentEvents(AgentEventsRequest) returns (stream AgentEvent);
+
+  // AcknowledgeEvent confirms receipt of an event
+  rpc AcknowledgeEvent(AcknowledgeEventRequest) returns (AcknowledgeEventResponse);
+}
+
+// AgentEventsRequest initiates the event stream
+message AgentEventsRequest {
+  // Agent ID
+  string agent_id = 1;
+}
+
+// AgentEvent represents an event sent to the agent
+message AgentEvent {
+  // Unique event ID for acknowledgment
+  string event_id = 1;
+
+  // Event type
+  string event_type = 2;
+
+  // Event payload
+  oneof payload {
+    TunnelRequestEvent tunnel_request = 10;
+    CertificateRenewalEvent certificate_renewal = 11;
+  }
+}
+
+// TunnelRequestEvent instructs the agent to establish a tunnel
+message TunnelRequestEvent {
+  // Session token for the tunnel
+  string session_token = 1;
+
+  // Bridge host to connect to
+  string bridge_host = 2;
+
+  // Bridge port for gRPC tunnel service
+  int32 bridge_port = 3;
+
+  // Resource name being accessed
+  string resource_name = 4;
+
+  // Protocol type
+  string protocol = 5;
+
+  // User email requesting access
+  string user_email = 6;
+
+  // Timeout for tunnel establishment (seconds)
+  int32 timeout_seconds = 7;
+}
+
+// CertificateRenewalEvent notifies the agent to renew its certificate
+message CertificateRenewalEvent {
+  // New certificate (PEM encoded)
+  string certificate = 1;
+
+  // New private key (PEM encoded, encrypted)
+  string private_key = 2;
+
+  // Expiration time of new certificate (UTC, RFC3339)
+  string expires_at = 3;
+}
+
+// AcknowledgeEventRequest confirms event receipt
+message AcknowledgeEventRequest {
+  // Agent ID
+  string agent_id = 1;
+
+  // Event ID being acknowledged
+  string event_id = 2;
+
+  // Whether the event was successfully processed
+  bool success = 3;
+
+  // Error message if not successful
+  string error_message = 4;
+}
+
+// AcknowledgeEventResponse confirms the acknowledgment was received
+message AcknowledgeEventResponse {
+  // Server timestamp (UTC, RFC3339)
+  string timestamp = 1;
+}

@@ -1,0 +1,1 @@
+"""BAMF authentication module."""

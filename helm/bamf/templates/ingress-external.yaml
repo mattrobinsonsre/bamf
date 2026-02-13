@@ -1,0 +1,87 @@
+{{- if .Values.ingress.external.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "bamf.fullname" . }}-external
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+  {{- with .Values.ingress.external.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.external.className }}
+  ingressClassName: {{ .Values.ingress.external.className }}
+  {{- end }}
+  {{- if .Values.ingress.external.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.external.hostname }}
+        {{- if .Values.gateway.tunnelDomain }}
+        - "*.{{ .Values.gateway.tunnelDomain }}"
+        {{- end }}
+      {{- if .Values.tls.existingSecret }}
+      secretName: {{ .Values.tls.existingSecret }}
+      {{- else }}
+      secretName: {{ include "bamf.fullname" . }}-tls
+      {{- end }}
+  {{- end }}
+  rules:
+    # Main hostname → API + Web UI
+    - host: {{ .Values.ingress.external.hostname }}
+      http:
+        paths:
+          # API routes
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-api
+                port:
+                  name: http
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-api
+                port:
+                  name: http
+          - path: /ready
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-api
+                port:
+                  name: http
+          {{- if .Values.web.standalone }}
+          # Web UI (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-web
+                port:
+                  name: http
+          {{- else }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-api
+                port:
+                  name: http
+          {{- end }}
+    {{- if .Values.gateway.tunnelDomain }}
+    # Wildcard tunnel domain → API service (HTTP proxy routes for web apps)
+    - host: "*.{{ .Values.gateway.tunnelDomain }}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bamf.fullname" . }}-api
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

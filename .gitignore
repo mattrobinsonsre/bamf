@@ -1,0 +1,90 @@
+# === Go ===
+# Binaries (root-level only — don't match cmd/bamf/ or helm/bamf/)
+/bamf
+/bamf-agent
+/bamf-bridge
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of go coverage
+*.out
+coverage.html
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+
+# Ruff cache
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# mypy
+.mypy_cache/
+
+# === Node.js / Next.js ===
+node_modules/
+.next/
+out/
+.turbo/
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Docker ===
+docker-compose.override.yml
+
+# === Local dev ===
+# CLAUDE.md is a project-local AI instruction file, not source code
+CLAUDE.md
+
+# Local Helm values (template is committed, local overrides are not)
+helm/bamf/values-local.yaml
+
+# Local dev certs (only at specific paths, not globally)
+/certs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Claude Code / MCP artifacts
+.claude/
+.mcp.json

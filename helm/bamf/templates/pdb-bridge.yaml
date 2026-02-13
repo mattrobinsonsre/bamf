@@ -1,0 +1,14 @@
+{{- if .Values.bridge.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "bamf.fullname" . }}-bridge
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bridge
+spec:
+  minAvailable: {{ .Values.bridge.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "bamf.bridge.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,20 @@
+{{- if and .Values.tls.certManager.enabled (not .Values.tls.existingSecret) }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "bamf.fullname" . }}-tls
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "bamf.fullname" . }}-tls
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+  dnsNames:
+    {{- if .Values.ingress.external.hostname }}
+    - {{ .Values.ingress.external.hostname }}
+    {{- end }}
+    {{- if .Values.gateway.tunnelDomain }}
+    - "*.{{ .Values.gateway.tunnelDomain }}"
+    {{- end }}
+{{- end }}
