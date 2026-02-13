@@ -1,3 +1,4 @@
+# TLS certificates: docs/admin/certificates.md
 {{- if and .Values.tls.certManager.enabled (not .Values.tls.existingSecret) }}
 apiVersion: cert-manager.io/v1
 kind: Certificate

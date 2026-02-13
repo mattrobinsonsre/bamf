@@ -8,7 +8,6 @@ import NavBar from '@/components/nav-bar'
 import { clearAuth, getAuthState } from '@/lib/auth'
 
 interface Resource {
-  id: string
   name: string
   resource_type: string
   labels: Record<string, string>
@@ -124,7 +123,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredResources.map((resource) => (
               <div
-                key={resource.id}
+                key={resource.name}
                 className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 hover:border-brand-600/30 transition-colors"
               >
                 <div className="flex justify-between items-start mb-2">
@@ -165,7 +164,7 @@ export default function Home() {
                 )}
 
                 <Link
-                  href={`/connect/${resource.id}`}
+                  href={`/connect/${resource.name}`}
                   className="block text-center py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
                 >
                   Connect

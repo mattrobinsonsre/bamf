@@ -3,6 +3,7 @@
 Defines the interface all identity provider connectors must implement,
 plus the AuthenticatedIdentity returned after a successful SSO callback.
 """
+# SSO architecture: docs/architecture/authentication.md
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

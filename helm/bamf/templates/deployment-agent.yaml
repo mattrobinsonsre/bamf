@@ -1,3 +1,4 @@
+# Agent deployment: docs/guides/agents.md
 {{- if .Values.agent.enabled }}
 apiVersion: apps/v1
 kind: Deployment

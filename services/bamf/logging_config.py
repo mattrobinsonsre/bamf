@@ -2,7 +2,6 @@
 Centralized logging configuration for BAMF API server.
 
 Configures structlog for JSON output in production and console in development.
-Follows the scalable-language-servers pattern.
 """
 
 import logging

@@ -1,11 +1,13 @@
 /**
  * Auth helpers for client-side session state.
  *
- * Session metadata (token, email, roles) is stored in-memory. This is more
- * secure than localStorage since in-memory state is not accessible to other
- * scripts via the Storage API. The trade-off is that auth state is lost on
- * page refresh, requiring re-login.
+ * Session metadata (token, email, roles) is stored in sessionStorage. This
+ * survives page navigation and refreshes within the same tab but is cleared
+ * when the tab is closed. More practical than pure in-memory storage (which
+ * loses state on every navigation) while still scoped to the browser tab.
  */
+
+const AUTH_KEY = 'bamf_auth'
 
 interface AuthState {
   token: string
@@ -13,25 +15,40 @@ interface AuthState {
   roles: string[]
 }
 
-let currentAuth: AuthState | null = null
+function loadAuth(): AuthState | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(AUTH_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as AuthState
+  } catch {
+    return null
+  }
+}
 
 export function setAuth(token: string, email: string, roles: string[]): void {
-  currentAuth = { token, email, roles }
+  const state: AuthState = { token, email, roles }
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem(AUTH_KEY, JSON.stringify(state))
+  }
 }
 
 export function getAuthState(): AuthState | null {
-  return currentAuth
+  return loadAuth()
 }
 
 export function isAdmin(): boolean {
-  return currentAuth?.roles.includes('admin') ?? false
+  return loadAuth()?.roles.includes('admin') ?? false
 }
 
 export function isAdminOrAudit(): boolean {
-  if (!currentAuth) return false
-  return currentAuth.roles.includes('admin') || currentAuth.roles.includes('audit')
+  const auth = loadAuth()
+  if (!auth) return false
+  return auth.roles.includes('admin') || auth.roles.includes('audit')
 }
 
 export function clearAuth(): void {
-  currentAuth = null
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem(AUTH_KEY)
+  }
 }

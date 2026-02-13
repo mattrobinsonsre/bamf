@@ -1,7 +1,7 @@
 """
 FastAPI application factory for BAMF API server.
 
-Following scalable-language-servers patterns with lifespan handler.
+Uses lifespan handler for startup/shutdown with async resource management.
 """
 
 import asyncio

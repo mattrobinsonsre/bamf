@@ -1,3 +1,4 @@
+# Migration strategy: docs/operations/upgrading.md
 {{- if .Values.migrations.enabled }}
 apiVersion: batch/v1
 kind: Job

@@ -22,6 +22,7 @@ Flow:
 9. Rewrite response headers
 10. Return response to browser
 """
+# Proxy design: docs/guides/web-apps.md
 
 from __future__ import annotations
 

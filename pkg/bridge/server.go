@@ -1,5 +1,7 @@
 package bridge
 
+// Architecture: docs/architecture/overview.md
+
 import (
 	"bufio"
 	"context"

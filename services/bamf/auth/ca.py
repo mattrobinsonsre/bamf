@@ -7,6 +7,7 @@ Handles generation of:
 - Bridge certificates (24h default) — ephemeral pods renew on restart
 - Per-tunnel session certificates with custom SAN URIs (30s default)
 """
+# Certificate model: docs/admin/certificates.md
 
 import datetime
 import ipaddress

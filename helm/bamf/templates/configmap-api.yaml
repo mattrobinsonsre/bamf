@@ -1,3 +1,4 @@
+# API configuration: docs/reference/helm-values.md
 apiVersion: v1
 kind: ConfigMap
 metadata:

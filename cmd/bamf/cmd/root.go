@@ -1,5 +1,7 @@
 package cmd
 
+// CLI reference: docs/reference/cli.md
+
 import (
 	"fmt"
 	"os"

@@ -1,3 +1,4 @@
+# Agent RBAC: docs/guides/agents.md
 {{- if .Values.agent.enabled }}
 ---
 apiVersion: v1

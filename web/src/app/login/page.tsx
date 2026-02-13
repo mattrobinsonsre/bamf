@@ -40,7 +40,7 @@ function generateState(): string {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center p-4">
+      <main className="h-screen flex items-center justify-center p-4">
         <div className="text-slate-500">Loading...</div>
       </main>
     }>
@@ -180,7 +180,7 @@ function LoginContent() {
     : 'Sign in to access your resources'
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
+    <main className="h-screen flex flex-col items-center justify-center p-4 pb-[20vh]">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img src="/logo.svg" alt="BAMF" className="w-24 h-24 mx-auto mb-4" />

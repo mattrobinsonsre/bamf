@@ -1,7 +1,6 @@
 """
 Configuration management for BAMF API server.
 
-Follows the YamlConfigSettingsSource pattern from scalable-language-servers.
 Non-secret configuration loaded from YAML file, secrets from environment variables.
 """
 

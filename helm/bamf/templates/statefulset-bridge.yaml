@@ -1,3 +1,4 @@
+# Bridge scaling: docs/operations/scaling.md
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

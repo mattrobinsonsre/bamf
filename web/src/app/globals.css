@@ -2,10 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  background: #0f172a;
+  height: 100%;
+}
+
 body {
   color: #e2e8f0;
   background: #0f172a;
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 /*

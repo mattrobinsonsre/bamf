@@ -17,6 +17,8 @@
 // The bridge never interprets these frames — it just relays bytes.
 package tunnel
 
+// Protocol spec: docs/architecture/tunnels.md
+
 import (
 	"encoding/binary"
 	"errors"

@@ -45,9 +45,10 @@ export default function TokensPage() {
   const [formMaxUses, setFormMaxUses] = useState('')
   const [formLabels, setFormLabels] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }])
 
-  const canEdit = isAdmin()
+  const [canEdit, setCanEdit] = useState(false)
 
   useEffect(() => {
+    setCanEdit(isAdmin())
     if (!isAdminOrAudit()) {
       router.push('/')
       return
