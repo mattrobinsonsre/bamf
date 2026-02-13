@@ -1,13 +1,16 @@
-# Web Application Access
+# HTTP Application Access
 
-BAMF provides secure browser-based access to internal web applications (Grafana,
-Jenkins, ArgoCD, internal tools) through an HTTP reverse proxy with per-request
-authentication, RBAC, header rewriting, and audit logging.
+BAMF provides secure access to internal HTTP services — web applications,
+REST APIs, and any HTTP endpoint — through an HTTP reverse proxy with
+per-request authentication, RBAC, header rewriting, and audit logging.
+
+This works for both browser-based access (web apps like Grafana, Jenkins,
+ArgoCD) and non-browser access (curl, scripts, CI/CD pipelines).
 
 ## How It Works
 
 ```
-Browser ──▶ https://grafana.tunnel.bamf.example.com
+Client ──▶ https://grafana.tunnel.bamf.example.com
   └── Istio Gateway (TLS termination, wildcard cert)
   └── API proxy routes (auth, RBAC, header rewriting)
   └── Bridge (HTTP relay)
@@ -15,9 +18,10 @@ Browser ──▶ https://grafana.tunnel.bamf.example.com
   └── http://grafana.internal.corp:3000
 ```
 
-Each web application gets a unique `*.tunnel.bamf.example.com` hostname.
+Each HTTP resource gets a unique `*.tunnel.bamf.example.com` hostname.
 The API proxy handles authentication, authorization, and header rewriting so
-the target application is unaware of the tunnel.
+the target application is unaware of the tunnel. The same proxy serves both
+browser clients (session cookies) and non-browser clients (bearer tokens).
 
 ## Resource Configuration
 
@@ -41,7 +45,7 @@ The `tunnel_hostname` must be unique across all resources and follows DNS label
 rules: lowercase alphanumeric and hyphens, starting with a letter, max 63
 characters.
 
-## Accessing Web Apps
+## Browser Access
 
 Once the resource is registered and accessible via your role:
 
@@ -52,6 +56,33 @@ Once the resource is registered and accessible via your role:
 
 Subsequent requests use the session cookie — no additional authentication needed
 until the session expires.
+
+## Non-Browser Access (curl, scripts, CI/CD)
+
+The same proxy URLs work for non-browser HTTP clients. Authenticate with a
+bearer token instead of a session cookie:
+
+```zsh
+# Log in and get a session token
+bamf login --api https://bamf.example.com
+
+# Use the tunnel URL directly with your session token
+curl -H "Authorization: Bearer $(bamf token)" \
+  https://internal-api.tunnel.bamf.example.com/api/health
+
+# httpie
+http GET https://internal-api.tunnel.bamf.example.com/api/users \
+  "Authorization: Bearer $(bamf token)"
+```
+
+This is useful for:
+- Scripts and automation that need to reach internal HTTP services
+- CI/CD pipelines calling internal APIs
+- Health checks and monitoring
+- Any programmatic HTTP access to internal services
+
+Every request is authenticated, authorized via RBAC, and audit-logged — the
+same as browser access.
 
 ## Header Rewriting
 
@@ -103,19 +134,6 @@ or header-based SSO support.
   `*.tunnel.bamf.example.com`, referenced by the Gateway listener
 - **Istio Gateway HTTPRoute**: Routes `*.tunnel.bamf.example.com` to the
   API Service (same service as the main API)
-
-## Non-Browser HTTP Access
-
-The web app proxy is designed for browser-based access with session cookies,
-CORS handling, and identity injection. If you need CLI or programmatic access
-to an HTTP service instead, use `bamf tcp` to open a local tunnel:
-
-```zsh
-bamf tcp internal-api -p 18080
-curl http://127.0.0.1:18080/api/health
-```
-
-See the [TCP Tunnels guide](databases.md#http-services-non-browser) for details.
 
 ## Troubleshooting
 

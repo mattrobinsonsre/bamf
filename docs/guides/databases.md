@@ -2,9 +2,13 @@
 
 BAMF provides secure access to any TCP service through encrypted tunnels. The
 `bamf tcp` command opens a local port that tunnels through the BAMF bridge to
-the target — databases, Redis, HTTP APIs, message brokers, or any other TCP
+the target — databases, Redis, message brokers, or any other non-HTTP TCP
 protocol. The bridge is protocol-agnostic; it never interprets the tunneled
 traffic.
+
+For HTTP services, use the [HTTP proxy](web-apps.md) instead — it provides
+per-request authentication, RBAC, audit logging, and header rewriting for both
+browser and non-browser clients.
 
 ## How It Works
 
@@ -104,33 +108,6 @@ through a different bridge. Your psql or mysql session experiences a brief stall
 
 For details on the reliable stream protocol, see
 [Tunnel Architecture](../architecture/tunnels.md).
-
-## HTTP Services (Non-Browser)
-
-`bamf tcp` works for HTTP services too. If you need CLI or programmatic access
-to an internal HTTP API (not browser-based), use `bamf tcp` to open a local
-port and point your HTTP client at it:
-
-```zsh
-# Open tunnel to an internal API
-bamf tcp internal-api -p 18080
-
-# In another terminal, use curl, httpie, or any HTTP client
-curl http://127.0.0.1:18080/api/health
-http GET http://127.0.0.1:18080/api/users
-
-# Or with --exec for one-shot requests
-bamf tcp internal-api --exec "curl -s http://{host}:{port}/api/status"
-```
-
-This is useful for:
-- Internal REST APIs that don't need browser access
-- Health checks and monitoring scripts
-- CI/CD pipelines that need to reach internal services
-- Any HTTP service where you want CLI access instead of browser access
-
-For browser-based access to web applications (with session cookies, CORS
-handling, and identity injection), use the [web app proxy](web-apps.md) instead.
 
 ## Troubleshooting
 

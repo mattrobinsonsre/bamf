@@ -16,17 +16,17 @@ integration, role-based access control, and session recording.
   Wraps native `ssh`/`scp`/`sftp` so all flags and config work unchanged.
   [Guide](docs/guides/ssh.md)
 
-- **TCP tunnels** for any TCP service — databases, Redis, HTTP APIs, message
-  brokers, custom protocols. Convenience aliases for `bamf psql` and `bamf mysql`;
+- **TCP tunnels** for any TCP service — databases, Redis, message brokers,
+  custom protocols. Convenience aliases for `bamf psql` and `bamf mysql`;
   `bamf tcp --exec` for everything else. [Guide](docs/guides/databases.md)
 
 - **Kubernetes access** via standard `kubectl` with a kubeconfig entry pointing
   at BAMF. Uses Kubernetes impersonation — works with Helm, k9s, Lens, Terraform.
   [Guide](docs/guides/kubernetes.md)
 
-- **Web application proxy** for browser-based access to internal tools (Grafana,
-  Jenkins, ArgoCD) with per-request auth, header rewriting, and audit logging.
-  [Guide](docs/guides/web-apps.md)
+- **HTTP proxy** for internal web apps and APIs — browser-based (Grafana,
+  Jenkins, ArgoCD) and non-browser (curl, scripts, CI/CD). Per-request auth,
+  RBAC, header rewriting, and audit logging. [Guide](docs/guides/web-apps.md)
 
 - **SSO integration** with Auth0, Okta, Google, Azure AD, Keycloak (OIDC), and
   any SAML 2.0 identity provider. MFA is delegated to the IdP.
@@ -170,7 +170,7 @@ kubectl --context prod-cluster get pods
 | [SSH](docs/guides/ssh.md) | SSH, SCP, SFTP |
 | [TCP Tunnels](docs/guides/databases.md) | Databases, Redis, HTTP APIs, any TCP |
 | [Kubernetes](docs/guides/kubernetes.md) | kubectl through BAMF |
-| [Web Apps](docs/guides/web-apps.md) | Browser-based web app proxy |
+| [HTTP Apps](docs/guides/web-apps.md) | Web apps and HTTP APIs (browser + CLI) |
 | [Agents](docs/guides/agents.md) | Deploying and managing agents |
 | **Administration** | |
 | [Deployment](docs/admin/deployment.md) | Production Helm deployment |
