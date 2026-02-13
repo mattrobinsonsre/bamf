@@ -104,6 +104,19 @@ or header-based SSO support.
 - **Istio Gateway HTTPRoute**: Routes `*.tunnel.bamf.example.com` to the
   API Service (same service as the main API)
 
+## Non-Browser HTTP Access
+
+The web app proxy is designed for browser-based access with session cookies,
+CORS handling, and identity injection. If you need CLI or programmatic access
+to an HTTP service instead, use `bamf tcp` to open a local tunnel:
+
+```zsh
+bamf tcp internal-api -p 18080
+curl http://127.0.0.1:18080/api/health
+```
+
+See the [TCP Tunnels guide](databases.md#http-services-non-browser) for details.
+
 ## Troubleshooting
 
 **"Redirect loop"** — The target app may be redirecting to its own login page.

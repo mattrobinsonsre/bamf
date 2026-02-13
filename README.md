@@ -16,9 +16,9 @@ integration, role-based access control, and session recording.
   Wraps native `ssh`/`scp`/`sftp` so all flags and config work unchanged.
   [Guide](docs/guides/ssh.md)
 
-- **Database access** for PostgreSQL, MySQL, and any TCP service through
-  encrypted tunnels with `bamf psql`, `bamf mysql`, or `bamf tcp --exec`.
-  [Guide](docs/guides/databases.md)
+- **TCP tunnels** for any TCP service — databases, Redis, HTTP APIs, message
+  brokers, custom protocols. Convenience aliases for `bamf psql` and `bamf mysql`;
+  `bamf tcp --exec` for everything else. [Guide](docs/guides/databases.md)
 
 - **Kubernetes access** via standard `kubectl` with a kubeconfig entry pointing
   at BAMF. Uses Kubernetes impersonation — works with Helm, k9s, Lens, Terraform.
@@ -168,7 +168,7 @@ kubectl --context prod-cluster get pods
 | [Getting Started](docs/getting-started.md) | 10-minute first deployment |
 | **Access Guides** | |
 | [SSH](docs/guides/ssh.md) | SSH, SCP, SFTP |
-| [Databases](docs/guides/databases.md) | PostgreSQL, MySQL, generic TCP |
+| [TCP Tunnels](docs/guides/databases.md) | Databases, Redis, HTTP APIs, any TCP |
 | [Kubernetes](docs/guides/kubernetes.md) | kubectl through BAMF |
 | [Web Apps](docs/guides/web-apps.md) | Browser-based web app proxy |
 | [Agents](docs/guides/agents.md) | Deploying and managing agents |
