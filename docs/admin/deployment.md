@@ -115,7 +115,16 @@ web:
 
 ## PostgreSQL
 
-### Bundled (Dev/Staging)
+BAMF stores all durable state in PostgreSQL: user accounts, RBAC roles, agent
+registrations, audit logs, session recordings, and a backup copy of the CA
+keypair. For production, use a managed database service with automated backups,
+replication, and failover.
+
+### Bundled (Dev/Staging Only)
+
+The bundled option deploys a single-replica PostgreSQL via the bitnami subchart.
+**Do not use this in production** — it has no replication, no automated backups,
+and data lives on a single PVC.
 
 ```yaml
 postgresql:
@@ -131,22 +140,56 @@ postgresql:
 
 ### External (Production)
 
-Three credential options:
+Use a managed PostgreSQL service with Multi-AZ or multi-replica configuration
+for high availability:
+
+| Provider | Service | Documentation |
+|----------|---------|---------------|
+| AWS | RDS for PostgreSQL or Aurora PostgreSQL | [RDS User Guide](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html), [Aurora PostgreSQL Guide](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.AuroraPostgreSQL.html) |
+| GCP | Cloud SQL for PostgreSQL | [Cloud SQL Docs](https://cloud.google.com/sql/docs/postgres) |
+| Azure | Azure Database for PostgreSQL Flexible Server | [Azure PostgreSQL Docs](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/overview) |
+| Self-hosted | Patroni, Crunchy PGO, or CloudNativePG | [CloudNativePG](https://cloudnative-pg.io/documentation/) |
+
+**Recommended configuration:**
+
+- **PostgreSQL 16+** (BAMF is tested against 16)
+- **Multi-AZ / high availability** enabled for automatic failover
+- **Automated backups** with point-in-time recovery (PITR) — see
+  [Backup & Restore](../operations/backup-restore.md)
+- **Encryption in transit** (`sslmode: require` or `verify-full`)
+- **Encryption at rest** enabled (default on all major providers)
+- **Instance sizing**: Start with 2 vCPU / 4 GB RAM (e.g., AWS `db.t4g.medium`,
+  GCP `db-custom-2-4096`). Scale based on audit log volume and concurrent
+  sessions. BAMF's database load is modest — most hot-path operations use Redis.
+- **Storage**: 20 GB minimum. Audit logs and session recordings are the primary
+  storage consumers; size based on your retention policy (default 90 days).
+- **Read replica** (optional): Configure `postgresql.external.readReplica` to
+  offload read-heavy queries (audit log, session listing) from the primary.
+
+**Credential options** (pick one):
 
 ```yaml
-# Option 1: Existing K8s Secret
+# Option 1: Existing K8s Secret (recommended for GitOps)
 postgresql:
   external:
     enabled: true
-    host: bamf-db.example.com
+    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+    port: 5432
+    database: bamf
+    username: bamf
+    sslmode: require
     existingSecret: bamf-database-credentials
     existingSecretKey: password
 
-# Option 2: ExternalSecrets operator
+# Option 2: ExternalSecrets operator (syncs from cloud secret manager)
 postgresql:
   external:
     enabled: true
-    host: bamf-db.example.com
+    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+    port: 5432
+    database: bamf
+    username: bamf
+    sslmode: require
     externalSecret:
       enabled: true
       secretStoreRef:
@@ -156,13 +199,86 @@ postgresql:
         key: production/bamf/database
         property: password
 
-# Option 3: Inline (avoid in GitOps)
+# Option 3: Inline password (avoid in GitOps — stored in values file)
 postgresql:
   external:
     enabled: true
-    host: bamf-db.example.com
+    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+    port: 5432
+    database: bamf
+    username: bamf
+    sslmode: require
     password: "secret"
 ```
+
+## Redis
+
+BAMF uses Redis for session cache, agent heartbeat tracking, resource catalog,
+bridge registration, and real-time pub/sub. Redis data is ephemeral by design —
+a Redis restart causes temporary disruption (agents re-register, users re-login)
+but no permanent data loss. Despite this, production deployments should use a
+resilient Redis cluster to avoid unnecessary disruption.
+
+### Bundled (Dev/Staging Only)
+
+The bundled option deploys a single-replica Redis via the bitnami subchart.
+**Do not use this in production.**
+
+```yaml
+redis:
+  bundled:
+    enabled: true
+```
+
+### External (Production)
+
+Use a managed Redis service with replication and automatic failover:
+
+| Provider | Service | Documentation |
+|----------|---------|---------------|
+| AWS | Amazon ElastiCache for Redis (cluster mode) | [ElastiCache User Guide](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/WhatIs.html) |
+| AWS | Amazon MemoryDB for Redis | [MemoryDB Guide](https://docs.aws.amazon.com/memorydb/latest/devguide/what-is-memorydb-for-redis.html) |
+| GCP | Memorystore for Redis | [Memorystore Docs](https://cloud.google.com/memorystore/docs/redis) |
+| Azure | Azure Cache for Redis | [Azure Cache Docs](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-overview) |
+| Self-hosted | Redis Sentinel or Redis Cluster | [Redis Sentinel Docs](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/) |
+
+**Recommended configuration:**
+
+- **Redis 7+**
+- **Replication enabled** with at least one replica for automatic failover
+  (e.g., ElastiCache Multi-AZ with auto-failover, Memorystore Standard Tier)
+- **Encryption in transit** (TLS) — configure via `redis.external.tls: true`
+  if your provider requires it
+- **Encryption at rest** enabled (default on most providers)
+- **Instance sizing**: Start with 1-2 GB memory (e.g., AWS `cache.t4g.small`,
+  GCP `M1` 1 GB). BAMF's Redis usage is lightweight — mostly small keys for
+  sessions, heartbeats, and resource metadata. Scale based on concurrent
+  agent and session count.
+- **Eviction policy**: `noeviction` (default). BAMF relies on TTL-based expiry;
+  eviction would cause unexpected session or heartbeat loss.
+- **Persistence**: Optional. Redis data is recoverable (agents re-register,
+  users re-login), so AOF/RDB persistence adds latency without meaningful
+  benefit. Disable persistence if your provider allows it.
+
+**Helm configuration:**
+
+```yaml
+redis:
+  bundled:
+    enabled: false
+  external:
+    enabled: true
+    host: bamf-redis.xxx.cache.amazonaws.com
+    port: 6379
+    # If authentication is required:
+    existingSecret: bamf-redis-credentials
+    existingSecretKey: password
+```
+
+**ElastiCache cluster mode note:** If using ElastiCache with cluster mode
+enabled, use the configuration endpoint as the `host` value. BAMF uses simple
+key/value operations and pub/sub — no multi-key transactions — so cluster mode
+works without issues.
 
 ## TLS Certificates
 

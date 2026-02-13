@@ -16,7 +16,7 @@ registering an agent, and connecting to your first resource.
 # Create namespace
 kubectl create namespace bamf
 
-# Install with bundled PostgreSQL and Redis (suitable for evaluation)
+# Install with bundled PostgreSQL and Redis (evaluation only — not for production)
 helm install bamf oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
   --namespace bamf \
   --set gateway.hostname=bamf.example.com \
@@ -25,6 +25,11 @@ helm install bamf oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
   --set postgresql.bundled.enabled=true \
   --set redis.bundled.enabled=true
 ```
+
+> **Note:** Bundled PostgreSQL and Redis are single-replica with no replication
+> or automated backups. For production, use managed services like AWS RDS and
+> ElastiCache. See the [Deployment Guide](admin/deployment.md#postgresql) for
+> production database configuration.
 
 Wait for all pods to be ready:
 
@@ -138,7 +143,7 @@ bamf psql my-database -U admin -d mydb
 ## Next Steps
 
 - [SSH Guide](guides/ssh.md) — SSH, SCP, SFTP access
-- [Database Guide](guides/databases.md) — PostgreSQL, MySQL, TCP tunnels
+- [TCP Tunnels](guides/databases.md) — Databases, Redis, HTTP APIs, any TCP
 - [RBAC Guide](admin/rbac.md) — Configure roles and access policies
 - [SSO Guide](admin/sso.md) — Set up Auth0, Okta, or other identity providers
 - [Deployment Guide](admin/deployment.md) — Production Helm configuration
