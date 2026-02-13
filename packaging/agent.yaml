@@ -1,0 +1,13 @@
+# BAMF Agent Configuration
+# See: https://github.com/mattrobinsonsre/bamf
+#
+# platform_url: https://bamf.example.com
+# join_token: <your-join-token>
+# agent_name: <auto-detected from hostname if omitted>
+#
+# resources:
+#   - name: my-server
+#     type: ssh
+#     hostname: localhost
+#     labels:
+#       env: prod

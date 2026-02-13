@@ -1,0 +1,19 @@
+# Minimal image for pre-built Go binaries (multi-arch).
+# Used by scripts/build.sh for bridge and agent release images.
+#
+# Usage:
+#   docker buildx build -f docker/Dockerfile.release \
+#     --build-arg BINARY=bamf-bridge \
+#     --platform linux/amd64,linux/arm64 \
+#     -t bamf-bridge:v1.0.0 --push .
+
+FROM scratch
+
+COPY --from=gcr.io/distroless/static-debian12:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+ARG TARGETARCH
+ARG BINARY
+
+COPY dist/${BINARY}-linux-${TARGETARCH} /${BINARY}
+
+ENTRYPOINT ["/${BINARY}"]

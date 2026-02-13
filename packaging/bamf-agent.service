@@ -1,0 +1,20 @@
+[Unit]
+Description=BAMF Agent
+Documentation=https://github.com/mattrobinsonsre/bamf
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bamf
+Group=bamf
+ExecStart=/usr/bin/bamf-agent --config /etc/bamf/agent.yaml
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+StateDirectory=bamf-agent
+
+[Install]
+WantedBy=multi-user.target

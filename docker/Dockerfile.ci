@@ -1,0 +1,12 @@
+# BAMF Go CI builder image
+# Used for lint, test, and cross-compilation inside Docker.
+# Build: docker build -f docker/Dockerfile.ci -t bamf-ci:local .
+
+FROM golang:1.23-alpine
+
+RUN apk add --no-cache git bash build-base
+
+# golangci-lint v2 (copy binary from official image)
+COPY --from=golangci/golangci-lint:v2.8.0-alpine /usr/bin/golangci-lint /usr/bin/
+
+WORKDIR /build

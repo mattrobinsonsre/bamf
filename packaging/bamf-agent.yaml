@@ -1,0 +1,31 @@
+# nfpm package spec for BAMF Agent
+# https://nfpm.goreleaser.com/configuration/
+#
+# Built via: scripts/build.sh packages
+# Requires: dist/bamf-agent-linux-{amd64,arm64} binaries
+
+name: bamf-agent
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Matt Robinson <mattrobinsonsre@gmail.com>"
+description: "BAMF Agent - secure infrastructure access agent"
+vendor: "BAMF"
+homepage: "https://github.com/mattrobinsonsre/bamf"
+license: "GPL-3.0"
+
+contents:
+  - src: dist/bamf-agent-linux-${ARCH}
+    dst: /usr/bin/bamf-agent
+    file_info:
+      mode: 0755
+  - src: packaging/bamf-agent.service
+    dst: /lib/systemd/system/bamf-agent.service
+  - src: packaging/agent.yaml
+    dst: /etc/bamf/agent.yaml
+    type: config|noreplace
+
+scripts:
+  preinstall: packaging/preinstall.sh
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh
