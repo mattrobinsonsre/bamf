@@ -270,7 +270,7 @@ def _auth_error_response(request: Request) -> Response:
         # Redirect to the BAMF login page. callback_base_url is the
         # externally-reachable API/UI URL (e.g., https://bamf.local:8443).
         login_url = (
-            f"{settings.auth.callback_base_url}/login" f"?redirect={quote(original_url, safe='')}"
+            f"{settings.auth.callback_base_url}/login?redirect={quote(original_url, safe='')}"
         )
         return RedirectResponse(url=login_url, status_code=302)
 
