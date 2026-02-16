@@ -8,7 +8,7 @@ readme = "README.md"
 packages = [{include = "bamf"}]
 
 [tool.poetry.dependencies]
-python = "^3.14"
+python = "^3.13"
 fastapi = "^0.115.0"
 uvicorn = {extras = ["standard"], version = "^0.34.0"}
 pydantic = {extras = ["email"], version = "^2.10.0"}
@@ -71,7 +71,7 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
