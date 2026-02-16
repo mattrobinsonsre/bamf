@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -63,8 +62,8 @@ func runSSH(cmd *cobra.Command, args []string) error {
 }
 
 // execSSHBinary builds and execs an ssh or scp command with BAMF's
-// ProxyCommand and UserKnownHostsFile injected. It replaces the current
-// process via syscall.Exec, handing off the TTY to the native binary.
+// ProxyCommand and UserKnownHostsFile injected. On Unix it replaces the
+// current process via execReplace, handing off the TTY to the native binary.
 func execSSHBinary(binary string, userArgs []string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -96,5 +95,5 @@ func execSSHBinary(binary string, userArgs []string) error {
 	}
 
 	// Replace this process with ssh/scp — full TTY hand-off.
-	return syscall.Exec(binPath, cmdArgs, os.Environ())
+	return execReplace(binPath, cmdArgs, os.Environ())
 }

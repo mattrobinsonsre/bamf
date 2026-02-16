@@ -7,10 +7,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -86,7 +84,7 @@ func runTCP(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	notifySignals(sigCh)
 	go func() {
 		<-sigCh
 		cancel()
@@ -107,7 +105,7 @@ func runTCP(cmd *cobra.Command, args []string) error {
 	// Daemon child (or foreground): ignore SIGHUP if we're the daemon.
 	isDaemon := os.Getenv(daemonReadyEnv) != ""
 	if isDaemon {
-		signal.Ignore(syscall.SIGHUP)
+		ignoreSIGHUP()
 	}
 
 	// Connect to bridge immediately (session cert has 30s TTL)
@@ -177,7 +175,7 @@ func launchAndMonitor(args []string) error {
 
 	child := exec.Command(exe, childArgs...)
 	child.Env = append(os.Environ(), daemonReadyEnv+"=1")
-	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	child.SysProcAttr = detachSysProcAttr()
 	child.ExtraFiles = []*os.File{pw} // fd 3 in child
 
 	devNull, err := os.Open(os.DevNull)
@@ -273,12 +271,10 @@ func runTCPWithExec(ctx context.Context, listener net.Listener, bridgeConn io.Re
 	execCmd.Stdout = os.Stdout
 	execCmd.Stderr = os.Stderr
 	// Put child in its own process group so we can kill the whole group.
-	execCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	execCmd.SysProcAttr = execGroupSysProcAttr()
 	execCmd.Cancel = func() error {
 		// Kill the entire process group on context cancellation.
-		if execCmd.Process != nil {
-			_ = syscall.Kill(-execCmd.Process.Pid, syscall.SIGTERM)
-		}
+		killProcessGroup(execCmd)
 		return execCmd.Process.Kill()
 	}
 
