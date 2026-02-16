@@ -7,7 +7,7 @@ FROM golang:1.26.0-alpine
 RUN apk add --no-cache git bash build-base
 
 # golangci-lint v2 (copy binary from official image)
-COPY --from=golangci/golangci-lint:v2.8.0-alpine /usr/bin/golangci-lint /usr/bin/
+COPY --from=golangci/golangci-lint:v2.9.0-alpine /usr/bin/golangci-lint /usr/bin/
 
 # govulncheck for vulnerability scanning
 RUN go install golang.org/x/vuln/cmd/govulncheck@latest
