@@ -1,7 +1,7 @@
 # BAMF Agent Dockerfile
 # Builds the Go agent binary
 
-FROM golang:1.25.7-alpine AS builder
+FROM golang:1.26.0-alpine AS builder
 
 # Install git for go mod download
 RUN apk add --no-cache git

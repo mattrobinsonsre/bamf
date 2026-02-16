@@ -2,7 +2,7 @@
 # Used for lint, test, and cross-compilation inside Docker.
 # Build: docker build -f docker/Dockerfile.ci -t bamf-ci:local .
 
-FROM golang:1.25.7-alpine
+FROM golang:1.26.0-alpine
 
 RUN apk add --no-cache git bash build-base
 
