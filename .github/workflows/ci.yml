@@ -20,28 +20,28 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/lint.sh go
 
   go-test:
     name: Go Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/test.sh go
 
   go-build:
     name: Go Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/build.sh binaries
 
   go-security:
     name: Go Security (govulncheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/security-scan.sh go
 
   # ── Python ──────────────────────────────────────────────
@@ -49,21 +49,21 @@ jobs:
     name: Python Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/lint.sh python
 
   python-test:
     name: Python Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/test.sh python
 
   python-security:
     name: Python Security (pip-audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/security-scan.sh python
 
   # ── Web ─────────────────────────────────────────────────
@@ -71,7 +71,7 @@ jobs:
     name: Web Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: scripts/lint.sh web
 
   # ── Helm ────────────────────────────────────────────────
@@ -79,7 +79,7 @@ jobs:
     name: Helm Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Helm lint (containerized)
         run: |
           docker run --rm -v "$PWD:/chart" -w /chart \
