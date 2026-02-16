@@ -206,18 +206,18 @@ func launchAndMonitor(args []string) error {
 	if strings.HasPrefix(msg, "OK ") {
 		port := strings.TrimPrefix(msg, "OK ")
 		fmt.Fprintf(os.Stderr, "Listening on 127.0.0.1:%s (PID %d)\n", port, child.Process.Pid)
-		child.Process.Release()
+		_ = child.Process.Release()
 		return nil
 	}
 
 	// Child failed or pipe broke before readiness.
 	if strings.HasPrefix(msg, "ERR ") {
-		child.Process.Release()
+		_ = child.Process.Release()
 		return fmt.Errorf("%s", strings.TrimPrefix(msg, "ERR "))
 	}
 
 	// Pipe closed without a message — child probably crashed.
-	child.Wait()
+	_ = child.Wait()
 	if readErr != nil {
 		return fmt.Errorf("background tunnel failed (pipe error: %w)", readErr)
 	}
