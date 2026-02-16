@@ -22,6 +22,7 @@ done
 # ── Build Go binaries for all platforms ───────────────────
 build_binaries() {
   info "Cross-compiling Go binaries..."
+  rm -rf "$REPO_ROOT/dist"
   mkdir -p "$REPO_ROOT/dist"
 
   docker_go bash -c '
