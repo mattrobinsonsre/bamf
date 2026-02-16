@@ -10,6 +10,7 @@
 	build build-local images packages \
 	publish publish-images publish-chart publish-release \
 	release dev dev-down \
+	security-scan security-scan-go security-scan-python \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset proto \
 	help
@@ -81,6 +82,16 @@ release:            ## Full release: lint, test, build, publish
 	scripts/test.sh
 	scripts/build.sh
 	scripts/publish.sh
+
+# ── Security Scanning ────────────────────────────────────
+security-scan:          ## Run all security scanners (govulncheck + pip-audit)
+	scripts/security-scan.sh
+
+security-scan-go:       ## Run govulncheck (Go vulnerability scanner)
+	scripts/security-scan.sh go
+
+security-scan-python:   ## Run pip-audit (Python vulnerability scanner)
+	scripts/security-scan.sh python
 
 # ── Development ──────────────────────────────────────────
 dev:                ## Start Tilt development environment

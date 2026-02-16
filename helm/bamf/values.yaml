@@ -206,16 +206,21 @@ agent:
   tolerations: []
   affinity: {}
 
-# ── Gateway (Istio Gateway API) ───────────────────────────────────────────────
-# Replaces traditional Ingress with Istio Gateway + HTTPRoute/TLSRoute
+# ── Gateway / Ingress Routing ────────────────────────────────────────────────
+# provider: traefik (default) or istio
+# traefik: Uses Traefik v3 IngressRoute/IngressRouteTCP CRDs (zero setup on Rancher Desktop)
+# istio:   Uses Gateway API (Gateway, HTTPRoute, TLSRoute) with Istio controller
 gateway:
   enabled: true
-  className: istio  # Gateway class name
-  hostname: ""      # Required: e.g., bamf.example.com
-  tunnelDomain: ""  # Required: e.g., tunnel.bamf.example.com
+  provider: traefik   # traefik | istio
+  className: istio    # Only used when provider=istio
+  hostname: ""        # Required: e.g., bamf.example.com
+  tunnelDomain: ""    # Required: e.g., tunnel.bamf.example.com
   annotations: {}
   ports:
-    https: 443      # Override for local dev (e.g., 8443 to avoid Traefik conflict)
+    https: 443
+  traefik:
+    entryPoint: websecure  # Traefik entrypoint name for HTTPS
 
 # ── Ingress (legacy, disabled by default) ─────────────────────────────────────
 # Use gateway.enabled=true (default) instead. This is kept for backwards

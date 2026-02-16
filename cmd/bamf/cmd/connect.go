@@ -162,9 +162,9 @@ func (rb *reconnectingBridge) waitForReconnect() error {
 }
 
 const (
-	maxReconnectAttempts = 5
-	reconnectBaseDelay   = 1 * time.Second
-	reconnectMaxDelay    = 30 * time.Second
+	maxReconnectAttempts = 15
+	reconnectBaseDelay   = 2 * time.Second
+	reconnectMaxDelay    = 10 * time.Second
 )
 
 func (rb *reconnectingBridge) doReconnect() error {
@@ -254,21 +254,27 @@ func dialBridge(ctx context.Context, session *ConnectResponse) (net.Conn, error)
 }
 
 // splice copies bytes bidirectionally between two connections until one side
-// closes or the context is cancelled.
+// closes or the context is cancelled. Closes both connections on exit to
+// ensure no goroutines or file descriptors leak.
 func splice(ctx context.Context, a, b io.ReadWriteCloser) error {
 	errCh := make(chan error, 2)
 	go func() { _, err := io.Copy(a, b); errCh <- err }()
 	go func() { _, err := io.Copy(b, a); errCh <- err }()
 
+	var result error
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		result = ctx.Err()
 	case err := <-errCh:
 		if err != nil && err != io.EOF {
-			return err
+			result = err
 		}
-		return nil
 	}
+
+	// Close both sides to unblock any stuck io.Copy goroutine.
+	a.Close()
+	b.Close()
+	return result
 }
 
 func loadCredentials() (*tokenResponse, error) {

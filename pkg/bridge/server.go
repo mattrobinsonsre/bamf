@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 // Server is the main bridge server

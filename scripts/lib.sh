@@ -67,6 +67,6 @@ docker_node() {
     -v "$REPO_ROOT/web:/app" \
     -v bamf-npmcache:/root/.npm \
     -w /app \
-    node:22-alpine \
+    node:25-alpine \
     "$@"
 }

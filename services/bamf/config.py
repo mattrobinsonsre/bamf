@@ -178,6 +178,13 @@ class Settings(BaseSettings):
         description="External port for mTLS tunnel connections (Gateway listener port).",
     )
 
+    # Bridge internal tunnel port — the K8s Service port for agent-to-bridge
+    # connections within the cluster. This is bridge.tunnelPort in the Helm chart.
+    bridge_internal_tunnel_port: int = Field(
+        default=8443,
+        description="Internal K8s Service port for bridge tunnel connections.",
+    )
+
     # Tunnel domain for web app proxy hostnames (e.g., "tunnel.bamf.local").
     # Resources with tunnel_hostname "grafana" become "grafana.tunnel.bamf.local".
     tunnel_domain: str = Field(

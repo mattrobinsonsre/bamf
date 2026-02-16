@@ -332,10 +332,10 @@ async def _send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
 
     if agent_cluster_internal:
         bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
+        bridge_port = settings.bridge_internal_tunnel_port
     else:
         bridge_host = bridge_hostname
-
-    bridge_port = settings.bridge_tunnel_port
+        bridge_port = settings.bridge_tunnel_port
 
     # Include CA cert so the agent can verify the bridge's certificate.
     # The agent may have joined with a previous CA — always send the current one.

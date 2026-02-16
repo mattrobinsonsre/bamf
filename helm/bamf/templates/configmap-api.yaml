@@ -28,6 +28,8 @@ data:
 
     # Bridge tunnel port — external port clients use to reach bridge tunnels
     bridge_tunnel_port: {{ .Values.gateway.ports.https | default 443 }}
+    # Bridge internal tunnel port — K8s Service port for agent-to-bridge connections
+    bridge_internal_tunnel_port: {{ .Values.bridge.tunnelPort }}
 
     {{- if .Values.gateway.tunnelDomain }}
     # Tunnel domain for web app proxy (e.g., "tunnel.bamf.local")

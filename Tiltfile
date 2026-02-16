@@ -19,52 +19,6 @@ config.define_bool("no-volumes")
 cfg = config.parse()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Istio Gateway API Setup
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Install Gateway API CRDs (required before Istio)
-local_resource(
-    'install-gateway-api-crds',
-    cmd='''
-# Check if Gateway API CRDs are already installed
-if kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
-    echo "Gateway API CRDs already installed"
-else
-    echo "Installing Gateway API CRDs (experimental channel for TLSRoute)..."
-    kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml --server-side --force-conflicts
-fi
-''',
-    labels=['setup'],
-)
-
-# Install Istio with minimal profile
-local_resource(
-    'install-istio',
-    cmd='''
-# Check if istioctl is installed
-if ! command -v istioctl &> /dev/null; then
-    echo "ERROR: istioctl is not installed."
-    echo "Install with: brew install istioctl"
-    exit 1
-fi
-
-# Check if Istio is already installed
-if kubectl get deployment istiod -n istio-system >/dev/null 2>&1; then
-    echo "Istio already installed"
-else
-    echo "Installing Istio with minimal profile + alpha Gateway API (TLSRoute)..."
-    istioctl install --set profile=minimal --set values.pilot.env.PILOT_ENABLE_ALPHA_GATEWAY_API=true -y
-fi
-
-# Wait for Istio to be ready
-echo "Waiting for Istio to be ready..."
-kubectl wait --for=condition=available deployment/istiod -n istio-system --timeout=120s
-''',
-    labels=['setup'],
-    resource_deps=['install-gateway-api-crds'],
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Local TLS Certificates (mkcert)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -106,6 +60,16 @@ kubectl create secret tls bamf-tls-local \\
     --namespace="$NAMESPACE" \\
     --dry-run=client -o yaml | kubectl apply -f -
 
+# Also store mkcert CA cert as a ConfigMap for Traefik to use as default TLS store
+# This allows Traefik to serve mkcert-signed certs for IngressRoute resources
+CAROOT="$(mkcert -CAROOT)"
+if [ -f "$CAROOT/rootCA.pem" ]; then
+    kubectl create secret generic bamf-mkcert-ca \\
+        --from-file=ca.crt="$CAROOT/rootCA.pem" \\
+        --namespace="$NAMESPACE" \\
+        --dry-run=client -o yaml | kubectl apply -f -
+fi
+
 # Verify /etc/hosts entries
 MISSING=""
 for HOST in bamf.local; do
@@ -121,45 +85,7 @@ if [ -n "$MISSING" ]; then
 fi
 ''',
     labels=['setup'],
-    resource_deps=['install-istio'],
 )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Traefik Redirect (bamf.local:443 → bamf.local:8443)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Redirect requests from Traefik (port 443) to Istio Gateway (port 8443)
-# This is a local dev convenience only - not used in production
-k8s_yaml(blob('''
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: bamf-redirect-to-istio
-  namespace: bamf
-spec:
-  redirectRegex:
-    regex: ^https://bamf[.]local/(.*)
-    replacement: https://bamf.local:8443/${1}
-    permanent: false
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: bamf-redirect
-  namespace: bamf
-spec:
-  entryPoints:
-    - websecure
-  routes:
-    - match: Host(`bamf.local`)
-      kind: Rule
-      middlewares:
-        - name: bamf-redirect-to-istio
-      services:
-        - name: noop@internal
-          kind: TraefikService
-  tls: {}
-'''))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Docker Builds

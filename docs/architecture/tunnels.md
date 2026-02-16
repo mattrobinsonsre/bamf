@@ -97,26 +97,68 @@ For scale-in, maintenance, or rebalancing:
 
 ## SNI Routing
 
-Each bridge pod gets its own Service and TLSRoute:
+Each bridge pod gets its own Service and an SNI-based route. BAMF supports two
+routing providers:
+
+### Traefik (Default)
+
+```yaml
+# IngressRouteTCP for bridge-0
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`0.bridge.tunnel.bamf.example.com`)
+      services:
+        - name: bamf-bridge-0
+          port: 8443
+  tls:
+    passthrough: true
+```
+
+Traefik evaluates TCP routers (HostSNI) before HTTP routers on shared
+entrypoints, so bridge SNI hostnames get passthrough while everything else gets
+TLS termination.
+
+### Istio Gateway API
 
 ```yaml
 # TLSRoute for bridge-0
 spec:
   hostnames:
-    - "bridge-0.tunnel.bamf.example.com"
+    - "0.bridge.tunnel.bamf.example.com"
   rules:
     - backendRefs:
         - name: bamf-bridge-0
-          port: 443
+          port: 8443
 ```
 
 The Gateway uses TLS passthrough — it inspects the SNI hostname in the
-ClientHello without terminating TLS. The bridge pod terminates TLS using its
-BAMF CA-issued certificate.
+ClientHello without terminating TLS.
+
+In both cases, the bridge pod terminates TLS using its BAMF CA-issued
+certificate.
 
 ## Infrastructure Requirements
 
-- Wildcard DNS: `*.tunnel.bamf.example.com` → Gateway IP
-- Istio Gateway with TLSRoute per bridge pod (SNI passthrough)
-- Per-bridge-pod Services (created by Helm loop for 0 to `maxReplicas`)
+BAMF tunnels require ingress infrastructure that supports **SNI-based TLS
+passthrough** — routing raw TCP connections to specific pods based on the TLS
+Server Name Indication hostname without terminating TLS. This is not possible
+with standard Kubernetes `Ingress` resources, which only handle HTTP(S).
+
+**Required:**
+
+- **Kubernetes cluster** with Traefik v3 or Istio as the ingress controller
+- **SNI passthrough routes**: One IngressRouteTCP (Traefik) or TLSRoute (Istio)
+  per bridge pod, matching `N.bridge.tunnel.example.com`
+- **Per-bridge-pod Services**: One ClusterIP Service per bridge pod, selecting
+  by `statefulset.kubernetes.io/pod-name` (created by Helm loop for 0 to
+  `maxReplicas`)
+- **Wildcard DNS**: `*.tunnel.bamf.example.com` → Ingress controller IP
 - Bridges register in Redis on startup (heartbeat with TTL)
+
+Without SNI passthrough, the CLI cannot establish mTLS tunnel connections to
+individual bridge pods. This is the primary reason BAMF requires a modern
+Kubernetes cluster with Traefik v3 or Istio — standard Ingress controllers and
+non-Kubernetes reverse proxies cannot express this routing.

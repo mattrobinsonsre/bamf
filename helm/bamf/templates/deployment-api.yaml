@@ -1,5 +1,5 @@
 # API deployment: docs/admin/deployment.md
-{{- include "bamf.validateConfig" . -}}
+{{- include "bamf.validateConfig" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# All jobs use the containerized scripts from scripts/*.sh.
+# The only local requirement is Docker (for running containers).
+# No Go, Node, Python, or Helm installed on the runner.
+
+jobs:
+  # ── Go ──────────────────────────────────────────────────
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/lint.sh go
+
+  go-test:
+    name: Go Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/test.sh go
+
+  go-build:
+    name: Go Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/build.sh binaries
+
+  go-security:
+    name: Go Security (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/security-scan.sh go
+
+  # ── Python ──────────────────────────────────────────────
+  python-lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/lint.sh python
+
+  python-test:
+    name: Python Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/test.sh python
+
+  python-security:
+    name: Python Security (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/security-scan.sh python
+
+  # ── Web ─────────────────────────────────────────────────
+  web-lint:
+    name: Web Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/lint.sh web
+
+  # ── Helm ────────────────────────────────────────────────
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Helm lint (containerized)
+        run: |
+          docker run --rm -v "$PWD:/chart" -w /chart \
+            alpine/helm:3.17.2 \
+            lint helm/bamf --values helm/bamf/values.yaml
+
+  # ── Gate ────────────────────────────────────────────────
+  ci-pass:
+    name: CI
+    if: always()
+    needs:
+      - go-lint
+      - go-test
+      - go-build
+      - go-security
+      - python-lint
+      - python-test
+      - python-security
+      - web-lint
+      - helm-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All checks passed"

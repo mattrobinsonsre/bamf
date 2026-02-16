@@ -353,8 +353,10 @@ async def _issue_session(
     agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
     if agent_cluster_internal:
         agent_bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
+        agent_bridge_port = settings.bridge_internal_tunnel_port
     else:
         agent_bridge_host = bridge_hostname
+        agent_bridge_port = bridge_port
 
     await r.publish(
         f"agent:{agent_id}:commands",
@@ -363,7 +365,7 @@ async def _issue_session(
                 "command": command,
                 "session_id": session_id,
                 "bridge_host": agent_bridge_host,
-                "bridge_port": bridge_port,
+                "bridge_port": agent_bridge_port,
                 "resource_name": resource_name,
                 "resource_type": resource_type,
                 "session_cert": serialize_certificate(agent_cert).decode(),

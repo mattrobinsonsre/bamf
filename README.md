@@ -1,5 +1,8 @@
 # BAMF — Bridge Access Management Fabric
 
+[![CI](https://github.com/mattrobinsonsre/bamf/actions/workflows/ci.yml/badge.svg)](https://github.com/mattrobinsonsre/bamf/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 Secure infrastructure access with short-lived certificates, centralized audit,
 and zero-trust tunnels. An open-source alternative to Teleport that builds in
 minutes with standard toolchains.
@@ -8,9 +11,31 @@ BAMF gives your team secure, audited access to SSH servers, databases, Kubernete
 clusters, and internal web applications — all through a single platform with SSO
 integration, role-based access control, and session recording.
 
-![Resources](docs/images/ui-resources.png)
+![Demo](docs/images/demo.gif)
+
+## Why BAMF?
+
+Teleport's Community Edition [switched to a commercial license](https://github.com/gravitational/teleport/discussions/39158)
+starting with v16 (June 2024). Companies with >100 employees or >$10M revenue
+cannot legally use it. And even within those limits, SSO is locked to GitHub
+only — Okta, Azure AD, Google, SAML, and generic OIDC all require Enterprise.
+
+BAMF is **GPLv3** — no usage restrictions, no feature gating:
+
+| | BAMF (GPLv3) | Teleport Community |
+|---|---|---|
+| **SSO (OIDC/SAML)** | All providers included | GitHub only (Okta, Azure AD, SAML: Enterprise) |
+| **Commercial use** | Unrestricted | <100 employees **and** <$10M revenue |
+| **Build from source** | Go + Python, minutes | Go + Rust + C + libfido2, hours |
+| **License** | GPLv3 | Commercial (since v16, June 2024) |
+
+[Detailed comparison](docs/comparison.md)
 
 ## Features
+
+- **SSO integration** with Auth0, Okta, Google, Azure AD, Keycloak (OIDC), and
+  any SAML 2.0 identity provider. MFA is delegated to the IdP — no TOTP or
+  WebAuthn implementation to maintain. [Configuration](docs/admin/sso.md)
 
 - **SSH access** with short-lived certificates — no static keys, no TOFU prompts.
   Wraps native `ssh`/`scp`/`sftp` so all flags and config work unchanged.
@@ -27,10 +52,6 @@ integration, role-based access control, and session recording.
 - **HTTP proxy** for internal web apps and APIs — browser-based (Grafana,
   Jenkins, ArgoCD) and non-browser (curl, scripts, CI/CD). Per-request auth,
   RBAC, header rewriting, and audit logging. [Guide](docs/guides/web-apps.md)
-
-- **SSO integration** with Auth0, Okta, Google, Azure AD, Keycloak (OIDC), and
-  any SAML 2.0 identity provider. MFA is delegated to the IdP.
-  [Configuration](docs/admin/sso.md)
 
 - **Role-based access control** with allow/deny rules, resource labels, and
   claims-to-roles mapping from identity providers.
@@ -59,8 +80,8 @@ integration, role-based access control, and session recording.
                │                                 │
                ▼                                 ▼
     ┌──────────────────────────────────────────────────────┐
-    │              Istio Gateway (single LB)               │
-    │   HTTPRoute (API, Web UI, proxy)  │  TLSRoute (SNI) │
+    │         Traefik / Istio Gateway (single LB)          │
+    │   HTTP routes (API, Web UI, proxy) │ TCP/SNI routes  │
     └──────────┬────────────────────────┴────────┬─────────┘
                │                                 │
                ▼                                 ▼
@@ -87,6 +108,24 @@ integration, role-based access control, and session recording.
 **Go** handles the data path (CLI, bridge, agent) — portable static binaries
 with no CGo. **Python** handles the control plane (API, CA, RBAC, SSO, proxy)
 where development velocity matters. **Next.js** provides the web UI.
+
+### Kubernetes Ingress Requirements
+
+BAMF requires **SNI-based TLS passthrough** for routing TCP tunnel traffic to
+individual bridge pods. This is an advanced ingress capability that goes beyond
+standard Kubernetes Ingress resources. BAMF supports two providers:
+
+- **Traefik v3** (default) — uses IngressRouteTCP with `tls.passthrough: true`
+  and `HostSNI()` matching. Ships with k3s and Rancher Desktop.
+- **Istio Gateway API** — uses TLSRoute (experimental channel) with SNI-based
+  passthrough. Requires `istioctl` and Gateway API CRDs.
+
+Standard Kubernetes Ingress objects only support HTTP(S) routing. They cannot
+route raw TCP by SNI hostname, which is essential for BAMF's tunnel
+architecture. **BAMF must run on a Kubernetes cluster with one of the above
+ingress controllers.** It cannot be hosted behind a basic Ingress controller,
+a standalone reverse proxy (nginx, HAProxy), or outside Kubernetes without
+significant custom infrastructure.
 
 ## Quick Start
 
@@ -194,22 +233,23 @@ kubectl --context prod-cluster get pods
 | [Helm Values](docs/reference/helm-values.md) | All Helm values documented |
 | [Agent Config](docs/reference/agent-config.md) | Agent YAML config reference |
 | [Development](docs/development.md) | Building from source |
+| [BAMF vs Teleport](docs/comparison.md) | Feature and license comparison |
 
 ## Building from Source
 
 ```zsh
-# Prerequisites: Go 1.23+, Python 3.13+, Node.js 20+, Docker
+# Prerequisites: Docker, gmake (brew install make)
 
-# Build Go binaries (local platform)
-gmake build-local
+# Cross-compile Go binaries for all platforms (runs in Docker)
+gmake build
 
 # Build Docker images
 gmake images
 
-# Run tests
+# Run tests (Go + Python, runs in Docker)
 gmake test
 
-# Run linters
+# Run linters (runs in Docker)
 gmake lint
 
 # Local development (requires Rancher Desktop + Tilt)

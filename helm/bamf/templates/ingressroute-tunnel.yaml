@@ -1,0 +1,30 @@
+# Traefik IngressRoute for web app proxy (wildcard tunnel domain)
+# Web app proxy docs: docs/guides/web-apps.md
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
+{{- $fullName := include "bamf.fullname" . }}
+{{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
+{{- $tunnelDomainEscaped := .Values.gateway.tunnelDomain | replace "." "\\." }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-tunnel-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - {{ $entryPoint }}
+  routes:
+    # All web app proxy traffic goes to API service (proxy routes handle it)
+    # HostRegexp uses Traefik v3 raw Go regex syntax
+    - match: HostRegexp(`^.+\.{{ $tunnelDomainEscaped }}$`)
+      kind: Rule
+      services:
+        - name: {{ $fullName }}-api
+          port: 8000
+  tls:
+    secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+{{- end }}

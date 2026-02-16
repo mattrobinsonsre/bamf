@@ -1,7 +1,7 @@
 # BAMF Bridge Server Dockerfile
 # Builds the Go bridge binary (tunnel gateway)
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25.7-alpine AS builder
 
 # Install git for go mod download
 RUN apk add --no-cache git

@@ -4,36 +4,39 @@ Build BAMF from source and run the local development environment.
 
 ## Prerequisites
 
-- **Go** 1.23+ (`brew install go`)
-- **Python** 3.13+ (via pyenv or system)
-- **Node.js** 20+ (`brew install node`)
-- **Docker** (Rancher Desktop recommended)
+- **Docker** (Rancher Desktop recommended — ships with Kubernetes and Traefik)
 - **gmake** (`brew install make`) — macOS system `make` is too old
-- **Rancher Desktop** for local Kubernetes
 - **Tilt** (`brew install tilt`) for hot-reload development
-- **istioctl** (`brew install istioctl`) for Istio installation
 - **mkcert** (`brew install mkcert && mkcert -install`) for local TLS
+
+Go, Python, and Node.js toolchains run inside Docker containers — no local
+installation required. The Makefile handles container orchestration transparently.
 
 ## Building from Source
 
-### Go Binaries (local platform)
+All builds run in Docker containers — no local Go, Python, or Node.js required.
+
+### Go Binaries (all platforms)
 
 ```zsh
-gmake build-local
-# Produces: bin/bamf, bin/bamf-bridge, bin/bamf-agent
+gmake build
+# Cross-compiles for: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64
+# Outputs to dist/
 ```
 
 ### Docker Images
 
 ```zsh
 gmake images
+# Builds: bamf-api, bamf-bridge, bamf-agent, bamf-web
 ```
 
-### Cross-platform Binaries (all architectures)
+### Go Binaries (local platform only, requires local Go)
 
 ```zsh
-gmake build
-# Produces binaries for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64
+gmake build-local
+# Produces: bin/bamf, bin/bamf-bridge, bin/bamf-agent
+# Only needed for rapid iteration during development
 ```
 
 ## Running Tests
@@ -75,20 +78,15 @@ hot-reload.
 # 1. Verify context (CRITICAL — never deploy to production!)
 kubectl config use-context rancher-desktop
 
-# 2. Install Gateway API CRDs
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml \
-  --server-side --force-conflicts
-
-# 3. Install Istio
-istioctl install --set profile=minimal \
-  --set values.pilot.env.PILOT_ENABLE_ALPHA_GATEWAY_API=true -y
-
-# 4. Create namespace
+# 2. Create namespace
 kubectl create namespace bamf
 
-# 5. Add /etc/hosts entry
+# 3. Add /etc/hosts entry
 sudo sh -c 'echo "127.0.0.1 bamf.local" >> /etc/hosts'
 ```
+
+Rancher Desktop ships with Traefik, which handles all routing out of the box.
+No additional ingress controller setup is needed.
 
 ### Starting the Stack
 
@@ -110,15 +108,12 @@ Tilt will:
 
 | Service | URL |
 |---------|-----|
-| Web UI | https://bamf.local:8443 |
-| API | https://bamf.local:8443/api/v1/ |
-| API docs | https://bamf.local:8443/api/docs |
+| Web UI | https://bamf.local |
+| API | https://bamf.local/api/v1/ |
+| API docs | https://bamf.local/api/docs |
 | Bridge tunnels | localhost:443 (SNI routing) |
 
 Local dev credentials: `admin` / `admin`
-
-Port 8443 is used instead of 443 to avoid conflict with Traefik (default in
-Rancher Desktop).
 
 ### Database Migrations
 

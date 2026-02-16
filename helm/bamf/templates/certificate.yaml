@@ -12,6 +12,9 @@ spec:
     name: {{ .Values.tls.certManager.issuerRef.name }}
     kind: {{ .Values.tls.certManager.issuerRef.kind }}
   dnsNames:
+    {{- if .Values.gateway.hostname }}
+    - {{ .Values.gateway.hostname }}
+    {{- end }}
     {{- if .Values.ingress.external.hostname }}
     - {{ .Values.ingress.external.hostname }}
     {{- end }}

@@ -32,7 +32,6 @@ type TunnelHandler struct {
 	// stream wraps the bridge connection with reliable framing.
 	stream     *tunnel.ReliableStream
 	bridgeConn net.Conn
-	targetConn net.Conn
 	closed     atomic.Bool
 	closeCh    chan struct{}
 	closeOnce  sync.Once
@@ -111,20 +110,14 @@ func dialBridgeAgent(
 	return conn, nil
 }
 
-// Run connects to the target resource and splices bytes between the
-// reliable bridge stream and the target. It blocks until the tunnel
-// closes, the context is cancelled, or an unrecoverable error occurs.
+// Run splices bytes between the reliable bridge stream and the target.
+// The target connection is established lazily on the first write (i.e.,
+// when the first client data arrives through the tunnel). This avoids
+// starting the target's authentication timeout before the client has
+// actually connected — critical for `bamf tcp` where the user may take
+// seconds or minutes to connect their client after the tunnel is open.
 func (t *TunnelHandler) Run(ctx context.Context) error {
-	// Connect to target resource.
 	targetAddr := net.JoinHostPort(t.resource.Hostname, fmt.Sprintf("%d", t.resource.Port))
-	t.logger.Debug("connecting to target", "addr", targetAddr)
-
-	var err error
-	t.targetConn, err = net.Dial("tcp", targetAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to target: %w", err)
-	}
-	defer t.targetConn.Close()
 
 	bridgeAddr := fmt.Sprintf("%s:%d", t.bridgeHost, t.bridgePort)
 	t.logger.Info("tunnel established",
@@ -132,6 +125,14 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 		"target", targetAddr,
 		"bridge", bridgeAddr,
 	)
+
+	// Wrap target in a lazy connector: net.Dial happens on first Write,
+	// which is when the first client data arrives through the bridge.
+	target := &lazyTargetConn{
+		addr:   targetAddr,
+		logger: t.logger,
+	}
+	defer target.Close()
 
 	// Wrap the stream in a reconnectable bridge adapter. This makes
 	// ErrConnLost transparent to the io.Copy goroutines — they block
@@ -147,13 +148,17 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 	// Bidirectional copy: target ↔ reconnectable bridge stream.
 	errCh := make(chan error, 2)
 
+	// bridge → target: reads from bridge, writes to target (triggers lazy dial).
 	go func() {
-		_, err := io.Copy(t.targetConn, rb)
+		_, err := io.Copy(target, rb)
 		errCh <- err
 	}()
 
+	// target → bridge: reads from target, writes to bridge.
 	go func() {
-		_, err := io.Copy(rb, t.targetConn)
+		// Wait for the target connection to be established before reading.
+		<-target.Ready()
+		_, err := io.Copy(rb, target)
 		errCh <- err
 	}()
 
@@ -170,6 +175,71 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+// lazyTargetConn defers net.Dial until the first Write. This prevents the
+// target service from starting its authentication timeout (e.g., PostgreSQL's
+// authentication_timeout) before the client has actually connected.
+type lazyTargetConn struct {
+	addr   string
+	logger *slog.Logger
+
+	once    sync.Once
+	conn    net.Conn
+	err     error
+	readyCh chan struct{} // closed when conn is established (or failed)
+}
+
+func (l *lazyTargetConn) Ready() <-chan struct{} {
+	if l.readyCh == nil {
+		l.readyCh = make(chan struct{})
+	}
+	return l.readyCh
+}
+
+func (l *lazyTargetConn) dial() {
+	l.once.Do(func() {
+		if l.readyCh == nil {
+			l.readyCh = make(chan struct{})
+		}
+		l.logger.Debug("connecting to target (lazy)", "addr", l.addr)
+		l.conn, l.err = net.Dial("tcp", l.addr)
+		if l.err != nil {
+			l.logger.Error("failed to connect to target", "addr", l.addr, "error", l.err)
+		}
+		close(l.readyCh)
+	})
+}
+
+func (l *lazyTargetConn) Write(p []byte) (int, error) {
+	l.dial()
+	if l.err != nil {
+		return 0, l.err
+	}
+	return l.conn.Write(p)
+}
+
+func (l *lazyTargetConn) Read(p []byte) (int, error) {
+	l.dial()
+	if l.err != nil {
+		return 0, l.err
+	}
+	return l.conn.Read(p)
+}
+
+func (l *lazyTargetConn) Close() error {
+	if l.conn != nil {
+		return l.conn.Close()
+	}
+	// Unblock anything waiting on Ready() if we never dialed.
+	l.once.Do(func() {
+		if l.readyCh == nil {
+			l.readyCh = make(chan struct{})
+		}
+		l.err = fmt.Errorf("closed before connect")
+		close(l.readyCh)
+	})
+	return nil
 }
 
 // reconnectableBridge wraps a ReliableStream so that Read/Write block on
@@ -299,9 +369,6 @@ func (t *TunnelHandler) Close() {
 		close(t.closeCh)
 		if t.stream != nil {
 			t.stream.Close()
-		}
-		if t.targetConn != nil {
-			t.targetConn.Close()
 		}
 	})
 }

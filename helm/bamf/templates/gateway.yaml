@@ -1,5 +1,5 @@
 # Gateway architecture: docs/admin/deployment.md
-{{- if .Values.gateway.enabled }}
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:

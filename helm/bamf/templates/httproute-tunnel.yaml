@@ -1,5 +1,5 @@
 # Web app proxy routing: docs/guides/web-apps.md
-{{- if and .Values.gateway.enabled .Values.gateway.tunnelDomain }}
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.tunnelDomain }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

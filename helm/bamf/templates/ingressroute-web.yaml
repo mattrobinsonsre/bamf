@@ -1,0 +1,29 @@
+# Traefik IngressRoute for standalone Web UI
+# Only deployed when web.standalone=true and gateway.provider=traefik
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.web.standalone }}
+{{- $fullName := include "bamf.fullname" . }}
+{{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-web
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - {{ $entryPoint }}
+  routes:
+    # Web UI catch-all — excludes API paths so API routes win
+    # (Traefik auto-prioritizes by rule length, but explicit exclusion is clearer)
+    - match: Host(`{{ .Values.gateway.hostname }}`) && !PathPrefix(`/api`) && !PathPrefix(`/health`) && !PathPrefix(`/ready`)
+      kind: Rule
+      services:
+        - name: {{ $fullName }}-web
+          port: 3000
+  tls:
+    secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+{{- end }}

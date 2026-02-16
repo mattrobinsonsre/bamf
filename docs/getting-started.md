@@ -5,10 +5,20 @@ registering an agent, and connecting to your first resource.
 
 ## Prerequisites
 
-- Kubernetes cluster (1.27+) with Istio installed
+- Kubernetes cluster (1.27+) with **Traefik v3** or **Istio** as the ingress
+  controller (see note below)
 - `helm` 3.12+
 - `kubectl` configured for your cluster
 - A domain name with DNS control (for `bamf.example.com` and `*.tunnel.bamf.example.com`)
+
+> **Ingress requirement:** BAMF uses SNI-based TLS passthrough to route TCP
+> tunnel traffic directly to individual bridge pods. This requires either
+> Traefik v3 IngressRouteTCP or Gateway API TLSRoute (Istio) — capabilities
+> that go beyond standard Kubernetes Ingress resources. Clusters running k3s
+> or Rancher Desktop ship with Traefik v3 and work out of the box. For Istio,
+> you also need Gateway API CRDs (experimental channel) for TLSRoute support.
+> See the [Deployment Guide](admin/deployment.md#gateway-configuration) for
+> details.
 
 ## 1. Install the Platform
 
@@ -39,11 +49,14 @@ kubectl -n bamf get pods -w
 
 ## 2. Configure DNS
 
-Point your domain to the Istio Gateway's external IP:
+Point your domain to your ingress controller's external IP:
 
 ```zsh
-# Get the external IP
-kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Get the external IP (Traefik — typically in kube-system or traefik namespace)
+kubectl get svc -A -l app.kubernetes.io/name=traefik -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+
+# Or for Istio
+# kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
 Create DNS records:

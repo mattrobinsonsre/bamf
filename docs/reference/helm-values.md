@@ -6,12 +6,20 @@ Complete reference for BAMF Helm chart values.
 
 ```yaml
 gateway:
-  enabled: true                    # Create Istio Gateway resources
-  className: istio                 # GatewayClass name
+  enabled: true                    # Create ingress routing resources
+  provider: traefik                # traefik (default) or istio
+  className: istio                 # GatewayClass name (only used when provider=istio)
   hostname: bamf.example.com       # API + Web UI hostname
   tunnelDomain: tunnel.bamf.example.com  # *.tunnel.domain for bridges + proxy
-  httpsPort: 443                   # HTTPS listener port
+  ports:
+    https: 443                     # HTTPS listener port
+  traefik:
+    entryPoint: websecure          # Traefik entrypoint name (only used when provider=traefik)
 ```
+
+When `provider: traefik`, the chart creates Traefik IngressRoute and
+IngressRouteTCP CRDs. When `provider: istio`, it creates Gateway API resources
+(Gateway, HTTPRoute, TLSRoute) for the Istio controller.
 
 ## API Server
 

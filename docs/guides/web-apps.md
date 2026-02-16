@@ -11,7 +11,7 @@ ArgoCD) and non-browser access (curl, scripts, CI/CD pipelines).
 
 ```
 Client ──▶ https://grafana.tunnel.bamf.example.com
-  └── Istio Gateway (TLS termination, wildcard cert)
+  └── Traefik / Istio Gateway (TLS termination, wildcard cert)
   └── API proxy routes (auth, RBAC, header rewriting)
   └── Bridge (HTTP relay)
   └── Agent (forward to target)
@@ -129,11 +129,11 @@ or header-based SSO support.
 
 ## Infrastructure Requirements
 
-- **Wildcard DNS**: `*.tunnel.bamf.example.com` → Istio Gateway IP
+- **Wildcard DNS**: `*.tunnel.bamf.example.com` → Ingress controller IP
 - **Wildcard TLS cert**: cert-manager with DNS-01 challenge for
-  `*.tunnel.bamf.example.com`, referenced by the Gateway listener
-- **Istio Gateway HTTPRoute**: Routes `*.tunnel.bamf.example.com` to the
-  API Service (same service as the main API)
+  `*.tunnel.bamf.example.com`, referenced by the ingress route
+- **Ingress routing**: Traefik IngressRoute or Istio HTTPRoute that routes
+  `*.tunnel.bamf.example.com` to the API Service
 
 ## Troubleshooting
 

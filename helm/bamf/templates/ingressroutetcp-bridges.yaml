@@ -1,0 +1,38 @@
+# Traefik IngressRouteTCP for per-bridge TLS passthrough (SNI routing)
+# SNI routing docs: docs/architecture/tunnels.md
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
+{{- $fullName := include "bamf.fullname" . -}}
+{{- $labels := include "bamf.labels" . -}}
+{{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelDomain := .Values.gateway.tunnelDomain -}}
+{{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+{{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" -}}
+
+# IngressRouteTCP per bridge pod — TLS passthrough with SNI matching
+# Traefik evaluates TCP routers (HostSNI) before HTTP routers on shared
+# entrypoints, so bridge SNI hostnames get passthrough while everything
+# else gets TLS termination.
+# SNI hostname format: {ordinal}.bridge.{tunnelDomain}
+
+{{- range $i := until $maxReplicas }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ $fullName }}-bridge-{{ $i }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: bridge
+    bamf.io/bridge-ordinal: "{{ $i }}"
+spec:
+  entryPoints:
+    - {{ $entryPoint }}
+  routes:
+    - match: HostSNI(`{{ $i }}.bridge.{{ $tunnelDomain }}`)
+      services:
+        - name: {{ $fullName }}-bridge-{{ $i }}
+          port: {{ $tunnelPort }}
+  tls:
+    passthrough: true
+{{- end }}
+{{- end }}

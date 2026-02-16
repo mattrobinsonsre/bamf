@@ -14,10 +14,10 @@ development velocity and ecosystem richness are priorities.
                  │                                 │
                  ▼                                 ▼
       ┌──────────────────────────────────────────────────────┐
-      │              Istio Gateway (single LB)               │
+      │        Traefik / Istio Gateway (single LB)          │
       │  ┌────────────┬─────────────┬───────────────────────┐│
       │  │  :443      │   :443      │      :443             ││
-      │  │ HTTPRoute  │  HTTPRoute  │    TLSRoute           ││
+      │  │ HTTP route │  HTTP route │    TCP/SNI route      ││
       │  │bamf.domain │*.tunnel.dom │  (SNI passthrough)    ││
       │  │ TLS term   │  TLS term   │   per-bridge pod      ││
       │  └─────┬──────┴──────┬──────┴──────────┬────────────┘│
@@ -47,7 +47,7 @@ The control plane. Owns the internal CA, issues certificates, handles
 authentication (local + SSO), enforces RBAC, serves the REST API, and runs the
 HTTP proxy for web application access.
 
-- Exposed via Istio Gateway HTTPRoute (TLS termination with Let's Encrypt)
+- Exposed via Traefik IngressRoute or Istio HTTPRoute (TLS termination with Let's Encrypt)
 - Stateless — any pod handles any request, scaled by HPA
 - Direct access to PostgreSQL and Redis
 - The only component with the CA private key
@@ -59,7 +59,7 @@ port (443) for all tunnel traffic. Never interprets the tunneled protocol — it
 validates mTLS session certs, matches connections by session ID, and splices
 bytes.
 
-- Exposed via Istio Gateway TLSRoute with SNI-based routing (TLS passthrough)
+- Exposed via Traefik IngressRouteTCP or Istio TLSRoute with SNI-based routing (TLS passthrough)
 - Each pod gets a dedicated Service for direct SNI routing
 - Registers in Redis on startup, renews via heartbeats
 - Zero runtime dependencies beyond the BAMF CA public key
@@ -133,6 +133,30 @@ active sessions, web sessions, pub/sub for agent commands.
 
 If Redis restarts, all runtime state is automatically rebuilt as components
 reconnect and re-register.
+
+## Ingress Architecture
+
+BAMF uses a single Kubernetes LoadBalancer with two distinct routing modes on
+the same port (443):
+
+- **HTTP routes** (TLS termination): API, Web UI, and web app proxy traffic.
+  The ingress controller terminates TLS using Let's Encrypt certificates and
+  routes by `Host` header.
+- **TCP/SNI routes** (TLS passthrough): Tunnel traffic to bridge pods. The
+  ingress controller reads the SNI hostname from the TLS ClientHello and
+  forwards the raw TCP connection without terminating TLS. The bridge pod
+  performs its own TLS handshake using BAMF CA certificates.
+
+This dual-mode routing requires **SNI-based TLS passthrough**, which is an
+advanced ingress capability not available with standard Kubernetes `Ingress`
+resources. BAMF supports:
+
+- **Traefik v3** (default): `IngressRoute` for HTTP, `IngressRouteTCP` with
+  `HostSNI()` and `tls.passthrough: true` for tunnels.
+- **Istio Gateway API**: `HTTPRoute` for HTTP, `TLSRoute` (experimental) for
+  tunnels.
+
+Without one of these, tunnel traffic cannot reach bridge pods.
 
 ## Security Boundaries
 

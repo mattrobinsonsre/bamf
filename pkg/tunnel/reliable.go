@@ -443,8 +443,9 @@ func (s *ReliableStream) Close() error {
 	if conn != nil {
 		// Best-effort: send close frame so the peer returns ErrClosed (not ErrConnLost).
 		// Acquire writeMu to ensure no data/ACK write is in flight.
+		// Use a short deadline — we're shutting down and don't want to block.
 		s.writeMu.Lock()
-		_ = conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_ = conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
 		_, _ = conn.Write([]byte{frameClose})
 		_ = conn.SetWriteDeadline(time.Time{})
 		s.writeMu.Unlock()

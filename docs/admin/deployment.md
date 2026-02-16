@@ -4,12 +4,43 @@ Deploy BAMF to a production Kubernetes cluster using Helm.
 
 ## Prerequisites
 
-- Kubernetes 1.27+ with Istio installed
+- Kubernetes 1.27+ with **Traefik v3** or **Istio** ingress controller (see
+  [Ingress Requirements](#ingress-requirements) below)
 - `helm` 3.12+
 - cert-manager (for TLS certificates)
 - A domain with DNS control
+- Wildcard DNS for `*.tunnel.your-domain.com` (A record or CNAME)
 - External PostgreSQL (RDS, Aurora, Cloud SQL, etc.) recommended for production
 - External Redis (ElastiCache, Memorystore, etc.) recommended for production
+
+### Ingress Requirements
+
+BAMF's tunnel architecture requires **SNI-based TLS passthrough** — the
+ability to route raw TCP connections to specific backend pods based on the TLS
+Server Name Indication (SNI) hostname, without terminating TLS. This is used
+to route CLI and agent tunnel connections to individual bridge pods
+(`0.bridge.tunnel.example.com` → `bamf-bridge-0`,
+`1.bridge.tunnel.example.com` → `bamf-bridge-1`, etc.).
+
+Standard Kubernetes `Ingress` resources only support HTTP(S) routing and
+cannot express SNI-based TCP passthrough. BAMF requires one of:
+
+| Provider | CRD | K8s Feature | Notes |
+|----------|-----|-------------|-------|
+| **Traefik v3** (default) | `IngressRouteTCP` | Stable CRD since Traefik v3.0 | Ships with k3s, Rancher Desktop. Zero additional setup on these clusters. |
+| **Istio** | `TLSRoute` (Gateway API) | Experimental channel | Requires `istioctl install` + Gateway API CRDs from the experimental channel (`TLSRoute` is not yet GA in the Gateway API spec). |
+
+**BAMF cannot run with:**
+- Kubernetes `Ingress` resources alone (no TCP/SNI routing)
+- nginx-ingress-controller (no native SNI passthrough for arbitrary TCP)
+- Cloud provider HTTP load balancers (ALB, Cloud Load Balancing) without an
+  additional L4/TCP load balancer for tunnel traffic
+- Non-Kubernetes environments without equivalent custom infrastructure
+
+If your cluster already has Traefik v3 (common with k3s, Rancher, RKE2), BAMF
+works with no additional ingress setup. For clusters with Istio, set
+`gateway.provider: istio` in values — see
+[Gateway Configuration](#gateway-configuration) below.
 
 ## Helm Installation
 
@@ -332,26 +363,54 @@ See [Certificate Management](certificates.md) for details.
 
 ## DNS Setup
 
-Create these DNS records pointing to your Istio Gateway's external IP:
+Create these DNS records pointing to your ingress controller's external IP:
 
 | Record | Type | Value |
 |--------|------|-------|
-| `bamf.example.com` | A | Gateway external IP |
-| `*.tunnel.bamf.example.com` | A | Gateway external IP |
+| `bamf.example.com` | A | Ingress controller external IP |
+| `*.tunnel.bamf.example.com` | A | Ingress controller external IP |
 
 ## Gateway Configuration
+
+BAMF supports two ingress routing providers, selectable via `gateway.provider`:
+
+### Traefik (Default)
+
+Uses Traefik v3 native CRDs (IngressRoute / IngressRouteTCP). Zero additional
+setup on clusters that already have Traefik (e.g., Rancher Desktop, k3s).
 
 ```yaml
 gateway:
   enabled: true
-  className: istio
+  provider: traefik
   hostname: bamf.example.com
   tunnelDomain: tunnel.bamf.example.com
-  httpsPort: 443
+  traefik:
+    entryPoint: websecure
 ```
 
 The chart creates:
-- Istio Gateway with HTTP, tunnel-HTTPS, and TLS-passthrough listeners
+- IngressRoute for API and Web UI (`bamf.example.com`)
+- IngressRoute for web app proxy (`*.tunnel.bamf.example.com`)
+- IngressRouteTCP per bridge pod for tunnel traffic (SNI passthrough)
+
+### Alternative: Istio Gateway API
+
+Uses Gateway API resources (Gateway, HTTPRoute, TLSRoute) with the Istio
+controller. Requires Istio and Gateway API CRDs (experimental channel for
+TLSRoute support).
+
+```yaml
+gateway:
+  enabled: true
+  provider: istio
+  className: istio
+  hostname: bamf.example.com
+  tunnelDomain: tunnel.bamf.example.com
+```
+
+The chart creates:
+- Istio Gateway with HTTPS and TLS-passthrough listeners
 - HTTPRoute for API and Web UI (`bamf.example.com`)
 - HTTPRoute for web app proxy (`*.tunnel.bamf.example.com`)
 - TLSRoute per bridge pod for tunnel traffic (SNI passthrough)
@@ -389,8 +448,11 @@ After deployment:
 # Check pods
 kubectl -n bamf get pods
 
-# Check Gateway
-kubectl -n bamf get gateway
+# Check routing resources (Traefik)
+kubectl -n bamf get ingressroute,ingressroutetcp
+
+# Or check routing resources (Istio)
+kubectl -n bamf get gateway,httproute,tlsroute
 
 # Test API health
 curl https://bamf.example.com/health

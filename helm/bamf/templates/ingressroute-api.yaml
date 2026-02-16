@@ -1,0 +1,36 @@
+# Traefik IngressRoute for API + catch-all routing
+# Routing docs: docs/admin/deployment.md
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") }}
+{{- $fullName := include "bamf.fullname" . }}
+{{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-api
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - {{ $entryPoint }}
+  routes:
+    # API routes (highest specificity — Traefik auto-prioritizes by rule length)
+    - match: Host(`{{ .Values.gateway.hostname }}`) && (PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/ready`))
+      kind: Rule
+      services:
+        - name: {{ $fullName }}-api
+          port: 8000
+    {{- if not .Values.web.standalone }}
+    # When web UI is not standalone, API serves everything (catch-all)
+    - match: Host(`{{ .Values.gateway.hostname }}`)
+      kind: Rule
+      services:
+        - name: {{ $fullName }}-api
+          port: 8000
+    {{- end }}
+  tls:
+    secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+{{- end }}
