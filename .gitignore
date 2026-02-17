@@ -10,8 +10,9 @@
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Test binary, built with `go test -c` (but not Dockerfile.test)
 *.test
+!Dockerfile.test
 
 # Output of go coverage
 *.out
