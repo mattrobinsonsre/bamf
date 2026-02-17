@@ -26,9 +26,7 @@ services:
       retries: 10
 
   test:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.test
+    image: ${TEST_IMAGE:-bamf-test:local}
     environment:
       BAMF_DATABASE_URL: "postgresql+asyncpg://bamf:bamf-test@postgres:5432/bamf_test"
       BAMF_REDIS_URL: "redis://redis:6379"
@@ -42,8 +40,6 @@ services:
         condition: service_healthy
 
   lint:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.test
+    image: ${TEST_IMAGE:-bamf-test:local}
     command: >
       sh -c "ruff check . && ruff format --check ."

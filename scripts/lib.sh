@@ -60,6 +60,14 @@ docker_go() {
     "$@"
 }
 
+# Build the Python test image if needed.
+# Works around Docker Compose bake mode losing the dockerfile path.
+TEST_IMAGE="${TEST_IMAGE:-bamf-test:local}"
+ensure_test_image() {
+  info "Building Python test image ($TEST_IMAGE)..."
+  docker build -f "$REPO_ROOT/docker/Dockerfile.test" -t "$TEST_IMAGE" "$REPO_ROOT"
+}
+
 # Run a command inside a Node.js container.
 # Usage: docker_node <command> [args...]
 docker_node() {

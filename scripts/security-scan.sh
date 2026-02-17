@@ -14,7 +14,8 @@ scan_go() {
 
 scan_python() {
   info "Running pip-audit (Python vulnerability scanner)..."
-  COMPOSE_BAKE=false docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm --build \
+  ensure_test_image
+  docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm \
     --entrypoint sh test -c "pip install --quiet pip-audit && pip-audit"
   success "pip-audit passed — no known vulnerabilities"
 }
