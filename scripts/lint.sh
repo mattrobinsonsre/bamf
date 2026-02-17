@@ -14,7 +14,7 @@ lint_go() {
 
 lint_python() {
   info "Linting Python..."
-  docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm --build lint
+  COMPOSE_BAKE=false docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm --build lint
   success "Python lint passed"
 }
 

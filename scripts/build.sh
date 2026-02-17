@@ -37,7 +37,7 @@ build_binaries() {
       local out="dist/${bin}-${os}-${arch}"
       [[ "$os" == "windows" ]] && out="${out}.exe"
       echo "  Building ${out}..."
-      GOOS=$os GOARCH=$arch go build -ldflags="$LDFLAGS" -o "$out" "./cmd/$cmd"
+      GOOS=$os GOARCH=$arch go build -buildvcs=false -ldflags="$LDFLAGS" -o "$out" "./cmd/$cmd"
     }
 
     # CLI + Agent: all 6 platforms

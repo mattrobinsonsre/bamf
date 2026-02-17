@@ -14,7 +14,7 @@ test_go() {
 
 test_python() {
   info "Testing Python..."
-  docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm --build test
+  COMPOSE_BAKE=false docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm --build test
   success "Python tests passed"
 }
 
