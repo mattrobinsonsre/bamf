@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import httpx
@@ -38,8 +40,11 @@ from starlette.responses import Response as StarletteResponse
 from bamf.auth.ca import get_ca
 from bamf.auth.sessions import Session, get_session
 from bamf.config import settings
+from bamf.db.models import SessionRecording, generate_uuid7
+from bamf.db.session import async_session_factory
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis_client
+from bamf.services.audit_service import log_audit_event
 from bamf.services.resource_catalog import get_resource_by_tunnel_hostname
 
 from .rewrite import rewrite_request_headers, rewrite_response_headers
@@ -55,6 +60,22 @@ BRIDGE_INTERNAL_PORT = 8080
 # Session cookie name — set on the parent domain so it covers both
 # bamf.example.com and *.tunnel.bamf.example.com
 SESSION_COOKIE_NAME = "bamf_session"
+
+# HTTP audit recording constants
+HTTP_RECORDING_BODY_MAX = 256 * 1024  # 256KB cap per body
+_BINARY_CONTENT_TYPES = frozenset(
+    {
+        "image/",
+        "audio/",
+        "video/",
+        "font/",
+        "application/octet-stream",
+        "application/zip",
+        "application/gzip",
+        "application/pdf",
+        "application/wasm",
+    }
+)
 
 
 async def proxy_middleware(request: Request, call_next):
@@ -163,7 +184,8 @@ async def handle_proxy_request(request: Request) -> Response:
     # Read request body
     body = await request.body()
 
-    # Forward to bridge relay endpoint
+    # Forward to bridge relay endpoint (timed for http-audit)
+    t0 = time.monotonic()
     resp = await _forward_to_bridge(
         method=request.method,
         url=bridge_url,
@@ -213,6 +235,35 @@ async def handle_proxy_request(request: Request) -> Response:
         target_port=target_port,
         target_protocol=target_protocol,
     )
+
+    elapsed_ms = round((time.monotonic() - t0) * 1000)
+
+    # Audit: log the proxied HTTP request
+    client_ip = request.client.host if request.client else None
+    asyncio.create_task(
+        _log_proxy_audit(
+            user_email=session.email,
+            resource_name=resource.name,
+            method=request.method,
+            path=request.url.path,
+            status_code=resp.status_code,
+            client_ip=client_ip,
+        )
+    )
+
+    # Full HTTP recording for http-audit resources
+    if resource.resource_type == "http-audit":
+        asyncio.create_task(
+            _store_http_recording(
+                user_email=session.email,
+                resource_name=resource.name,
+                request=request,
+                request_body=body,
+                raw_request_headers=raw_headers,
+                response=resp,
+                duration_ms=elapsed_ms,
+            )
+        )
 
     return Response(
         content=resp.content,
@@ -359,3 +410,137 @@ async def _send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
         bridge_host=bridge_host,
         bridge_port=bridge_port,
     )
+
+
+async def _log_proxy_audit(
+    *,
+    user_email: str,
+    resource_name: str,
+    method: str,
+    path: str,
+    status_code: int,
+    client_ip: str | None,
+) -> None:
+    """Log an audit event for a proxied HTTP request.
+
+    Runs as a background task so it doesn't slow down the response.
+    """
+    try:
+        async with async_session_factory() as db:
+            await log_audit_event(
+                db,
+                event_type="access",
+                action="access_granted",
+                actor_type="user",
+                actor_id=user_email,
+                target_type="resource",
+                target_id=resource_name,
+                actor_ip=client_ip,
+                details={
+                    "protocol": "http",
+                    "method": method,
+                    "path": path,
+                    "status_code": status_code,
+                },
+                success=status_code < 500,
+            )
+            await db.commit()
+    except Exception:
+        logger.warning(
+            "Failed to log proxy audit event",
+            user_email=user_email,
+            resource_name=resource_name,
+            exc_info=True,
+        )
+
+
+def _is_binary_content_type(content_type: str) -> bool:
+    """Return True if the content type indicates binary data."""
+    ct = content_type.lower().split(";")[0].strip()
+    return any(ct.startswith(prefix) for prefix in _BINARY_CONTENT_TYPES)
+
+
+def _capture_body(body: bytes, content_type: str) -> dict:
+    """Capture body for HTTP recording, respecting size cap and binary detection."""
+    if _is_binary_content_type(content_type):
+        return {"body": None, "body_size": len(body), "body_truncated": False}
+
+    if len(body) > HTTP_RECORDING_BODY_MAX:
+        return {
+            "body": body[:HTTP_RECORDING_BODY_MAX].decode("utf-8", errors="replace"),
+            "body_truncated": True,
+        }
+
+    return {
+        "body": body.decode("utf-8", errors="replace") if body else "",
+        "body_truncated": False,
+    }
+
+
+async def _store_http_recording(
+    *,
+    user_email: str,
+    resource_name: str,
+    request: Request,
+    request_body: bytes,
+    raw_request_headers: dict[str, str],
+    response: httpx.Response,
+    duration_ms: int,
+) -> None:
+    """Store a full HTTP exchange recording for http-audit resources.
+
+    Runs as a background task so it doesn't slow down the response.
+    """
+    try:
+        req_ct = raw_request_headers.get("content-type", "")
+        resp_ct = response.headers.get("content-type", "")
+
+        # Filter out proxy-internal and hop-by-hop headers from recorded headers
+        skip_headers = {"host", "connection", "transfer-encoding", "keep-alive"}
+        req_headers = {
+            k: v for k, v in raw_request_headers.items() if k.lower() not in skip_headers
+        }
+        resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip_headers}
+
+        exchange = {
+            "version": 1,
+            "request": {
+                "method": request.method,
+                "path": request.url.path,
+                "query": request.url.query or "",
+                "headers": req_headers,
+                **_capture_body(request_body, req_ct),
+            },
+            "response": {
+                "status": response.status_code,
+                "headers": resp_headers,
+                **_capture_body(response.content, resp_ct),
+            },
+            "timing": {
+                "duration_ms": duration_ms,
+            },
+        }
+
+        now = datetime.now(UTC)
+        recording_id = generate_uuid7()
+        recording = SessionRecording(
+            id=recording_id,
+            session_id=recording_id,  # HTTP recordings are per-request; session_id = id
+            user_email=user_email,
+            resource_name=resource_name,
+            recording_data=json.dumps(exchange),
+            recording_type="http",
+            started_at=now,
+            ended_at=now,
+        )
+
+        async with async_session_factory() as db:
+            db.add(recording)
+            await db.commit()
+    except Exception:
+        logger.warning(
+            "Failed to store HTTP recording",
+            user_email=user_email,
+            resource_name=resource_name,
+            exc_info=True,
+        )

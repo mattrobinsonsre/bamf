@@ -84,8 +84,8 @@ CRUD API for resources — they are managed through agent configuration.
 **Response:**
 ```json
 {
-  "bridge_hostname": "bridge-0.tunnel.bamf.example.com",
-  "bridge_port": 443,
+  "bridge_hostname": "0.bridge.tunnel.bamf.example.com",
+  "bridge_port": 8443,
   "session_cert": "...",
   "session_key": "...",
   "ca_certificate": "...",
@@ -141,7 +141,7 @@ CRUD API for resources — they are managed through agent configuration.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/audit` | Yes | Query audit events |
+| GET | `/audit` | Admin/Audit | Query audit events |
 
 **Query Parameters:**
 - `limit` — Page size (default 50)
@@ -150,6 +150,28 @@ CRUD API for resources — they are managed through agent configuration.
 - `action` — Filter by action (login, access, create, etc.)
 - `actor_id` — Filter by actor email
 - `since` / `until` — Time range (ISO 8601)
+
+## Session Recordings
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/audit/recordings` | Admin/Audit | List session recordings |
+| GET | `/audit/recordings/{id}` | Admin/Audit | Get recording by ID (includes full data) |
+| GET | `/audit/sessions/{session_id}/recording` | Admin/Audit | Get recording by session ID |
+
+**List Query Parameters:**
+- `limit` — Page size (default 50)
+- `cursor` — Pagination cursor
+- `user_email` — Filter by user
+- `resource_name` — Filter by resource
+- `recording_type` — Filter by type: `terminal`, `queries`, `http`
+- `session_id` — Filter by session UUID
+- `since` / `until` — Time range (ISO 8601)
+
+**Recording Types:**
+- `terminal` — SSH session recordings in asciicast v2 format (from `ssh-audit`)
+- `queries` — Database query logs in queries-v1 format (from `postgres-audit`, `mysql-audit`)
+- `http` — HTTP request/response exchanges in http-exchange-v1 format (from `http-audit`)
 
 ## Kubernetes Proxy
 
@@ -173,6 +195,7 @@ Used by bridges and agents, not end users.
 | POST | `/internal/tunnels/establish` | Cert | Get agent connection info |
 | POST | `/internal/tunnels/established` | Cert | Notify tunnel established |
 | POST | `/internal/tunnels/closed` | Cert | Notify tunnel closed |
+| POST | `/internal/sessions/{id}/recording` | Cert | Upload session recording |
 
 ## Pagination
 

@@ -22,6 +22,9 @@ import (
 // bridge reconnections. The target side is a plain TCP connection. When a
 // bridge dies, ReconnectBridge() swaps the underlying bridge connection
 // while keeping the target connection (and application session) alive.
+//
+// For ssh-audit resources, the reliable stream is skipped because the bridge
+// terminates SSH directly and the framing would corrupt the SSH handshake.
 type TunnelHandler struct {
 	sessionID  string
 	bridgeHost string
@@ -30,8 +33,10 @@ type TunnelHandler struct {
 	logger     *slog.Logger
 
 	// stream wraps the bridge connection with reliable framing.
+	// nil for ssh-audit resources (raw connection mode).
 	stream     *tunnel.ReliableStream
 	bridgeConn net.Conn
+	rawMode    bool // true for ssh-audit (no reliable stream)
 	closed     atomic.Bool
 	closeCh    chan struct{}
 	closeOnce  sync.Once
@@ -48,29 +53,35 @@ func NewTunnelHandler(
 	caCertPEM []byte,
 	logger *slog.Logger,
 ) (*TunnelHandler, error) {
-	// Dial bridge and send session ID.
-	bridgeConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, sessionID)
+	// Dial bridge and send session ID + resource type.
+	bridgeConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, sessionID, resource.ResourceType)
 	if err != nil {
 		return nil, err
 	}
 
-	// Wrap in reliable stream for reconnection support.
-	stream := tunnel.NewStream(bridgeConn, tunnel.DefaultBufSize)
-
-	return &TunnelHandler{
+	t := &TunnelHandler{
 		sessionID:  sessionID,
 		bridgeHost: bridgeHost,
 		bridgePort: bridgePort,
 		resource:   resource,
 		logger:     logger,
-		stream:     stream,
 		bridgeConn: bridgeConn,
 		closeCh:    make(chan struct{}),
-	}, nil
+	}
+
+	// For ssh-audit, skip reliable stream — the bridge terminates SSH
+	// directly and the framing would corrupt the SSH handshake.
+	if resource.ResourceType == "ssh-audit" {
+		t.rawMode = true
+	} else {
+		t.stream = tunnel.NewStream(bridgeConn, tunnel.DefaultBufSize)
+	}
+
+	return t, nil
 }
 
 // dialBridgeAgent establishes an mTLS connection to the bridge, sends the
-// session ID, and returns the raw connection.
+// session ID and resource type, and returns the raw connection.
 func dialBridgeAgent(
 	bridgeHost string,
 	bridgePort int,
@@ -78,6 +89,7 @@ func dialBridgeAgent(
 	sessionKeyPEM []byte,
 	caCertPEM []byte,
 	sessionID string,
+	resourceType string,
 ) (net.Conn, error) {
 	cert, err := tls.X509KeyPair(sessionCertPEM, sessionKeyPEM)
 	if err != nil {
@@ -102,9 +114,15 @@ func dialBridgeAgent(
 		return nil, fmt.Errorf("failed to connect to bridge: %w", err)
 	}
 
-	if _, err := conn.Write([]byte(sessionID + "\n")); err != nil {
+	// Send session ID (line 1) and resource type (line 2).
+	// The bridge reads both lines to determine routing (byte-splice vs SSH proxy).
+	header := sessionID + "\n"
+	if resourceType != "" {
+		header += "type=" + resourceType + "\n"
+	}
+	if _, err := conn.Write([]byte(header)); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("failed to send session ID: %w", err)
+		return nil, fmt.Errorf("failed to send session header: %w", err)
 	}
 
 	return conn, nil
@@ -124,6 +142,7 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 		"resource", t.resource.Name,
 		"target", targetAddr,
 		"bridge", bridgeAddr,
+		"raw_mode", t.rawMode,
 	)
 
 	// Wrap target in a lazy connector: net.Dial happens on first Write,
@@ -134,23 +153,27 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 	}
 	defer target.Close()
 
-	// Wrap the stream in a reconnectable bridge adapter. This makes
-	// ErrConnLost transparent to the io.Copy goroutines — they block
-	// until ReconnectBridge() swaps the underlying connection, then
-	// resume. No splice restart needed, no goroutine leak possible.
-	rb := &reconnectableBridge{
-		stream:  t.stream,
-		closeCh: t.closeCh,
-		closed:  &t.closed,
-		logger:  t.logger,
+	// Choose the bridge-side reader/writer. For ssh-audit (rawMode), use
+	// the raw bridge connection directly — no reliable stream framing.
+	// For normal tunnels, wrap in a reconnectable bridge adapter.
+	var bridge io.ReadWriter
+	if t.rawMode {
+		bridge = t.bridgeConn
+	} else {
+		bridge = &reconnectableBridge{
+			stream:  t.stream,
+			closeCh: t.closeCh,
+			closed:  &t.closed,
+			logger:  t.logger,
+		}
 	}
 
-	// Bidirectional copy: target ↔ reconnectable bridge stream.
+	// Bidirectional copy: target ↔ bridge.
 	errCh := make(chan error, 2)
 
 	// bridge → target: reads from bridge, writes to target (triggers lazy dial).
 	go func() {
-		_, err := io.Copy(target, rb)
+		_, err := io.Copy(target, bridge)
 		errCh <- err
 	}()
 
@@ -158,7 +181,7 @@ func (t *TunnelHandler) Run(ctx context.Context) error {
 	go func() {
 		// Wait for the target connection to be established before reading.
 		<-target.Ready()
-		_, err := io.Copy(rb, target)
+		_, err := io.Copy(bridge, target)
 		errCh <- err
 	}()
 
@@ -336,11 +359,19 @@ func (t *TunnelHandler) ReconnectBridge(
 		return fmt.Errorf("tunnel is closed")
 	}
 
+	// Raw mode (ssh-audit) cannot survive bridge reconnection — the SSH
+	// state lives in the bridge process. Just close the tunnel.
+	if t.rawMode {
+		t.logger.Warn("bridge reconnection not supported for ssh-audit tunnels, closing")
+		t.Close()
+		return fmt.Errorf("bridge reconnection not supported for raw mode tunnels")
+	}
+
 	t.logger.Info("reconnecting bridge",
 		"new_bridge", fmt.Sprintf("%s:%d", bridgeHost, bridgePort),
 	)
 
-	newConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, t.sessionID)
+	newConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, t.sessionID, t.resource.ResourceType)
 	if err != nil {
 		return fmt.Errorf("failed to dial new bridge: %w", err)
 	}
@@ -369,6 +400,9 @@ func (t *TunnelHandler) Close() {
 		close(t.closeCh)
 		if t.stream != nil {
 			t.stream.Close()
+		}
+		if t.rawMode && t.bridgeConn != nil {
+			t.bridgeConn.Close()
 		}
 	})
 }

@@ -241,5 +241,5 @@ Bridge SNI hostname for a given ordinal
 Usage: {{ include "bamf.bridge.sniHostname" (dict "root" . "ordinal" 0) }}
 */}}
 {{- define "bamf.bridge.sniHostname" -}}
-bridge-{{ .ordinal }}.{{ .root.Values.gateway.tunnelDomain }}
+{{ .ordinal }}.bridge.{{ .root.Values.gateway.tunnelDomain }}
 {{- end }}

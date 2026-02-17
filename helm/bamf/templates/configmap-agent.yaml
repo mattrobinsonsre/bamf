@@ -31,14 +31,12 @@ data:
     labels: {}
     {{- end }}
 
-    # Resources this agent provides access to
+    # Resources this agent provides access to (list format)
     {{- if .Values.agent.config.resources }}
     resources:
       {{- range .Values.agent.config.resources }}
-      {{ .type }}:
-        {{- if .name }}
-        name: {{ .name | quote }}
-        {{- end }}
+      - name: {{ required "resource name is required" .name | quote }}
+        type: {{ required "resource type is required" .type | quote }}
         {{- if .hostname }}
         hostname: {{ .hostname | quote }}
         {{- end }}
@@ -54,6 +52,6 @@ data:
         {{- end }}
       {{- end }}
     {{- else }}
-    resources: {}
+    resources: []
     {{- end }}
 {{- end }}

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Search } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
 import { clearAuth, getAuthState } from '@/lib/auth'
@@ -13,6 +12,7 @@ interface Resource {
   labels: Record<string, string>
   status: string
   agent_name?: string
+  connect_url?: string
 }
 
 export default function Home() {
@@ -22,7 +22,6 @@ export default function Home() {
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-
   useEffect(() => {
     const state = getAuthState()
     if (!state) {
@@ -62,13 +61,14 @@ export default function Home() {
     r.name.toLowerCase().includes(filter.toLowerCase())
   )
 
-  const resourceTypes = ['ssh', 'kubernetes', 'database', 'web']
+  const resourceTypes = ['ssh', 'http', 'postgres', 'mysql', 'kubernetes']
 
   const typeColors: Record<string, string> = {
     ssh: 'bg-green-900/30 text-green-400',
     kubernetes: 'bg-blue-900/30 text-blue-400',
-    database: 'bg-purple-900/30 text-purple-400',
-    web: 'bg-orange-900/30 text-orange-400',
+    postgres: 'bg-purple-900/30 text-purple-400',
+    mysql: 'bg-purple-900/30 text-purple-400',
+    http: 'bg-orange-900/30 text-orange-400',
   }
 
   return (
@@ -140,11 +140,11 @@ export default function Home() {
                 <div className="flex items-center gap-2 mb-3">
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      resource.status === 'online' ? 'bg-green-500' : 'bg-slate-500'
+                      resource.status === 'available' ? 'bg-green-500' : 'bg-slate-500'
                     }`}
                   ></span>
                   <span className={`text-sm ${
-                    resource.status === 'online' ? 'text-green-400' : 'text-slate-500'
+                    resource.status === 'available' ? 'text-green-400' : 'text-slate-500'
                   }`}>
                     {resource.status}
                   </span>
@@ -163,12 +163,16 @@ export default function Home() {
                   </div>
                 )}
 
-                <Link
-                  href={`/connect/${resource.name}`}
-                  className="block text-center py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
-                >
-                  Connect
-                </Link>
+                {resource.connect_url && (
+                  <a
+                    href={resource.connect_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-center py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
+                  >
+                    Open
+                  </a>
+                )}
               </div>
             ))}
             {filteredResources.length === 0 && !error && (

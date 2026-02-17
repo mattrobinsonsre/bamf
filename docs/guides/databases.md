@@ -109,6 +109,78 @@ through a different bridge. Your psql or mysql session experiences a brief stall
 For details on the reliable stream protocol, see
 [Tunnel Architecture](../architecture/tunnels.md).
 
+## Query Audit (`postgres-audit`, `mysql-audit`)
+
+Database query audit is opt-in via the `-audit` resource types. When a resource
+is configured as `postgres-audit` or `mysql-audit`, the bridge passively taps the
+byte stream flowing through the tunnel and extracts SQL queries from the database
+wire protocol. Queries are logged as structured audit events.
+
+Unlike SSH session recording (which requires the bridge to terminate SSH), database
+audit uses **passive tapping** — the bridge remains a transparent byte relay. This
+means:
+
+- The reliable stream still works (sessions survive bridge failure)
+- The client authenticates directly with the database (no credential capture)
+- `bamf psql` / `bamf mysql` work identically to non-audit tunnels
+- The user experience is unchanged
+
+### Configuration
+
+```yaml
+resources:
+  # Regular database tunnel — no query logging
+  - name: dev-db
+    type: postgres
+    hostname: dev-db.internal
+    port: 5432
+
+  # Audited database tunnel — queries logged
+  - name: prod-db
+    type: postgres-audit
+    hostname: prod-db.internal
+    port: 5432
+
+  # MySQL equivalent
+  - name: prod-mysql
+    type: mysql-audit
+    hostname: prod-mysql.internal
+    port: 3306
+```
+
+### What Gets Logged
+
+Each SQL query is logged as a structured audit event:
+
+- **Query text** (including prepared statement templates)
+- **Parameter values** (when using prepared statements)
+- **Timestamp, user, resource, database user**
+- **Duration and row count** (from server responses)
+
+Logged queries appear in the audit log alongside other BAMF events (SSH sessions,
+login events, etc.).
+
+### Limitations
+
+- **Client-initiated TLS is blocked** on `-audit` types. The BAMF tunnel is
+  already mTLS-encrypted, so client-to-database TLS is redundant. If your
+  database client insists on TLS (e.g., `sslmode=require` in psql), either
+  switch to `sslmode=prefer` (which falls back gracefully) or use the non-audit
+  resource type.
+- **Binary protocol parameters** (PostgreSQL extended query with binary format
+  codes) appear as hex in the audit log rather than decoded values.
+- **Bulk operations** (PostgreSQL `COPY`, large batch inserts) may generate high
+  audit log volume.
+
+### Comparison of Audit Types
+
+| Feature | `postgres` / `mysql` | `postgres-audit` / `mysql-audit` | `ssh` | `ssh-audit` | `http` | `http-audit` |
+|---------|---------------------|----------------------------------|-------|-------------|--------|--------------|
+| Recording | No | Yes (structured queries) | No | Yes (terminal) | No | Yes (HTTP exchanges) |
+| Survives bridge failure | Yes | Yes | Yes | No | N/A | N/A |
+| Client TLS to target | Yes | No (blocked) | N/A | N/A | N/A | N/A |
+| User experience change | None | None | None | None | None | None |
+
 ## Troubleshooting
 
 **"Connection refused on local port"** — The tunnel process may have exited.

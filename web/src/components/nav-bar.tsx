@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X } from 'lucide-react'
+import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X, Film } from 'lucide-react'
 import { clearAuth, isAdmin, isAdminOrAudit } from '@/lib/auth'
 
 function NavLink({
@@ -16,7 +16,10 @@ function NavLink({
   onClick?: () => void
 }) {
   const pathname = usePathname()
-  const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+  // Exact match or prefix match, but /audit should not match /audit/recordings
+  const active = href === '/'
+    ? pathname === '/'
+    : pathname === href || (pathname.startsWith(href + '/') && href !== '/audit')
 
   return (
     <Link
@@ -74,6 +77,10 @@ export default function NavBar() {
           <NavLink href="/audit" onClick={closeMenu}>
             <Shield size={16} />
             Audit
+          </NavLink>
+          <NavLink href="/audit/recordings" onClick={closeMenu}>
+            <Film size={16} />
+            Recordings
           </NavLink>
         </>
       )}

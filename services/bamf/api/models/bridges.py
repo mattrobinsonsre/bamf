@@ -77,9 +77,29 @@ class TunnelEstablishedNotification(BAMFBaseModel):
 class TunnelClosedNotification(BAMFBaseModel):
     """Notification that a tunnel has closed."""
 
+    session_token: str = ""
     tunnel_id: str
     bytes_sent: int = Field(default=0, ge=0)
     bytes_received: int = Field(default=0, ge=0)
+
+
+class SessionRecordingUpload(BAMFBaseModel):
+    """Session recording upload from bridge.
+
+    Sent by the bridge after an audited session completes. Supports:
+    - asciicast-v2: Terminal recordings from ssh-audit sessions
+    - queries-v1: Database query logs from postgres-audit/mysql-audit sessions
+    """
+
+    format: str = Field(
+        default="asciicast-v2", pattern="^(asciicast-v2|queries-v1|http-exchange-v1)$"
+    )
+    data: str = Field(..., min_length=1, description="Recording data")
+    recording_type: str | None = Field(
+        default=None,
+        pattern="^(terminal|queries|http)$",
+        description="Recording type (inferred from format if not set)",
+    )
 
 
 class BridgeBootstrapRequest(BAMFBaseModel):
@@ -104,3 +124,6 @@ class BridgeBootstrapResponse(BAMFBaseModel):
     private_key: str = Field(..., description="PEM-encoded private key")
     ca_certificate: str = Field(..., description="PEM-encoded CA certificate")
     expires_at: datetime = Field(..., description="Certificate expiration time")
+    ssh_host_key: str | None = Field(
+        None, description="PEM-encoded Ed25519 SSH host key for ssh-audit proxy"
+    )

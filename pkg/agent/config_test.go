@@ -71,7 +71,7 @@ func TestLoadConfig_YAMLFile(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "agent.yaml")
 
-	yaml := `
+	yamlContent := `
 platform_url: https://bamf.myorg.com
 join_token: test-token-123
 agent_name: test-agent
@@ -80,18 +80,19 @@ labels:
   env: prod
   team: platform
 resources:
-  ssh:
+  - name: web-prod-01
+    type: ssh
     hostname: web-prod-01.internal
     labels:
       env: prod
-  postgres:
-    name: orders-db
+  - name: orders-db
+    type: postgres
     host: localhost
     port: 5432
     labels:
       env: prod
 `
-	require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+	require.NoError(t, os.WriteFile(configFile, []byte(yamlContent), 0644))
 	setEnv(t, "BAMF_CONFIG_FILE", configFile)
 
 	cfg, err := LoadConfig()
@@ -106,7 +107,7 @@ resources:
 	require.Equal(t, "prod", cfg.Labels["env"])
 	require.Equal(t, "platform", cfg.Labels["team"])
 
-	// Resources (map iteration order is non-deterministic, so check by name)
+	// Resources
 	require.Len(t, cfg.Resources, 2)
 
 	resourcesByName := make(map[string]ResourceConfig)
@@ -114,7 +115,7 @@ resources:
 		resourcesByName[r.Name] = r
 	}
 
-	ssh := resourcesByName["web-prod-01.internal"]
+	ssh := resourcesByName["web-prod-01"]
 	require.Equal(t, "ssh", ssh.ResourceType)
 	require.Equal(t, "web-prod-01.internal", ssh.Hostname)
 	require.Equal(t, 22, ssh.Port) // default SSH port
@@ -124,6 +125,110 @@ resources:
 	require.Equal(t, "postgres", pg.ResourceType)
 	require.Equal(t, "localhost", pg.Hostname)
 	require.Equal(t, 5432, pg.Port)
+}
+
+func TestLoadConfig_YAMLFile_LegacyMapFormat(t *testing.T) {
+	clearEnvs(t,
+		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",
+		"BAMF_JOIN_TOKEN", "BAMF_AGENT_NAME", "BAMF_DATA_DIR",
+		"BAMF_LABELS", "BAMF_RESOURCES",
+	)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "agent.yaml")
+
+	// Legacy map format — still supported for backward compatibility
+	yamlContent := `
+platform_url: https://bamf.myorg.com
+agent_name: legacy-agent
+resources:
+  ssh:
+    hostname: web-prod-01.internal
+  postgres:
+    name: orders-db
+    host: localhost
+    port: 5432
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(yamlContent), 0644))
+	setEnv(t, "BAMF_CONFIG_FILE", configFile)
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	require.Len(t, cfg.Resources, 2)
+
+	resourcesByName := make(map[string]ResourceConfig)
+	for _, r := range cfg.Resources {
+		resourcesByName[r.Name] = r
+	}
+
+	ssh := resourcesByName["web-prod-01.internal"]
+	require.Equal(t, "ssh", ssh.ResourceType)
+	require.Equal(t, 22, ssh.Port)
+
+	pg := resourcesByName["orders-db"]
+	require.Equal(t, "postgres", pg.ResourceType)
+	require.Equal(t, 5432, pg.Port)
+}
+
+func TestLoadConfig_MultipleResourcesSameType(t *testing.T) {
+	clearEnvs(t,
+		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",
+		"BAMF_JOIN_TOKEN", "BAMF_AGENT_NAME", "BAMF_DATA_DIR",
+		"BAMF_LABELS", "BAMF_RESOURCES",
+	)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "agent.yaml")
+
+	yamlContent := `
+agent_name: multi-http-agent
+resources:
+  - name: grafana
+    type: http
+    hostname: grafana.internal
+    port: 3000
+    tunnel_hostname: grafana
+  - name: jenkins
+    type: http
+    hostname: jenkins.internal
+    port: 8080
+    tunnel_hostname: jenkins
+  - name: prod-ssh
+    type: ssh
+    hostname: prod-01.internal
+  - name: prod-ssh-audit
+    type: ssh-audit
+    hostname: prod-01.internal
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(yamlContent), 0644))
+	setEnv(t, "BAMF_CONFIG_FILE", configFile)
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	require.Len(t, cfg.Resources, 4)
+
+	resourcesByName := make(map[string]ResourceConfig)
+	for _, r := range cfg.Resources {
+		resourcesByName[r.Name] = r
+	}
+
+	grafana := resourcesByName["grafana"]
+	require.Equal(t, "http", grafana.ResourceType)
+	require.Equal(t, 3000, grafana.Port)
+	require.Equal(t, "grafana", grafana.TunnelHostname)
+
+	jenkins := resourcesByName["jenkins"]
+	require.Equal(t, "http", jenkins.ResourceType)
+	require.Equal(t, 8080, jenkins.Port)
+	require.Equal(t, "jenkins", jenkins.TunnelHostname)
+
+	sshRes := resourcesByName["prod-ssh"]
+	require.Equal(t, "ssh", sshRes.ResourceType)
+	require.Equal(t, 22, sshRes.Port)
+
+	sshAudit := resourcesByName["prod-ssh-audit"]
+	require.Equal(t, "ssh-audit", sshAudit.ResourceType)
+	require.Equal(t, 22, sshAudit.Port) // ssh-audit defaults to port 22
 }
 
 func TestLoadConfig_EnvOverridesYAML(t *testing.T) {

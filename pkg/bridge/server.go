@@ -12,9 +12,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mattrobinsonsre/bamf/pkg/bridge/dbaudit"
+	"github.com/mattrobinsonsre/bamf/pkg/bridge/sshproxy"
+	"golang.org/x/crypto/ssh"
 )
 
 // Server is the main bridge server
@@ -40,6 +45,7 @@ type Server struct {
 	tunnels      *TunnelManager
 	relays       *RelayPool
 	apiClient    *APIClient
+	sshProxy     *sshproxy.Proxy
 
 	// Pending connections waiting for match (keyed by session ID)
 	pendingConns   map[string]*pendingConnection
@@ -52,12 +58,13 @@ type Server struct {
 
 // pendingConnection holds a connection waiting for its match
 type pendingConnection struct {
-	conn       net.Conn
-	sessionID  string
-	isClient   bool // true = CLI client, false = agent
-	resource   string
-	receivedAt time.Time
-	matchCh    chan net.Conn // receives the matched connection
+	conn         net.Conn
+	sessionID    string
+	isClient     bool   // true = CLI client, false = agent
+	resource     string
+	resourceType string // e.g., "ssh", "ssh-audit", "tunnel"
+	receivedAt   time.Time
+	matchCh      chan net.Conn // receives the matched connection
 }
 
 // NewServer creates a new bridge server
@@ -87,6 +94,28 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 
 	// Initialize relay pool
 	s.relays = NewRelayPool(logger)
+
+	// Initialize SSH proxy for ssh-audit sessions. Use the shared SSH host
+	// key from the database (distributed via bootstrap), which is stable
+	// across pod restarts and identical on all bridge pods.
+	sshKeyPath := filepath.Join(cfg.DataDir, "ssh_host_key")
+	sshKeyPEM, err := os.ReadFile(sshKeyPath)
+	if err != nil {
+		// SSH host key not available — ssh-audit won't work, but don't
+		// block bridge startup (older API may not have the key yet).
+		logger.Warn("SSH host key not found, ssh-audit sessions will fail", "path", sshKeyPath, "error", err)
+		proxy, proxyErr := sshproxy.NewProxy(logger.With("component", "sshproxy"))
+		if proxyErr != nil {
+			return nil, fmt.Errorf("failed to create SSH proxy: %w", proxyErr)
+		}
+		s.sshProxy = proxy
+	} else {
+		proxy, proxyErr := sshproxy.NewProxyFromTLSKey(sshKeyPEM, logger.With("component", "sshproxy"))
+		if proxyErr != nil {
+			return nil, fmt.Errorf("failed to create SSH proxy from host key: %w", proxyErr)
+		}
+		s.sshProxy = proxy
+	}
 
 	// Initialize pending connections map
 	s.pendingConns = make(map[string]*pendingConnection)
@@ -145,6 +174,14 @@ func (s *Server) bootstrapIfNeeded() error {
 	caPath := s.cfg.CACertFile
 	if err := os.WriteFile(caPath, []byte(resp.CACertificate), 0644); err != nil {
 		return fmt.Errorf("failed to write CA certificate: %w", err)
+	}
+
+	// Write SSH host key (shared across all bridges, stable across restarts)
+	if resp.SSHHostKey != "" {
+		sshKeyPath := filepath.Join(s.cfg.DataDir, "ssh_host_key")
+		if err := os.WriteFile(sshKeyPath, []byte(resp.SSHHostKey), 0600); err != nil {
+			return fmt.Errorf("failed to write SSH host key: %w", err)
+		}
 	}
 
 	s.logger.Info("bootstrap complete",
@@ -483,6 +520,24 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		return // Connection stays open — managed by relay pool
 	}
 
+	// Read optional second line: resource type metadata (e.g., "type=ssh-audit").
+	// This is used by the bridge to decide routing (byte-splice vs SSH proxy).
+	// The line is optional for backward compatibility — missing means "tunnel" (byte-splice).
+	resourceType := "tunnel"
+	// Peek to check if there's a second line starting with "type="
+	if peeked, err := reader.Peek(5); err == nil && string(peeked) == "type=" {
+		typeLine, err := reader.ReadString('\n')
+		if err != nil {
+			s.logger.Error("failed to read type line", "protocol", protocol, "error", err)
+			conn.Close()
+			return
+		}
+		typeLine = strings.TrimSpace(typeLine)
+		if v, ok := strings.CutPrefix(typeLine, "type="); ok {
+			resourceType = v
+		}
+	}
+
 	// Standard tunnel connection: extract session info from certificate SAN URIs.
 	info, err := extractSessionInfo(peerCert)
 	if err != nil {
@@ -530,6 +585,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		"protocol", protocol,
 		"session_id", sessionID[:16]+"...",
 		"resource", resource,
+		"resource_type", resourceType,
 		"role", info.Role,
 		"is_client", isClient,
 		"cn", peerCert.Subject.CommonName,
@@ -543,8 +599,9 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		delete(s.pendingConns, sessionID)
 		s.pendingConnsMu.Unlock()
 
-		// Signal the waiting goroutine
-		pending.matchCh <- conn
+		// Signal the waiting goroutine. Wrap conn with the bufio reader
+		// so any bytes buffered during header parsing aren't lost.
+		pending.matchCh <- &bufferedConn{r: reader, Conn: conn}
 
 		s.logger.Info("session matched",
 			"protocol", protocol,
@@ -558,12 +615,13 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	// No match yet, store as pending and wait
 	matchCh := make(chan net.Conn, 1)
 	pc := &pendingConnection{
-		conn:       conn,
-		sessionID:  sessionID,
-		isClient:   isClient,
-		resource:   resource,
-		receivedAt: time.Now(),
-		matchCh:    matchCh,
+		conn:         conn,
+		sessionID:    sessionID,
+		isClient:     isClient,
+		resource:     resource,
+		resourceType: resourceType,
+		receivedAt:   time.Now(),
+		matchCh:      matchCh,
 	}
 
 	s.pendingConnsMu.Lock()
@@ -593,16 +651,35 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		conn.Close()
 		return
 	case otherConn := <-matchCh:
-		// We got a match! Create tunnel and run it
+		// We got a match! Wrap our own conn to preserve any buffered data.
+		myConn := &bufferedConn{r: reader, Conn: conn}
 		var clientConn, agentConn net.Conn
 		if isClient {
-			clientConn = conn
+			clientConn = myConn
 			agentConn = otherConn
 		} else {
 			clientConn = otherConn
-			agentConn = conn
+			agentConn = myConn
 		}
 
+		// Notify API that tunnel is established (async — don't block)
+		go func() {
+			if err := s.apiClient.NotifyTunnelEstablished(ctx, sessionID, sessionID); err != nil {
+				s.logger.Warn("failed to notify tunnel established", "session_id", sessionID[:16]+"...", "error", err)
+			}
+		}()
+
+		if resourceType == "ssh-audit" {
+			s.handleSSHAuditSession(ctx, clientConn, agentConn, sessionID, resource)
+			return
+		}
+
+		if resourceType == "postgres-audit" || resourceType == "mysql-audit" {
+			s.handleDBAuditSession(ctx, clientConn, agentConn, sessionID, resource, resourceType)
+			return
+		}
+
+		// Standard byte-splice tunnel (protocol-agnostic).
 		tunnel := NewTunnel(
 			sessionID,
 			sessionID, // session token same as ID
@@ -624,7 +701,317 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		if err := tunnel.Run(ctx); err != nil {
 			s.logger.Debug("tunnel closed", "protocol", protocol, "session_id", sessionID[:16]+"...", "error", err)
 		}
+
+		// Notify API that tunnel is closed (use background context — tunnel ctx may be done)
+		go func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
+				s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
+			}
+		}()
 	}
+}
+
+// bufferedConn wraps a net.Conn with a bufio.Reader so any data buffered
+// during header line parsing isn't lost when the connection is handed off
+// to the tunnel or SSH proxy. The bufio.Reader may have read ahead beyond
+// the header lines into the first protocol bytes (e.g., SSH version exchange).
+type bufferedConn struct {
+	r *bufio.Reader
+	net.Conn
+}
+
+func (bc *bufferedConn) Read(p []byte) (int, error) {
+	return bc.r.Read(p)
+}
+
+// handleSSHAuditSession runs an SSH-terminating proxy for session recording.
+// Instead of byte-splicing, the bridge terminates the client's SSH connection,
+// records terminal I/O in asciicast v2 format, then opens a new SSH connection
+// to the target through the agent tunnel.
+//
+// Before the SSH protocol starts, the bridge and CLI exchange public keys and
+// sign challenges over a text-line protocol ("pre-flight"). This enables
+// key-based auth to the target using the CLI's local SSH agent, without the
+// bridge ever seeing the user's private key.
+func (s *Server) handleSSHAuditSession(ctx context.Context, clientConn, agentConn net.Conn, sessionID, resource string) {
+	logger := s.logger.With(
+		"session_id", sessionID[:min(16, len(sessionID))]+"...",
+		"resource", resource,
+		"resource_type", "ssh-audit",
+	)
+	logger.Info("starting SSH audit session")
+
+	// Get the buffered reader from the client connection. The connection
+	// is a *bufferedConn from header parsing — we need the reader for the
+	// pre-flight signing protocol.
+	var clientReader *bufio.Reader
+	if bc, ok := clientConn.(*bufferedConn); ok {
+		clientReader = bc.r
+	} else {
+		clientReader = bufio.NewReader(clientConn)
+	}
+
+	// Pre-flight signing protocol: read public keys from CLI, set up
+	// remote signers for target authentication.
+	signCh := sshproxy.NewSignChannel(clientReader, clientConn, logger)
+	if err := signCh.ReadPublicKeys(); err != nil {
+		logger.Error("failed to read public keys from CLI", "error", err)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	var result *sshproxy.SessionResult
+	var err error
+
+	if signCh.HasKeys() {
+		// Key-based auth path: pre-authenticate to target using remote
+		// signing, then handle client SSH with HandlePreAuth.
+		result, err = s.handleSSHAuditWithKeys(ctx, clientConn, agentConn, sessionID, signCh, clientReader, logger)
+	} else {
+		// Password auth path: no keys available, fall through to the
+		// original Handle() which captures and replays passwords.
+		if err := signCh.SendReady(); err != nil {
+			logger.Error("failed to send ready", "error", err)
+			clientConn.Close()
+			agentConn.Close()
+			return
+		}
+		// Wrap connection to preserve buffered data from pre-flight reads.
+		wrappedClient := &bufferedConn{r: clientReader, Conn: clientConn}
+		result, err = s.sshProxy.Handle(ctx, wrappedClient, agentConn, sessionID)
+	}
+
+	if err != nil {
+		logger.Error("SSH audit session failed", "error", err)
+		return
+	}
+
+	logger.Info("SSH audit session complete", "recording_bytes", len(result.Recording))
+
+	// Upload recording to API (best-effort — don't fail the session for this).
+	if len(result.Recording) > 0 {
+		go func() {
+			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.apiClient.UploadSessionRecording(uploadCtx, sessionID, result.Recording); err != nil {
+				logger.Error("failed to upload session recording", "error", err)
+			} else {
+				logger.Info("session recording uploaded")
+			}
+		}()
+	}
+
+	// Notify API that session is closed.
+	go func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
+			logger.Warn("failed to notify tunnel closed", "error", err)
+		}
+	}()
+}
+
+// handleSSHAuditWithKeys handles ssh-audit sessions with key-based auth.
+// It pre-authenticates the bridge→target SSH connection using the CLI's SSH
+// agent via the remote signing protocol, then handles the client SSH
+// connection with HandlePreAuth.
+func (s *Server) handleSSHAuditWithKeys(
+	ctx context.Context,
+	clientConn, agentConn net.Conn,
+	sessionID string,
+	signCh *sshproxy.SignChannel,
+	clientReader *bufio.Reader,
+	logger *slog.Logger,
+) (*sshproxy.SessionResult, error) {
+	// Build auth methods from remote signers. The SSH library tries each
+	// signer against the target; when the target challenges, the signer
+	// sends a sign request to the CLI over the pre-flight channel.
+	signers := signCh.Signers()
+	authMethods := []ssh.AuthMethod{
+		ssh.PublicKeys(signers...),
+	}
+
+	// The SSH username must come from the CLI since the client SSH handshake
+	// hasn't happened yet. Read it from the pre-flight metadata.
+	// For now, use the username from the first line after pubkeys-done.
+	userLine, err := clientReader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("failed to read username: %w", err)
+	}
+	username := strings.TrimSpace(userLine)
+	if u, ok := strings.CutPrefix(username, "user="); ok {
+		username = u
+	}
+
+	logger.Info("pre-flight: authenticating to target",
+		"user", username,
+		"pubkeys", len(signers),
+	)
+
+	clientConfig := &ssh.ClientConfig{
+		User:            username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Agent tunnel is mTLS-authenticated
+		Auth:            authMethods,
+	}
+
+	targetSSH, targetChans, targetReqs, err := ssh.NewClientConn(agentConn, "target", clientConfig)
+	if err != nil {
+		// Key auth failed. We can't fall back to password auth because the
+		// failed SSH handshake consumed the agent tunnel connection. The CLI
+		// sends zero keys when no agent is available, routing to the password
+		// path automatically.
+		return nil, fmt.Errorf("target SSH key auth failed: %w", err)
+	}
+
+	logger.Info("pre-flight: target SSH handshake complete (key auth)")
+
+	// Tell CLI that pre-flight is complete — SSH data can start flowing.
+	if err := signCh.SendReady(); err != nil {
+		targetSSH.Close()
+		return nil, fmt.Errorf("failed to send ready: %w", err)
+	}
+
+	// Wrap the client connection to preserve any buffered data.
+	wrappedClient := &bufferedConn{r: clientReader, Conn: clientConn}
+
+	return s.sshProxy.HandlePreAuth(ctx, wrappedClient, targetSSH, targetChans, targetReqs, sessionID)
+}
+
+// handleDBAuditSession runs a database query audit session.
+// Unlike ssh-audit (which terminates the SSH protocol), this preserves the
+// standard byte-splice tunnel and passively taps the client→server byte
+// stream to extract SQL queries from the PostgreSQL or MySQL wire protocol.
+//
+// For postgres-audit: intercepts SSLRequest and denies TLS upgrade (the tunnel
+// is already mTLS-encrypted). For mysql-audit: clears CLIENT_SSL flag.
+func (s *Server) handleDBAuditSession(ctx context.Context, clientConn, agentConn net.Conn, sessionID, resource, resourceType string) {
+	logger := s.logger.With(
+		"session_id", sessionID[:min(16, len(sessionID))]+"...",
+		"resource", resource,
+		"resource_type", resourceType,
+	)
+	logger.Info("starting database audit session")
+
+	// Get the buffered reader from the client connection.
+	var clientReader *bufio.Reader
+	if bc, ok := clientConn.(*bufferedConn); ok {
+		clientReader = bc.r
+	} else {
+		clientReader = bufio.NewReader(clientConn)
+	}
+
+	// For PostgreSQL, intercept SSLRequest before normal protocol begins.
+	if resourceType == "postgres-audit" {
+		if err := s.interceptPostgresSSL(clientReader, clientConn, logger); err != nil {
+			logger.Error("failed to intercept PostgreSQL SSLRequest", "error", err)
+			clientConn.Close()
+			agentConn.Close()
+			return
+		}
+	}
+
+	// Create protocol parser based on resource type.
+	var parser dbaudit.Parser
+	switch resourceType {
+	case "postgres-audit":
+		parser = dbaudit.NewPostgresParser()
+	case "mysql-audit":
+		parser = dbaudit.NewMySQLParser()
+	default:
+		logger.Error("unknown audit resource type", "type", resourceType)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	// Set up event pipeline: TeeReader → channel → Collector
+	eventCh := make(chan dbaudit.QueryEvent, 1024)
+	collector := dbaudit.NewCollector()
+	go dbaudit.RunCollector(collector, eventCh)
+
+	// Wrap the client connection with a TeeReader for passive tapping.
+	wrappedClient := &bufferedConn{r: clientReader, Conn: clientConn}
+	teeReader := dbaudit.NewTeeReader(wrappedClient, parser, eventCh)
+
+	// Run the standard tunnel with the tee'd reader.
+	tunnel := NewTunnel(
+		sessionID,
+		sessionID,
+		"",
+		resourceType,
+		clientConn,
+		agentConn,
+	)
+	tunnel.ClientReader = teeReader
+
+	s.tunnels.Add(tunnel)
+	defer s.tunnels.Remove(sessionID)
+
+	logger.Info("database audit tunnel established", "protocol", parser.Protocol())
+
+	if err := tunnel.Run(ctx); err != nil {
+		logger.Debug("database audit tunnel closed", "error", err)
+	}
+
+	// Close event channel and wait for collector to drain.
+	close(eventCh)
+
+	queryCount := collector.Count()
+	logger.Info("database audit session complete", "queries_captured", queryCount)
+
+	// Upload query recording to API (best-effort).
+	if queryCount > 0 {
+		recording := collector.Recording()
+		go func() {
+			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.apiClient.UploadQueryRecording(uploadCtx, sessionID, recording); err != nil {
+				logger.Error("failed to upload query recording", "error", err)
+			} else {
+				logger.Info("query recording uploaded", "queries", queryCount)
+			}
+		}()
+	}
+
+	// Notify API that tunnel is closed.
+	go func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
+			s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
+		}
+	}()
+}
+
+// interceptPostgresSSL peeks at the first bytes from the client to check for
+// an SSLRequest message. If found, responds with 'N' (SSL not supported) so
+// the client falls back to unencrypted protocol within the already-encrypted
+// tunnel. This allows the parser to see plaintext wire protocol bytes.
+func (s *Server) interceptPostgresSSL(reader *bufio.Reader, conn net.Conn, logger *slog.Logger) error {
+	// Peek at first 8 bytes without consuming them.
+	peeked, err := reader.Peek(8)
+	if err != nil {
+		return fmt.Errorf("peek failed: %w", err)
+	}
+
+	if dbaudit.IsSSLRequest(peeked) {
+		// Consume the SSLRequest message (8 bytes).
+		buf := make([]byte, 8)
+		if _, err := reader.Read(buf); err != nil {
+			return fmt.Errorf("read SSLRequest: %w", err)
+		}
+
+		// Respond with 'N' — SSL not supported.
+		if _, err := conn.Write([]byte{'N'}); err != nil {
+			return fmt.Errorf("write SSL deny: %w", err)
+		}
+		logger.Info("intercepted PostgreSQL SSLRequest, denied TLS upgrade")
+	}
+
+	return nil
 }
 
 // cleanupPending removes a pending connection from the map

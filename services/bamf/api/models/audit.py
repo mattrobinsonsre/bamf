@@ -9,6 +9,32 @@ from pydantic import Field
 from .common import BAMFBaseModel
 
 
+class SessionRecordingResponse(BAMFBaseModel):
+    """Session recording retrieval response (full data)."""
+
+    id: UUID
+    session_id: UUID
+    user_email: str
+    resource_name: str
+    recording_type: str = "terminal"
+    format: str = "asciicast-v2"
+    recording_data: str
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
+class RecordingListEntry(BAMFBaseModel):
+    """Session recording summary (no recording_data)."""
+
+    id: UUID
+    session_id: UUID
+    user_email: str
+    resource_name: str
+    recording_type: str = "terminal"
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
 class AuditLogEntry(BAMFBaseModel):
     """Audit log entry response."""
 

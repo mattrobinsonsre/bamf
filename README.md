@@ -60,7 +60,9 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
 - **Audit logging** of all authentication, authorization, and session events.
   Exportable via REST API for SIEM integration.
 
-- **Session recording** in asciicast v2 format with web-based playback.
+- **Session recording** — SSH terminal recording in asciicast v2 format (opt-in
+  `ssh-audit` type). Database query audit logging for PostgreSQL and MySQL
+  (planned, via passive wire protocol tapping).
 
 - **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH
   certificates. No long-lived secrets. Session certs encode the authorization

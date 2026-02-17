@@ -36,6 +36,7 @@ type BootstrapResponse struct {
 	PrivateKey    string `json:"private_key"`
 	CACertificate string `json:"ca_certificate"`
 	ExpiresAt     string `json:"expires_at"`
+	SSHHostKey    string `json:"ssh_host_key"` // PEM Ed25519 for ssh-audit proxy
 }
 
 // Bootstrap requests a certificate for this bridge.
@@ -143,14 +144,38 @@ func (c *APIClient) NotifyTunnelEstablished(ctx context.Context, sessionToken, t
 
 // NotifyTunnelClosed notifies the API that a tunnel has been closed.
 // Calls: POST /api/v1/internal/tunnels/closed
-func (c *APIClient) NotifyTunnelClosed(ctx context.Context, tunnelID string, bytesSent, bytesRecv int64) error {
+func (c *APIClient) NotifyTunnelClosed(ctx context.Context, sessionToken, tunnelID string, bytesSent, bytesRecv int64) error {
 	body := map[string]any{
+		"session_token":  sessionToken,
 		"tunnel_id":      tunnelID,
 		"bytes_sent":     bytesSent,
 		"bytes_received": bytesRecv,
 	}
 
 	return c.Client.Post(ctx, "/api/v1/internal/tunnels/closed", body, nil)
+}
+
+// UploadSessionRecording uploads an SSH session recording to the API.
+// Calls: POST /api/v1/internal/sessions/{session_id}/recording
+func (c *APIClient) UploadSessionRecording(ctx context.Context, sessionID string, recording []byte) error {
+	body := map[string]any{
+		"format": "asciicast-v2",
+		"data":   string(recording),
+	}
+
+	return c.Client.Post(ctx, "/api/v1/internal/sessions/"+sessionID+"/recording", body, nil)
+}
+
+// UploadQueryRecording uploads a database query recording to the API.
+// Calls: POST /api/v1/internal/sessions/{session_id}/recording
+func (c *APIClient) UploadQueryRecording(ctx context.Context, sessionID, data string) error {
+	body := map[string]any{
+		"format":         "queries-v1",
+		"data":           data,
+		"recording_type": "queries",
+	}
+
+	return c.Client.Post(ctx, "/api/v1/internal/sessions/"+sessionID+"/recording", body, nil)
 }
 
 // AgentConnectionInfo contains information for establishing agent connection.

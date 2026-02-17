@@ -8,12 +8,12 @@ Unlike Teleport, BAMF does not reimplement SSH — it wraps your system's native
 
 ```
 bamf ssh user@server
-  └── internally exec's ──▶ ssh -o ProxyCommand="bamf tunnel %h %p" \
+  └── internally exec's ──▶ ssh -o ProxyCommand="bamf pipe %h %p" \
                                 -o UserKnownHostsFile=~/.bamf/known_hosts \
                                 user@server
 ```
 
-`bamf tunnel` handles the BAMF-specific parts:
+`bamf pipe` handles the BAMF-specific parts:
 1. Reads your cached certificate from `~/.bamf/keys/`
 2. Connects to the assigned bridge via mTLS
 3. Becomes a stdio pipe — stdin/stdout splice to the tunnel
@@ -79,7 +79,7 @@ You can use BAMF directly in your `~/.ssh/config`:
 
 ```
 Host *.prod
-  ProxyCommand bamf tunnel %h %p
+  ProxyCommand bamf pipe %h %p
   UserKnownHostsFile ~/.bamf/known_hosts
 ```
 
@@ -97,11 +97,102 @@ the CA is added to `~/.bamf/known_hosts`:
 This eliminates per-host TOFU (Trust On First Use) prompts while maintaining
 cryptographic verification of host identity.
 
-## Session Recording
+## Session Recording (`ssh-audit`)
 
-SSH sessions are recorded in asciicast v2 format and can be played back in the
-web UI. Recording is transparent — the user experience is identical to a normal
-SSH session.
+SSH session recording is opt-in via the `ssh-audit` resource type. When an agent
+resource is configured as `type: ssh-audit` (instead of `type: ssh`), the bridge
+terminates the SSH connection and records terminal I/O in asciicast v2 format
+before re-originating the connection to the target.
+
+The user experience is identical to a normal SSH session — `bamf ssh` works the
+same way regardless of resource type.
+
+### Configuration
+
+Configure per resource in the agent config:
+
+```yaml
+resources:
+  # Regular SSH — end-to-end encrypted, reliable stream, no recording
+  - name: dev-server
+    type: ssh
+    hostname: dev.internal
+
+  # Recorded SSH — bridge terminates SSH, records session, no reliable stream
+  - name: prod-server
+    type: ssh-audit
+    hostname: prod.internal
+```
+
+Both resource types can coexist on the same agent, even pointing at the same
+target host. This lets administrators offer both options and choose per-resource
+based on whether audit trail or connection resilience matters more.
+
+### Authentication
+
+`ssh-audit` supports two authentication methods to the target server:
+
+**Key-based auth (recommended):** If the user has an SSH agent running
+(`SSH_AUTH_SOCK`), the CLI sends the agent's public keys to the bridge during a
+pre-flight phase. The bridge authenticates to the target by requesting signatures
+from the CLI's SSH agent — the private key never leaves the user's machine. This
+is transparent: the user runs `bamf ssh user@resource` and key auth happens
+automatically.
+
+**Password auth (fallback):** If no SSH agent is available (or it has no keys),
+the bridge captures the password from the user's SSH client during the SSH
+handshake and replays it to the target. This requires the user to type their
+password interactively — piped or scripted sessions without an SSH agent will
+fail.
+
+**Requirement:** For key-based auth, the user must have an SSH agent running with
+at least one key loaded, and the target server must have the corresponding public
+key in its `authorized_keys`. On macOS, the system SSH agent is typically running
+by default. On Linux, start one with `eval $(ssh-agent)` and add keys with
+`ssh-add`.
+
+### What Gets Recorded
+
+- **Terminal output (stdout/stderr)** from the target is recorded in asciicast v2
+  format (JSON-lines, compatible with [asciinema](https://asciinema.org/)).
+- **User input (stdin) is NOT recorded** — this prevents passwords, tokens, and
+  other secrets typed during the session from appearing in the recording.
+- **PTY metadata** is captured: terminal dimensions, resize events, TERM value.
+- Sessions without a PTY (e.g., `bamf ssh user@host "command"`) are also
+  recorded — the command output is captured with default 80x24 dimensions.
+
+### Limitations vs Regular `ssh`
+
+| Feature | `ssh` | `ssh-audit` |
+|---------|-------|-------------|
+| Session recording | No | Yes (asciicast v2) |
+| Survives bridge failure | Yes (reliable stream) | No (SSH state in bridge) |
+| Port forwarding (`-L`, `-R`, `-D`) | Yes | **No** (blocked to prevent audit bypass) |
+| Key-based auth | Yes (end-to-end) | Yes (via remote signing) |
+| Password auth | Yes (end-to-end) | Yes (capture/replay) |
+| SCP / SFTP | Yes | Yes (file transfers work, content not recorded) |
+| Non-interactive / scripted | Yes | Requires SSH agent (no password prompt without terminal) |
+| Agent forwarding (`-A`) | Yes | No (bridge terminates SSH) |
+
+**Port forwarding is blocked** on `ssh-audit` sessions because a forwarded port
+would allow users to tunnel an unrecorded connection through the audited session,
+bypassing the recording entirely.
+
+**Agent forwarding (`-A`) does not work** because the bridge terminates the SSH
+connection — there is no end-to-end SSH session to forward the agent through.
+The user's SSH agent is used only during the pre-flight authentication phase.
+
+### Trade-offs
+
+Choose the resource type based on your requirements:
+
+- **Use `ssh`** for developer access, interactive debugging, and any scenario
+  where connection resilience and full SSH features matter more than recording.
+  The audit log still records who connected, when, and for how long.
+
+- **Use `ssh-audit`** for production access, compliance-sensitive environments,
+  and any scenario where a full terminal recording is required. Accept that
+  sessions are tied to the bridge pod's lifetime and port forwarding is disabled.
 
 ## Troubleshooting
 

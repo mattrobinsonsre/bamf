@@ -17,6 +17,7 @@ Consumers:
         POST /api/v1/internal/tunnels/establish         — GetAgentConnection()
         POST /api/v1/internal/tunnels/established       — NotifyTunnelEstablished()
         POST /api/v1/internal/tunnels/closed            — NotifyTunnelClosed()
+        POST /api/v1/internal/sessions/{id}/recording   — UploadSessionRecording()
 
 Changes to request/response shapes must be coordinated with the Go
 bridge code. See contract comments on individual endpoints.
@@ -27,6 +28,7 @@ import time
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import BridgeIdentity, get_bridge_identity
 from bamf.api.models.bridges import (
@@ -35,6 +37,7 @@ from bamf.api.models.bridges import (
     BridgeHeartbeatRequest,
     BridgeRegisterRequest,
     BridgeStatusRequest,
+    SessionRecordingUpload,
     SessionValidateRequest,
     SessionValidateResponse,
     TunnelClosedNotification,
@@ -43,10 +46,13 @@ from bamf.api.models.bridges import (
     TunnelEstablishResponse,
 )
 from bamf.api.models.common import SuccessResponse
-from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
+from bamf.auth.ca import get_ca, get_ssh_host_key_pem, serialize_certificate, serialize_private_key
 from bamf.config import settings
+from bamf.db.models import SessionRecording
+from bamf.db.session import get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
+from bamf.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 logger = get_logger(__name__)
@@ -126,6 +132,7 @@ async def bootstrap_bridge(
         private_key=serialize_private_key(key).decode(),
         ca_certificate=ca.ca_cert_pem,
         expires_at=cert.not_valid_after_utc,
+        ssh_host_key=get_ssh_host_key_pem(),
     )
 
 
@@ -333,11 +340,13 @@ async def establish_tunnel(
 async def tunnel_established(
     request: TunnelEstablishedNotification,
     r: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
     bridge: BridgeIdentity = Depends(get_bridge_identity),
 ) -> SuccessResponse:
     """Notification that a tunnel has been established.
 
-    Updates session status and increments bridge tunnel count.
+    Updates session status, increments bridge tunnel count, and writes an
+    audit event recording who connected to what.
 
     Go contract: pkg/bridge/api_client.go:NotifyTunnelEstablished() sends
     {session_token, tunnel_id} with X-Bamf-Client-Cert header.
@@ -345,17 +354,46 @@ async def tunnel_established(
     session_key = f"session:{request.session_token}"
     session_data = await r.get(session_key)
 
+    user_email = None
+    resource_name = None
+    protocol = None
+
     if session_data:
         session = json.loads(session_data)
+        user_email = session.get("user_email")
+        resource_name = session.get("resource_name")
+        protocol = session.get("protocol")
         session["status"] = "established"
         session["tunnel_id"] = request.tunnel_id
+        session["established_at"] = time.time()
         # Extend TTL now that tunnel is active (24h max session)
         await r.setex(session_key, 86400, json.dumps(session))
+
+    # Audit: record that a connection was established
+    await log_audit_event(
+        db,
+        event_type="access",
+        action="session_started",
+        actor_type="user",
+        actor_id=user_email,
+        target_type="resource",
+        target_id=resource_name,
+        details={
+            "protocol": protocol,
+            "bridge_id": bridge.bridge_id,
+            "tunnel_id": request.tunnel_id,
+            "session_id": request.session_token,
+        },
+        success=True,
+    )
+    await db.commit()
 
     logger.info(
         "Tunnel established",
         session_token=request.session_token[:8] + "...",
         tunnel_id=request.tunnel_id,
+        user_email=user_email,
+        resource_name=resource_name,
     )
 
     return SuccessResponse(message="OK")
@@ -365,20 +403,147 @@ async def tunnel_established(
 async def tunnel_closed(
     request: TunnelClosedNotification,
     r: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
     bridge: BridgeIdentity = Depends(get_bridge_identity),
 ) -> SuccessResponse:
     """Notification that a tunnel has closed.
 
-    Cleans up session state and logs audit metrics.
+    Cleans up session state and writes an audit event with connection
+    duration and bytes transferred.
 
     Go contract: pkg/bridge/api_client.go:NotifyTunnelClosed() sends
-    {tunnel_id, bytes_sent, bytes_received} with X-Bamf-Client-Cert header.
+    {session_token, tunnel_id, bytes_sent, bytes_received} with
+    X-Bamf-Client-Cert header.
     """
+    user_email = None
+    resource_name = None
+    protocol = None
+    duration_seconds = None
+
+    # Look up session info for audit
+    if request.session_token:
+        session_key = f"session:{request.session_token}"
+        session_data = await r.get(session_key)
+        if session_data:
+            session = json.loads(session_data)
+            user_email = session.get("user_email")
+            resource_name = session.get("resource_name")
+            protocol = session.get("protocol")
+            established_at = session.get("established_at")
+            if established_at:
+                duration_seconds = round(time.time() - float(established_at), 1)
+            # Clean up session from Redis
+            await r.delete(session_key)
+
+    # Audit: record that a connection ended
+    details: dict = {
+        "protocol": protocol,
+        "bridge_id": bridge.bridge_id,
+        "tunnel_id": request.tunnel_id,
+        "session_id": request.session_token,
+        "bytes_sent": request.bytes_sent,
+        "bytes_received": request.bytes_received,
+    }
+    if duration_seconds is not None:
+        details["duration_seconds"] = duration_seconds
+
+    await log_audit_event(
+        db,
+        event_type="access",
+        action="session_ended",
+        actor_type="user",
+        actor_id=user_email,
+        target_type="resource",
+        target_id=resource_name,
+        details=details,
+        success=True,
+    )
+    await db.commit()
+
     logger.info(
         "Tunnel closed",
         tunnel_id=request.tunnel_id,
+        user_email=user_email,
+        resource_name=resource_name,
         bytes_sent=request.bytes_sent,
         bytes_received=request.bytes_received,
+        duration_seconds=duration_seconds,
     )
 
     return SuccessResponse(message="OK")
+
+
+# ── Session Recordings ──────────────────────────────────────────────────
+
+
+@router.post("/sessions/{session_id}/recording", response_model=SuccessResponse)
+async def upload_session_recording(
+    session_id: str,
+    request: SessionRecordingUpload,
+    r: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+    bridge: BridgeIdentity = Depends(get_bridge_identity),
+) -> SuccessResponse:
+    """Upload an SSH session recording from the bridge.
+
+    Called by the bridge after an ssh-audit session completes. The bridge
+    sends the asciicast v2 recording data for storage in PostgreSQL.
+
+    Go contract: pkg/bridge/api_client.go:UploadSessionRecording() sends
+    {format, data} with X-Bamf-Client-Cert header.
+    """
+    import uuid as _uuid
+
+    # Look up session info from Redis (may already be cleaned up)
+    user_email = "unknown"
+    resource_name = "unknown"
+    session_key = f"session:{session_id}"
+    session_data = await r.get(session_key)
+    if session_data:
+        session = json.loads(session_data)
+        user_email = session.get("user_email", "unknown")
+        resource_name = session.get("resource_name", "unknown")
+
+    # Infer recording_type from format if not explicitly set
+    recording_type = request.recording_type
+    if not recording_type:
+        recording_type = "terminal" if request.format == "asciicast-v2" else "queries"
+
+    # Store recording in PostgreSQL
+    recording = SessionRecording(
+        session_id=_uuid.UUID(session_id) if len(session_id) == 36 else _uuid.uuid4(),
+        user_email=user_email,
+        resource_name=resource_name,
+        recording_data=request.data,
+        recording_type=recording_type,
+    )
+    db.add(recording)
+
+    # Audit: record that a session recording was stored
+    await log_audit_event(
+        db,
+        event_type="access",
+        action="recording_stored",
+        actor_type="system",
+        actor_id=bridge.bridge_id,
+        target_type="resource",
+        target_id=resource_name,
+        details={
+            "session_id": session_id,
+            "user_email": user_email,
+            "format": request.format,
+            "size_bytes": len(request.data),
+        },
+        success=True,
+    )
+    await db.commit()
+
+    logger.info(
+        "Session recording stored",
+        session_id=session_id[:16] + "...",
+        user_email=user_email,
+        resource_name=resource_name,
+        size_bytes=len(request.data),
+    )
+
+    return SuccessResponse(message="Recording stored")

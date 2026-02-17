@@ -18,6 +18,7 @@ type Tunnel struct {
 	Protocol     string
 	ClientConn   net.Conn
 	AgentConn    net.Conn
+	ClientReader io.Reader // if set, used instead of ClientConn for client→agent copy
 	CreatedAt    time.Time
 	BytesSent    atomic.Int64
 	BytesRecv    atomic.Int64
@@ -43,9 +44,13 @@ func NewTunnel(id, sessionToken, agentID, protocol string, clientConn, agentConn
 func (t *Tunnel) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 
-	// Client -> Agent
+	// Client -> Agent (use ClientReader if set, for tee/audit tapping)
+	clientSrc := io.Reader(t.ClientConn)
+	if t.ClientReader != nil {
+		clientSrc = t.ClientReader
+	}
 	go func() {
-		n, err := io.Copy(t.AgentConn, t.ClientConn)
+		n, err := io.Copy(t.AgentConn, clientSrc)
 		t.BytesSent.Add(n)
 		errCh <- err
 	}()

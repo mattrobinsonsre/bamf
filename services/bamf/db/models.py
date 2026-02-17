@@ -263,7 +263,11 @@ class AuditLog(Base):
 
 
 class SessionRecording(Base):
-    """Session recording storage."""
+    """SSH session recording in asciicast v2 format.
+
+    Stored by the bridge after an ssh-audit session completes.
+    The recording_data field contains the full asciicast v2 JSON-lines content.
+    """
 
     __tablename__ = "session_recordings"
 
@@ -271,15 +275,12 @@ class SessionRecording(Base):
         UUID(as_uuid=True), primary_key=True, default=generate_uuid7
     )
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-
     user_email: Mapped[str] = mapped_column(String(255), nullable=False)
     resource_name: Mapped[str] = mapped_column(String(63), nullable=False)
-
-    # Recording data (asciicast v2 format)
     recording_data: Mapped[str] = mapped_column(Text, nullable=False)
-
+    recording_type: Mapped[str] = mapped_column(String(20), default="terminal", nullable=False)
     started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), default=utc_now, nullable=False, index=True
     )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -292,6 +293,9 @@ class CertificateAuthority(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ca_cert: Mapped[str] = mapped_column(Text, nullable=False)
     ca_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # Encrypted private key
+    ssh_host_key: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # PEM Ed25519 for ssh-audit
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

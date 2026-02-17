@@ -49,6 +49,8 @@ node_modules/
 .next/
 out/
 .turbo/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # === IDE / Editor ===
 .vscode/
@@ -81,6 +83,9 @@ helm/bamf/values-local.yaml
 .env
 .env.*
 !.env.example
+
+# Screenshots (development artifacts)
+*.png
 
 # Playwright MCP artifacts
 .playwright-mcp/

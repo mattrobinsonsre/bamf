@@ -50,7 +50,7 @@ type Config struct {
 // The agent sends resources on every heartbeat.
 type ResourceConfig struct {
 	Name           string            // Resource name
-	ResourceType   string            // ssh, kubernetes, postgres, mysql, http
+	ResourceType   string            // ssh, ssh-audit, kubernetes, postgres, mysql, http, http-audit
 	Hostname       string            // Target hostname
 	Port           int               // Target port
 	Labels         map[string]string // Resource labels
@@ -59,19 +59,35 @@ type ResourceConfig struct {
 
 // yamlConfig is the YAML file structure for agent configuration.
 // See CLAUDE.md "Agent Architecture" for the canonical format.
+//
+// Resources can be specified as either a list (preferred) or a map keyed
+// by resource type (legacy, deprecated). The list format supports multiple
+// resources of the same type.
 type yamlConfig struct {
-	PlatformURL     string                  `yaml:"platform_url"`
-	JoinToken       string                  `yaml:"join_token"`
-	AgentName       string                  `yaml:"agent_name"`
-	DataDir         string                  `yaml:"data_dir"`
-	ClusterInternal *bool                   `yaml:"cluster_internal"`
-	Labels          map[string]string       `yaml:"labels"`
-	Resources       map[string]yamlResource `yaml:"resources"`
+	PlatformURL     string            `yaml:"platform_url"`
+	JoinToken       string            `yaml:"join_token"`
+	AgentName       string            `yaml:"agent_name"`
+	DataDir         string            `yaml:"data_dir"`
+	ClusterInternal *bool             `yaml:"cluster_internal"`
+	Labels          map[string]string `yaml:"labels"`
+	// Resources is parsed manually in loadYAML to support both list and map formats.
+	Resources yaml.Node `yaml:"resources"`
 }
 
 // yamlResource represents a resource in YAML config.
-// The map key in the parent is the resource type (ssh, postgres, etc.).
 type yamlResource struct {
+	Name           string            `yaml:"name"`
+	Type           string            `yaml:"type"`
+	Hostname       string            `yaml:"hostname"`
+	Host           string            `yaml:"host"`
+	Port           int               `yaml:"port"`
+	Labels         map[string]string `yaml:"labels"`
+	TunnelHostname string            `yaml:"tunnel_hostname"`
+}
+
+// yamlResourceLegacy is used for the deprecated map format where the map
+// key is the resource type (e.g., resources: { ssh: {hostname: ...} }).
+type yamlResourceLegacy struct {
 	Name           string            `yaml:"name"`
 	Hostname       string            `yaml:"hostname"`
 	Host           string            `yaml:"host"`
@@ -82,12 +98,16 @@ type yamlResource struct {
 
 // Default ports by resource type.
 var defaultPorts = map[string]int{
-	"ssh":        22,
-	"postgres":   5432,
-	"mysql":      3306,
-	"kubernetes": 6443,
-	"http":       80,
-	"https":      443,
+	"ssh":            22,
+	"ssh-audit":      22,
+	"postgres":       5432,
+	"postgres-audit": 5432,
+	"mysql":          3306,
+	"mysql-audit":    3306,
+	"kubernetes":     6443,
+	"http":           80,
+	"http-audit":     80,
+	"https":          443,
 }
 
 // YAML file search paths (checked in order).
@@ -188,10 +208,37 @@ func (cfg *Config) loadYAML() error {
 		cfg.Labels[k] = v
 	}
 
-	// Convert YAML resources (map keyed by type) to ResourceConfig slice
-	for resourceType, res := range yc.Resources {
-		rc := resourceConfigFromYAML(resourceType, res)
-		cfg.Resources = append(cfg.Resources, rc)
+	// Parse resources — supports both list format (preferred) and legacy map format.
+	switch yc.Resources.Kind {
+	case yaml.SequenceNode:
+		// List format: [{name: ..., type: ..., hostname: ...}, ...]
+		var resources []yamlResource
+		if err := yc.Resources.Decode(&resources); err != nil {
+			return fmt.Errorf("failed to parse resources list: %w", err)
+		}
+		for _, res := range resources {
+			rc := resourceConfigFromYAML(res.Type, res)
+			cfg.Resources = append(cfg.Resources, rc)
+		}
+	case yaml.MappingNode:
+		// Legacy map format: {ssh: {hostname: ...}, postgres: {name: ...}}
+		// Deprecated — only supports one resource per type.
+		var resources map[string]yamlResourceLegacy
+		if err := yc.Resources.Decode(&resources); err != nil {
+			return fmt.Errorf("failed to parse resources map: %w", err)
+		}
+		for resourceType, res := range resources {
+			rc := resourceConfigFromYAML(resourceType, yamlResource{
+				Name:           res.Name,
+				Type:           resourceType,
+				Hostname:       res.Hostname,
+				Host:           res.Host,
+				Port:           res.Port,
+				Labels:         res.Labels,
+				TunnelHostname: res.TunnelHostname,
+			})
+			cfg.Resources = append(cfg.Resources, rc)
+		}
 	}
 
 	return nil
@@ -217,20 +264,10 @@ func findYAMLFile() string {
 	return ""
 }
 
-// resourceConfigFromYAML converts a yamlResource (map entry) to a ResourceConfig.
+// resourceConfigFromYAML converts a yamlResource to a ResourceConfig.
 //
-// Resource type inference from map key per CLAUDE.md:
-//
-//	resources:
-//	  ssh:
-//	    hostname: web-prod-01.internal
-//	  postgres:
-//	    name: orders-db
-//	    host: localhost
-//	    port: 5432
-//
-// Map key = resource type. SSH default port 22. Resource name = hostname for SSH,
-// name field for others.
+// resourceType is either from the list entry's "type" field or the legacy
+// map key. SSH default port 22. Resource name = hostname when not specified.
 func resourceConfigFromYAML(resourceType string, res yamlResource) ResourceConfig {
 	rc := ResourceConfig{
 		ResourceType:   resourceType,
@@ -261,7 +298,7 @@ func resourceConfigFromYAML(resourceType string, res yamlResource) ResourceConfi
 	}
 
 	// For HTTP resources, default tunnel_hostname to the resource name
-	if rc.TunnelHostname == "" && (resourceType == "http" || resourceType == "https") {
+	if rc.TunnelHostname == "" && (resourceType == "http" || resourceType == "http-audit" || resourceType == "https") {
 		rc.TunnelHostname = rc.Name
 	}
 

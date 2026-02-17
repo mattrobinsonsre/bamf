@@ -30,16 +30,17 @@ Register a web application as an HTTP resource in the agent config:
 ```yaml
 # Agent config
 resources:
-  http:
-    name: grafana
-    tunnel_hostname: grafana       # becomes grafana.tunnel.bamf.example.com
-    host: grafana.internal.corp    # internal hostname the agent connects to
+  - name: grafana
+    type: http                       # or http-audit for full request/response recording
+    tunnel_hostname: grafana         # becomes grafana.tunnel.bamf.example.com
+    host: grafana.internal.corp      # internal hostname the agent connects to
     port: 3000
-    protocol: http                 # http or https (agent → target)
     labels:
       env: prod
       team: platform
 ```
+
+Use `type: https` if the agent needs to connect to the target over TLS.
 
 The `tunnel_hostname` must be unique across all resources and follows DNS label
 rules: lowercase alphanumeric and hyphens, starting with a letter, max 63
@@ -63,17 +64,17 @@ The same proxy URLs work for non-browser HTTP clients. Authenticate with a
 bearer token instead of a session cookie:
 
 ```zsh
-# Log in and get a session token
-bamf login --api https://bamf.example.com
+# Log in first
+bamf login
 
-# Use the tunnel URL directly with your session token
-curl -H "Authorization: Bearer $(bamf token)" \
+# Use the tunnel URL with your session token from ~/.bamf/credentials.json
+TOKEN=$(python3 -c "import json; print(json.load(open('$HOME/.bamf/credentials.json'))['session_token'])")
+curl -H "Authorization: Bearer $TOKEN" \
   https://internal-api.tunnel.bamf.example.com/api/health
-
-# httpie
-http GET https://internal-api.tunnel.bamf.example.com/api/users \
-  "Authorization: Bearer $(bamf token)"
 ```
+
+For CI/CD pipelines, set the `BAMF_TOKEN` environment variable with a
+pre-issued API token, which is used automatically by all HTTP clients.
 
 This is useful for:
 - Scripts and automation that need to reach internal HTTP services
@@ -126,6 +127,41 @@ auto_sign_up = true
 
 **Other tools**: Check your application's documentation for proxy authentication
 or header-based SSO support.
+
+## HTTP Audit Recording (`http-audit`)
+
+For resources that require full request/response audit trails, use the
+`http-audit` resource type instead of `http`:
+
+```yaml
+resources:
+  - name: admin-panel
+    type: http-audit
+    tunnel_hostname: admin-panel
+    host: admin.internal.corp
+    port: 8080
+    labels:
+      env: prod
+```
+
+`http-audit` behaves identically to `http` but additionally captures every HTTP
+exchange (request + response headers and bodies) in `http-exchange-v1` format.
+Recordings are stored in the `session_recordings` table and viewable in the
+audit recordings UI.
+
+**What's captured:**
+- Request: method, path, query, headers, body (text up to 256KB; binary bodies
+  store size only)
+- Response: status, headers, body (same size/binary rules)
+- Timing: request duration in milliseconds
+
+**What's not captured:**
+- WebSocket frames (only the initial upgrade request/response)
+- Streaming responses are captured as a single body after completion
+
+Both `http` and `http-audit` resources still log basic audit events (method,
+URI, status code) in the `audit_logs` table. The `http-audit` type adds the
+full exchange recording on top.
 
 ## Infrastructure Requirements
 

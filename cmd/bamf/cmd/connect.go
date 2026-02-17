@@ -245,9 +245,15 @@ func dialBridge(ctx context.Context, session *ConnectResponse) (net.Conn, error)
 		return nil, fmt.Errorf("failed to connect to bridge (TLS): %w", err)
 	}
 
-	if _, err := tlsConn.Write([]byte(session.SessionID + "\n")); err != nil {
+	// Send session ID (line 1) and resource type (line 2).
+	// The bridge reads both lines to determine routing (byte-splice vs SSH proxy).
+	header := session.SessionID + "\n"
+	if session.ResourceType != "" {
+		header += "type=" + session.ResourceType + "\n"
+	}
+	if _, err := tlsConn.Write([]byte(header)); err != nil {
 		tlsConn.Close()
-		return nil, fmt.Errorf("failed to send session ID: %w", err)
+		return nil, fmt.Errorf("failed to send session header: %w", err)
 	}
 
 	return tlsConn, nil

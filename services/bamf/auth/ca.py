@@ -28,6 +28,9 @@ logger = get_logger(__name__)
 # Module-level CA singleton, initialized in lifespan
 _ca: "CertificateAuthority | None" = None
 
+# Module-level SSH host key singleton (PEM string), for ssh-audit proxy
+_ssh_host_key_pem: str | None = None
+
 # Default CA data directory
 CA_DATA_DIR = Path("/var/lib/bamf/ca")
 
@@ -504,10 +507,12 @@ async def init_ca(db: AsyncSession) -> CertificateAuthority:
     2. If found: load cert + key from PEM columns, set singleton
     3. If not found: generate new CA, persist to DB, set singleton
     4. Also write to filesystem as cache (for components that read from disk)
+    5. Ensure SSH host key exists in DB record (for ssh-audit bridge proxy)
     """
     from bamf.db.models import CertificateAuthority as CertificateAuthorityModel
 
     global _ca  # noqa: PLW0603
+    global _ssh_host_key_pem  # noqa: PLW0603
 
     # Try loading from database first
     result = await db.execute(
@@ -547,6 +552,22 @@ async def init_ca(db: AsyncSession) -> CertificateAuthority:
             fingerprint=get_certificate_fingerprint(ca.ca_cert)[:16],
         )
 
+    # Ensure SSH host key exists (for ssh-audit bridge proxy).
+    # Generated once per deployment, shared by all bridge pods.
+    if ca_record.ssh_host_key:
+        _ssh_host_key_pem = ca_record.ssh_host_key
+        logger.info("Loaded SSH host key from database")
+    else:
+        ssh_key = ed25519.Ed25519PrivateKey.generate()
+        _ssh_host_key_pem = ssh_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        ca_record.ssh_host_key = _ssh_host_key_pem
+        await db.commit()
+        logger.info("Generated and stored SSH host key in database")
+
     # Write to filesystem as cache
     data_dir = settings.ca_data_dir or CA_DATA_DIR
     try:
@@ -568,3 +589,8 @@ def get_ca() -> CertificateAuthority:
     if _ca is None:
         raise RuntimeError("CA not initialized — call init_ca() first")
     return _ca
+
+
+def get_ssh_host_key_pem() -> str | None:
+    """Return the SSH host key PEM string, or None if not initialized."""
+    return _ssh_host_key_pem

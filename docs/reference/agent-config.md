@@ -12,62 +12,124 @@ platform_url: https://bamf.example.com
 join_token: ${BAMF_JOIN_TOKEN}
 
 # Agent name (optional — auto-generated from hostname if omitted)
-# name: my-agent
+# agent_name: my-agent
 
 # Data directory for certificates and state
 # data_dir: /var/lib/bamf-agent
 
-# Resource definitions
+# Agent-level labels (applied to all resources)
+# labels:
+#   region: us-east-1
+
+# Resource definitions (list format — preferred)
 resources:
   # SSH resource
-  ssh:
+  - name: web-prod-01
+    type: ssh
     hostname: web-prod-01.internal   # SSH target hostname
     labels:
       env: prod
       team: platform
 
+  # SSH with session recording
+  - name: bastion-prod
+    type: ssh-audit
+    hostname: bastion.internal
+    labels:
+      env: prod
+
   # PostgreSQL database
-  postgres:
-    name: orders-db                  # Unique resource name
+  - name: orders-db
+    type: postgres
     host: localhost                   # Database host (from agent's perspective)
     port: 5432                       # Database port
     labels:
       env: prod
 
+  # PostgreSQL with query audit
+  - name: prod-db
+    type: postgres-audit
+    host: prod-db.internal
+    port: 5432
+    labels:
+      env: prod
+
   # MySQL database
-  mysql:
-    name: app-mysql
+  - name: app-mysql
+    type: mysql
     host: mysql.internal
     port: 3306
     labels:
       env: staging
 
   # HTTP web application
-  http:
-    name: grafana
+  - name: grafana
+    type: http
     tunnel_hostname: grafana         # Becomes grafana.tunnel.bamf.example.com
     host: grafana.internal.corp      # Internal target hostname
     port: 3000                       # Internal target port
-    protocol: http                   # http or https (agent → target)
+    labels:
+      env: prod
+
+  # HTTP web application with full request/response recording
+  - name: admin-panel
+    type: http-audit
+    tunnel_hostname: admin-panel
+    host: admin.internal.corp
+    port: 8080
+    labels:
+      env: prod
+
+  # HTTPS target (agent connects to target over HTTPS)
+  - name: vault-ui
+    type: https
+    tunnel_hostname: vault
+    host: vault.internal.corp
+    port: 8200
     labels:
       env: prod
 
   # Kubernetes API
-  kubernetes:
-    name: prod-cluster
+  - name: prod-cluster
+    type: kubernetes
     host: kubernetes.default.svc     # K8s API address
     port: 6443
     labels:
       env: prod
+```
 
-  # Generic TCP service
-  redis:
-    name: cache-redis
-    host: redis.internal
-    port: 6379
+### Legacy Map Format (Deprecated)
+
+The map format is still supported for backward compatibility but is deprecated.
+It keys resources by type, which limits you to one resource per type:
+
+```yaml
+# DEPRECATED — use list format above
+resources:
+  ssh:
+    hostname: web-prod-01.internal
     labels:
       env: prod
+  postgres:
+    name: orders-db
+    host: localhost
+    port: 5432
 ```
+
+## Supported Resource Types
+
+| Type | Default Port | Description |
+|------|-------------|-------------|
+| `ssh` | 22 | SSH access (byte-splice tunnel) |
+| `ssh-audit` | 22 | SSH with terminal session recording (asciicast v2) |
+| `postgres` | 5432 | PostgreSQL database access |
+| `postgres-audit` | 5432 | PostgreSQL with query audit logging |
+| `mysql` | 3306 | MySQL database access |
+| `mysql-audit` | 3306 | MySQL with query audit logging |
+| `http` | 80 | HTTP web application proxy |
+| `http-audit` | 80 | HTTP with full request/response recording |
+| `https` | 443 | HTTPS web application proxy (agent → target over TLS) |
+| `kubernetes` | 6443 | Kubernetes API proxy with impersonation |
 
 ## Resource Fields
 
@@ -75,40 +137,37 @@ resources:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes* | Unique resource name. *SSH resources use `hostname` instead. |
+| `name` | Yes | Unique resource name |
+| `type` | Yes* | Resource type (see table above). *Not needed in legacy map format. |
 | `labels` | No | Key-value pairs for RBAC matching |
 
-### SSH Resources
+### SSH Resources (`ssh`, `ssh-audit`)
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `hostname` | Yes | SSH target hostname |
 
-### TCP Resources (Database, Generic)
+### TCP Resources (`postgres`, `postgres-audit`, `mysql`, `mysql-audit`)
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Unique resource name |
 | `host` | Yes | Target hostname (from agent's network) |
-| `port` | Yes | Target port |
+| `port` | No | Target port (defaults per type — see table above) |
 
-### HTTP Resources (Web Apps)
+### HTTP Resources (`http`, `http-audit`, `https`)
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Unique resource name |
 | `tunnel_hostname` | Yes | Subdomain for `*.tunnel.domain` |
 | `host` | Yes | Internal target hostname |
-| `port` | Yes | Internal target port |
-| `protocol` | Yes | `http` or `https` |
+| `port` | No | Internal target port (defaults: 80 for http/http-audit, 443 for https) |
 
 ### Kubernetes Resources
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Unique resource name |
 | `host` | Yes | K8s API address |
-| `port` | Yes | K8s API port (usually 6443) |
+| `port` | No | K8s API port (default: 6443) |
 
 ## Labels
 

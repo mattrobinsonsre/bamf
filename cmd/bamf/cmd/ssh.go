@@ -75,7 +75,7 @@ func execSSHBinary(binary string, userArgs []string) error {
 		return fmt.Errorf("cannot determine bamf directory: %w", err)
 	}
 
-	proxyCmd := exe + " pipe %h"
+	proxyCmd := exe + " pipe %h %r"
 	knownHosts := filepath.Join(bamfPath, "known_hosts")
 
 	cmdArgs := []string{binary,

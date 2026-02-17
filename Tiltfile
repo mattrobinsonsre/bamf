@@ -331,6 +331,63 @@ k8s_resource(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SSH Server (for SSH tunnel E2E testing)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# OpenSSH server for testing bamf ssh → API → Bridge → Agent → SSH flow.
+# Uses linuxserver/openssh-server which configures sshd via env vars.
+k8s_yaml(blob('''
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bamf-test-ssh
+  namespace: bamf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bamf-test-ssh
+  template:
+    metadata:
+      labels:
+        app: bamf-test-ssh
+    spec:
+      containers:
+        - name: sshd
+          image: linuxserver/openssh-server:latest
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: PASSWORD_ACCESS
+              value: "true"
+            - name: USER_NAME
+              value: "testuser"
+            - name: USER_PASSWORD
+              value: "testpass"
+          ports:
+            - containerPort: 2222
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bamf-test-ssh
+  namespace: bamf
+spec:
+  selector:
+    app: bamf-test-ssh
+  ports:
+    - port: 22
+      targetPort: 2222
+'''))
+
+k8s_resource(
+    'bamf-test-ssh',
+    labels=['test'],
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Local Commands
 # ─────────────────────────────────────────────────────────────────────────────
 

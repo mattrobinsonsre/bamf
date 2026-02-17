@@ -96,8 +96,10 @@ common options but not all.
 |---|---|---|
 | Structured audit logs | Yes | Yes |
 | SIEM export | Yes (REST API) | Yes |
-| SSH session recording | Yes (asciicast v2) | Yes |
-| Session playback (web UI) | Yes | Yes |
+| SSH session recording | Yes (asciicast v2, opt-in `ssh-audit` type) | Yes |
+| Database query audit | Yes (passive wire protocol tapping, `postgres-audit`/`mysql-audit`) | No |
+| HTTP request/response audit | Yes (full exchange capture, `http-audit` type) | No |
+| Session playback (web UI) | Yes (asciinema player, query viewer, HTTP exchange viewer) | Yes |
 | Enhanced session recording (kernel) | No | Yes |
 | Dual authorization | No | No (Enterprise only) |
 | Session moderation | No | No (Enterprise only) |
