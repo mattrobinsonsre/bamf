@@ -24,6 +24,10 @@ class SAMLConnector(SSOConnector):
         return self._config.name
 
     @property
+    def display_name(self) -> str:
+        return self._config.display_name or self._config.name
+
+    @property
     def provider_type(self) -> str:
         return "saml"
 

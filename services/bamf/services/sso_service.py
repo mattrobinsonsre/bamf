@@ -25,8 +25,6 @@ from bamf.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-BAMF_CLAIM_PREFIX = "bamf:"
-
 
 @dataclass
 class LoginResult:
@@ -48,7 +46,7 @@ async def process_login(
 
     This function is read-only with respect to roles — it never writes to
     the role_assignments table. Role resolution merges three sources:
-    1. IDP groups (external: with bamf: prefix stripping; local: empty)
+    1. IDP groups from connector (already prefix-stripped by the connector)
     2. claims_to_roles config mapping
     3. Internal role_assignments table query by (provider_name, email)
 
@@ -89,11 +87,9 @@ async def process_login(
     roles: set[str] = set()
 
     # Source 1: IDP groups from connector
-    # For external providers, strip "bamf:" prefix from claim values
-    if identity.provider_name != "local":
-        roles.update(_strip_bamf_prefix(identity.groups))
-    else:
-        roles.update(identity.groups)
+    # Connectors handle prefix stripping per their own role_prefixes config,
+    # so groups arrive already mapped to BAMF role names.
+    roles.update(identity.groups)
 
     # Source 2: claims_to_roles config mapping
     if claims_rules:
@@ -124,22 +120,6 @@ async def process_login(
         provider_name=identity.provider_name,
         kubernetes_groups=k8s_groups,
     )
-
-
-def _strip_bamf_prefix(groups: list[str]) -> list[str]:
-    """Strip the 'bamf:' prefix from external SSO group names.
-
-    External IDPs use the 'bamf:' prefix convention so BAMF can distinguish
-    its claims from unrelated JWT claims. e.g., 'bamf:admin' → 'admin'.
-    Groups without the prefix are passed through unchanged.
-    """
-    result = []
-    for g in groups:
-        if g.startswith(BAMF_CLAIM_PREFIX):
-            result.append(g[len(BAMF_CLAIM_PREFIX) :])
-        else:
-            result.append(g)
-    return result
 
 
 async def _load_internal_assignments(

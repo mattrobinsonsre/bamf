@@ -57,11 +57,46 @@ data:
       {{- else }}
       callback_base_url: {{ printf "%s://%s" (ternary "https" "http" .Values.ingress.external.tls) .Values.ingress.external.hostname | quote }}
       {{- end }}
-      {{- if .Values.auth.sso.auth0.enabled }}
+      {{- $hasOidc := false }}
+      {{- range $name, $provider := .Values.auth.sso.oidc }}
+      {{- if $provider.enabled }}
+      {{- $hasOidc = true }}
+      {{- end }}
+      {{- end }}
+      {{- if $hasOidc }}
       sso:
+        {{- if .Values.auth.sso.defaultProvider }}
         default_provider: {{ .Values.auth.sso.defaultProvider | quote }}
+        {{- end }}
         oidc:
-          - name: auth0
-            issuer_url: {{ .Values.auth.sso.auth0.issuerUrl | quote }}
-            client_id: {{ .Values.auth.sso.auth0.clientId | quote }}
+        {{- range $name, $provider := .Values.auth.sso.oidc }}
+        {{- if $provider.enabled }}
+          - name: {{ $name | quote }}
+            {{- if $provider.displayName }}
+            display_name: {{ $provider.displayName | quote }}
+            {{- end }}
+            issuer_url: {{ $provider.issuerUrl | quote }}
+            client_id: {{ $provider.clientId | quote }}
+            {{- if $provider.audience }}
+            audience: {{ $provider.audience | quote }}
+            {{- end }}
+            {{- if $provider.scopes }}
+            scopes: {{ $provider.scopes | toJson }}
+            {{- end }}
+            {{- if $provider.groupsClaim }}
+            groups_claim: {{ $provider.groupsClaim | quote }}
+            {{- end }}
+            {{- if hasKey $provider "rolePrefixes" }}
+            role_prefixes: {{ $provider.rolePrefixes | toJson }}
+            {{- end }}
+            {{- if $provider.claimsToRoles }}
+            claims_to_roles:
+            {{- range $provider.claimsToRoles }}
+              - claim: {{ .claim | quote }}
+                value: {{ .value | quote }}
+                roles: {{ .roles | toJson }}
+            {{- end }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
       {{- end }}

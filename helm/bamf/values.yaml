@@ -343,7 +343,7 @@ redis:
     existingSecret: ""
     existingSecretKey: password
 
-# ── Auth0 / SSO ───────────────────────────────────────────────────────────────
+# ── SSO / Authentication ──────────────────────────────────────────────────────
 auth:
   # Local authentication
   local:
@@ -351,19 +351,40 @@ auth:
 
   # SSO configuration
   sso:
-    defaultProvider: auth0
-    auth0:
-      enabled: false
-      issuerUrl: ""
-      clientId: ""
-      externalSecret:
-        enabled: false
-        secretStoreRef:
-          name: ""
-          kind: ClusterSecretStore
-        remoteRef:
-          key: ""
-          property: client_secret
+    defaultProvider: ""
+
+    # OIDC providers — map keyed by provider name.
+    # Each key becomes the provider name in BAMF (e.g., "auth0", "okta").
+    # Example:
+    #   oidc:
+    #     auth0:
+    #       enabled: true
+    #       displayName: "Corporate SSO"
+    #       issuerUrl: https://myorg.us.auth0.com/
+    #       clientId: YOUR_CLIENT_ID
+    #       audience: https://bamf.example.com/api
+    #       existingSecret: bamf-auth0
+    #     okta:
+    #       enabled: true
+    #       displayName: "Okta"
+    #       issuerUrl: https://myorg.okta.com/oauth2/default  # Must use Custom AS
+    #       clientId: YOUR_CLIENT_ID
+    #       scopes: [openid, profile, email, groups]
+    #       groupsClaim: groups
+    #       existingSecret: bamf-okta
+    oidc: {}
+    #   provider-name:
+    #     enabled: false
+    #     displayName: ""          # Human-readable label for login UI
+    #     issuerUrl: ""            # OIDC issuer URL (must serve .well-known/openid-configuration)
+    #     clientId: ""
+    #     audience: ""             # API identifier for application-scoped permissions (Auth0)
+    #     scopes: []               # Override default [openid, profile, email]
+    #     groupsClaim: ""          # Claim name for groups/roles (default: "groups")
+    #     rolePrefixes: []         # Prefixes to strip from group names (default: ["bamf:", "bamf-"])
+    #     # Client secret from K8s Secret (never in ConfigMap)
+    #     existingSecret: ""       # If empty, defaults to {fullname}-{provider-name}
+    #     existingSecretKey: client_secret
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 # Creates an initial admin user and agent join token on first install.

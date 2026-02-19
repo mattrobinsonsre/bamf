@@ -56,6 +56,7 @@ class ProviderInfo(BAMFBaseModel):
 
     name: str
     type: str  # 'local', 'oidc', or 'saml'
+    display_name: str  # Human-readable label (falls back to name)
 
 
 class ProvidersResponse(BAMFBaseModel):

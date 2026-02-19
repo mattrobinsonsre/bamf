@@ -3,6 +3,8 @@
 Manages initialized SSO connectors, keyed by provider name.
 """
 
+import os
+
 from bamf.auth.sso import SSOConnector
 from bamf.config import settings
 from bamf.logging_config import get_logger
@@ -11,6 +13,11 @@ logger = get_logger(__name__)
 
 # Registry of initialized connectors
 _connectors: dict[str, SSOConnector] = {}
+
+# Environment variable overrides for OIDC client secrets.
+# Keyed by provider name (uppercase), e.g. BAMF_AUTH0_CLIENT_SECRET.
+_SECRET_ENV_PREFIX = "BAMF_"
+_SECRET_ENV_SUFFIX = "_CLIENT_SECRET"
 
 
 def init_connectors() -> None:
@@ -32,6 +39,16 @@ def init_connectors() -> None:
         logger.info("Registered local provider")
 
     for oidc_config in settings.auth.sso.oidc:
+        # Inject client_secret from env var if not set in config.
+        # Convention: BAMF_{NAME}_CLIENT_SECRET (e.g. BAMF_AUTH0_CLIENT_SECRET)
+        env_key = f"{_SECRET_ENV_PREFIX}{oidc_config.name.upper()}{_SECRET_ENV_SUFFIX}"
+        env_secret = os.environ.get(env_key, "")
+        if env_secret and not oidc_config.client_secret:
+            oidc_config.client_secret = env_secret
+            logger.debug(
+                "Loaded client_secret from env", provider=oidc_config.name, env_var=env_key
+            )
+
         connector = OIDCConnector(oidc_config)
         _connectors[connector.name] = connector
         logger.info("Registered OIDC provider", provider=connector.name)
@@ -50,8 +67,11 @@ def get_connector(name: str) -> SSOConnector | None:
 
 
 def list_connectors() -> list[dict[str, str]]:
-    """List all configured providers (name + type)."""
-    return [{"name": c.name, "type": c.provider_type} for c in _connectors.values()]
+    """List all configured providers (name, type, display_name)."""
+    return [
+        {"name": c.name, "type": c.provider_type, "display_name": c.display_name}
+        for c in _connectors.values()
+    ]
 
 
 def get_default_connector() -> SSOConnector | None:

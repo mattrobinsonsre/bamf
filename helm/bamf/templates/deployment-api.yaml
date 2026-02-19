@@ -65,6 +65,15 @@ spec:
                   name: {{ .Values.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
                   key: {{ .Values.bridge.bootstrap.tokenKey | default "token" }}
             {{- end }}
+            {{- range $name, $provider := .Values.auth.sso.oidc }}
+            {{- if $provider.enabled }}
+            - name: BAMF_{{ $name | upper }}_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $provider.existingSecret | default (printf "%s-%s" (include "bamf.fullname" $) $name) }}
+                  key: {{ $provider.existingSecretKey | default "client_secret" }}
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/bamf

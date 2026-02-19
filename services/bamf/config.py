@@ -36,12 +36,30 @@ class OIDCProviderConfig(BaseModel):
     """Configuration for a single OIDC identity provider."""
 
     name: str = Field(description="Unique provider name (e.g., 'auth0', 'okta')")
+    display_name: str = Field(
+        default="", description="Human-readable label for login UI (falls back to name)"
+    )
     issuer_url: str = Field(description="OIDC issuer URL for discovery")
     client_id: str = Field(description="OAuth2 client ID")
     client_secret: str = Field(default="", description="OAuth2 client secret (from env)")
     scopes: list[str] = Field(
         default=["openid", "profile", "email"],
         description="OAuth2 scopes to request",
+    )
+    audience: str = Field(
+        default="",
+        description="API audience (resource server identifier). When set, included in authorize "
+        "request and permissions are extracted from the access token.",
+    )
+    groups_claim: str = Field(
+        default="groups",
+        description="Claim name containing user groups (e.g., 'https://bamf.example.com/groups')",
+    )
+    role_prefixes: list[str] = Field(
+        default=["bamf:", "bamf-"],
+        description="Prefixes to strip from group names to derive BAMF role names. "
+        "e.g., with prefix 'bamf-', group 'bamf-admin' becomes role 'admin'. "
+        "Groups without a matching prefix are passed through unchanged.",
     )
     claims_to_roles: list[ClaimsToRolesMapping] = Field(
         default_factory=list,
@@ -53,9 +71,16 @@ class SAMLProviderConfig(BaseModel):
     """Configuration for a single SAML identity provider."""
 
     name: str = Field(description="Unique provider name (e.g., 'azure-ad')")
+    display_name: str = Field(
+        default="", description="Human-readable label for login UI (falls back to name)"
+    )
     metadata_url: str = Field(description="IDP metadata URL")
     entity_id: str = Field(default="", description="SP entity ID")
     acs_url: str = Field(default="", description="Assertion consumer service URL")
+    role_prefixes: list[str] = Field(
+        default=["bamf:", "bamf-"],
+        description="Prefixes to strip from group names to derive BAMF role names.",
+    )
     claims_to_roles: list[ClaimsToRolesMapping] = Field(
         default_factory=list,
         description="Rules mapping SAML attributes to BAMF roles",

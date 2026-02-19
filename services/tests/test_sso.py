@@ -153,4 +153,4 @@ class TestProviderEndpoint:
         _connectors["auth0"] = MockOIDCConnector("auth0")
 
         result = list_connectors()
-        assert result == [{"name": "auth0", "type": "oidc"}]
+        assert result == [{"name": "auth0", "type": "oidc", "display_name": "auth0"}]

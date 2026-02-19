@@ -40,6 +40,11 @@ class SSOConnector(ABC):
         """Unique provider name (e.g., 'auth0', 'okta')."""
 
     @property
+    def display_name(self) -> str:
+        """Human-readable label for login UI. Falls back to name."""
+        return self.name
+
+    @property
     @abstractmethod
     def provider_type(self) -> str:
         """Provider protocol type: 'oidc' or 'saml'."""
