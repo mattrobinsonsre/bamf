@@ -1,6 +1,6 @@
 # SSO Configuration
 
-BAMF supports OIDC (Auth0, Okta, Google, Azure AD, Keycloak) and SAML 2.0
+BAMF supports OIDC (Auth0, Okta, JumpCloud, Google, Azure AD, Keycloak) and SAML 2.0
 identity providers. MFA is delegated to the IdP — BAMF never implements its
 own MFA.
 
@@ -665,6 +665,160 @@ auth:
         existingSecret: bamf-keycloak
         existingSecretKey: client_secret
 ```
+
+---
+
+## JumpCloud
+
+### Authentication Setup (5 minutes)
+
+This gets users logging in via JumpCloud. Roles are assigned internally in BAMF.
+
+**1. Create a Custom OIDC Application**
+
+1. In the JumpCloud admin console, go to **SSO** (under User Authentication)
+2. Click **Add New Application**
+3. Select **Custom Application**
+4. Check **Manage Single Sign-On (SSO)** and click **Next**
+5. Select **Configure SSO with OIDC** and click **Next**
+6. Configure:
+   - **Display Label**: `BAMF`
+   - **Redirect URIs**: `https://bamf.example.com/api/v1/auth/callback`
+   - **Client Authentication Type**: **Client Secret Basic**
+   - **Login URL**: `https://bamf.example.com`
+7. Under **Attribute Mapping**, enable **Standard Scopes**: Email, Profile
+8. Click **Activate**
+9. JumpCloud displays the **Client ID** and **Client Secret** — save both
+
+**2. Assign user groups to the application**
+
+1. Click the BAMF application -> **User Groups** tab
+2. Select the groups whose members should have access (or "All Users")
+3. Click **Save**
+
+> **Important**: JumpCloud requires explicit group assignment. Users not in an
+> assigned group cannot log in, even if they exist in JumpCloud.
+
+**3. Configure BAMF**
+
+```yaml
+auth:
+  sso:
+    defaultProvider: jumpcloud
+    oidc:
+      jumpcloud:
+        enabled: true
+        displayName: "JumpCloud"
+        issuerUrl: https://oauth.id.jumpcloud.com/
+        clientId: YOUR_CLIENT_ID
+        existingSecret: bamf-jumpcloud
+        existingSecretKey: client_secret
+```
+
+```zsh
+kubectl -n bamf create secret generic bamf-jumpcloud \
+  --from-literal=client_secret=YOUR_CLIENT_SECRET
+```
+
+**4. Assign roles in BAMF**
+
+After users log in, assign roles via the BAMF admin API or web UI:
+
+```zsh
+curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"provider_name": "jumpcloud", "email": "alice@example.com", "role_name": "admin"}'
+```
+
+### Authorization Setup (JumpCloud manages roles)
+
+If you want JumpCloud group membership to control BAMF roles, you need to
+configure attribute mapping so JumpCloud includes groups in the OIDC token.
+
+**1. Create groups with `bamf-` prefix**
+
+1. Go to **User Groups -> Create Group**
+2. Create groups matching your BAMF roles:
+
+| JumpCloud Group | BAMF Role (after prefix strip) |
+|---|---|
+| `bamf-admin` | `admin` |
+| `bamf-ssh-access` | `ssh-access` |
+| `bamf-k8s-access` | `k8s-access` |
+| `bamf-audit` | `audit` |
+
+3. Add users to the appropriate groups
+
+**2. Add the group attribute to the OIDC application**
+
+1. Go to **SSO -> your BAMF application -> SSO tab**
+2. Scroll to **Attribute Mapping**
+3. Check **include group attribute**
+4. Enter the **Groups Attribute Name**: `groups`
+5. Click **Save**
+
+This tells JumpCloud to include the user's group memberships (for groups
+assigned to this application) in the OIDC token under the `groups` claim.
+
+**3. Assign the `bamf-` groups to the application**
+
+1. Click the BAMF application -> **User Groups** tab
+2. Select each `bamf-*` group
+3. Click **Save**
+
+Only groups assigned to the application are included in the token. If you
+forget to assign a group here, its members can log in but the group won't
+appear in the `groups` claim.
+
+**4. Update BAMF config for authorization**
+
+Add `groupsClaim` to your existing config:
+
+```yaml
+auth:
+  sso:
+    oidc:
+      jumpcloud:
+        enabled: true
+        displayName: "JumpCloud"
+        issuerUrl: https://oauth.id.jumpcloud.com/
+        clientId: YOUR_CLIENT_ID
+        groupsClaim: groups
+        existingSecret: bamf-jumpcloud
+        existingSecretKey: client_secret
+```
+
+### What JumpCloud sends to BAMF (with authz)
+
+When a user in the `bamf-admin` group logs in, the token contains:
+
+```json
+{
+  "iss": "https://oauth.id.jumpcloud.com/",
+  "groups": ["bamf-admin"]
+}
+```
+
+BAMF strips the `bamf-` prefix, yielding role `admin`.
+
+> **Known quirk**: When a user belongs to exactly one group, JumpCloud sends
+> the groups claim as a string (`"groups": "bamf-admin"`) rather than a
+> single-element array. BAMF handles this automatically — no action needed.
+
+### JumpCloud Troubleshooting
+
+**Groups claim is empty**
+
+1. Verify **include group attribute** is checked in the SSO tab with name
+   `groups`
+2. Verify the `bamf-*` groups are assigned to the application (User Groups tab)
+3. Verify users are members of the `bamf-*` groups
+
+**"User not authorized" or login fails**
+
+JumpCloud requires users (or their groups) to be explicitly assigned to the
+application. Go to **SSO -> BAMF app -> User Groups** and assign the
+appropriate groups.
 
 ---
 
