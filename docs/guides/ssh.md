@@ -194,6 +194,15 @@ Choose the resource type based on your requirements:
   and any scenario where a full terminal recording is required. Accept that
   sessions are tied to the bridge pod's lifetime and port forwarding is disabled.
 
+## Browser-Based SSH
+
+If you don't have the BAMF CLI installed, you can access SSH resources directly
+from the web UI. Click the **Terminal** button on any SSH resource card in the
+dashboard. You'll be prompted to upload your SSH private key (which is sent to
+the bridge in memory and never stored) and enter a username.
+
+For details, see the [Web Terminal guide](web-terminal.md).
+
 ## Troubleshooting
 
 **"Permission denied"** — Check that your role grants access to the resource.
@@ -209,3 +218,4 @@ User certificates are valid for 12 hours by default.
 command. If a flag works with `ssh` directly, it works with `bamf ssh`. If
 you're having trouble, try running with `--debug` to see the actual `ssh`
 command being executed.
+

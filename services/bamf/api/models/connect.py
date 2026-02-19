@@ -17,6 +17,12 @@ class ConnectRequest(BAMFBaseModel):
         "instead of creating a new session. Used when the bridge dies "
         "mid-tunnel and the CLI/agent need to re-establish the connection.",
     )
+    protocol: str | None = Field(
+        None,
+        description="Override the resource type for this session. "
+        "Used by web terminal to specify 'web-ssh' or 'web-db' instead "
+        "of the resource's native type (e.g. 'ssh', 'postgres').",
+    )
 
 
 class ConnectResponse(BAMFBaseModel):

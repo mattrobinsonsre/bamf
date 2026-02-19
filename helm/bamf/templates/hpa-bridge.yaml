@@ -22,4 +22,15 @@ spec:
           type: Utilization
           averageUtilization: {{ .Values.bridge.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
+    {{- if .Values.bridge.autoscaling.targetTunnelsPerPod }}
+    # Primary scaling signal: tunnel count per pod (requires prometheus-adapter).
+    # CPU metric above is kept as a safety net.
+    - type: Pods
+      pods:
+        metric:
+          name: bamf_bridge_active_tunnels
+        target:
+          type: AverageValue
+          averageValue: "{{ .Values.bridge.autoscaling.targetTunnelsPerPod }}"
+    {{- end }}
 {{- end }}

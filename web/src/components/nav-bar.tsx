@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X, Film } from 'lucide-react'
+import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X, Film, Zap } from 'lucide-react'
 import { clearAuth, isAdmin, isAdminOrAudit } from '@/lib/auth'
 
 function NavLink({
@@ -69,6 +69,10 @@ export default function NavBar() {
           <NavLink href="/agents" onClick={closeMenu}>
             <Bot size={16} />
             Agents
+          </NavLink>
+          <NavLink href="/tunnels" onClick={closeMenu}>
+            <Zap size={16} />
+            Tunnels
           </NavLink>
           <NavLink href="/tokens" onClick={closeMenu}>
             <Key size={16} />

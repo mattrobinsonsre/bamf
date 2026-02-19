@@ -178,6 +178,31 @@ func (c *APIClient) UploadQueryRecording(ctx context.Context, sessionID, data st
 	return c.Client.Post(ctx, "/api/v1/internal/sessions/"+sessionID+"/recording", body, nil)
 }
 
+// DrainResponse contains the API response for a bridge drain request.
+// Matches Python DrainResponse in services/bamf/api/models/bridges.py.
+type DrainResponse struct {
+	MigratedCount           int      `json:"migrated_count"`
+	NonMigratableSessionIDs []string `json:"non_migratable_sessions"`
+	Errors                  []string `json:"errors"`
+}
+
+// RequestDrain asks the API to migrate all migratable tunnels off this bridge.
+// Non-migratable tunnels (ssh-audit, db-audit) are returned so the bridge can
+// wait for them to finish naturally.
+// Calls: POST /api/v1/internal/bridges/{id}/drain
+func (c *APIClient) RequestDrain(ctx context.Context, bridgeID string, tunnels []DrainTunnelInfo) (*DrainResponse, error) {
+	body := map[string]any{
+		"tunnels": tunnels,
+	}
+
+	var resp DrainResponse
+	if err := c.Client.Post(ctx, fmt.Sprintf("/api/v1/internal/bridges/%s/drain", bridgeID), body, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 // AgentConnectionInfo contains information for establishing agent connection.
 // Matches Python TunnelEstablishResponse in services/bamf/api/models/bridges.py.
 type AgentConnectionInfo struct {

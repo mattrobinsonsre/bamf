@@ -81,6 +81,15 @@ bridge:
     minReplicas: 2
     maxReplicas: 20
     targetCPUUtilizationPercentage: 70
+    # Target tunnel count per pod — primary scaling signal via prometheus-adapter.
+    # When set (>0), HPA scales on bamf_bridge_active_tunnels custom metric.
+    # Also controls the oversubscription threshold for non-migratable session placement.
+    # Requires prometheus-adapter in the cluster to expose custom metrics API.
+    targetTunnelsPerPod: 50
+    # Oversubscription factor for non-migratable sessions (ssh-audit).
+    # Low-ordinal bridges accept up to this × targetTunnelsPerPod tunnels before
+    # the selector spills ssh-audit sessions to higher ordinals.
+    nonMigratableOversubscribeFactor: 1.5
 
   pdb:
     enabled: true
@@ -93,7 +102,10 @@ bridge:
   # Single tunnel port — bridge is protocol-agnostic, all tunnels use one mTLS port
   tunnelPort: 8443
 
-  terminationGracePeriodSeconds: 120
+  # Extended to 1800s (30 min) for non-migratable session protection.
+  # After migratable tunnels are migrated (~seconds), the bridge waits for
+  # ssh-audit sessions to finish naturally. 30 min covers most interactive sessions.
+  terminationGracePeriodSeconds: 1800
 
   # Bootstrap configuration for certificate issuance
   # When enabled, bridges request their certificates from the API on startup

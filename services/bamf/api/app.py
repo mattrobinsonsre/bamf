@@ -35,7 +35,9 @@ from .routers.kube import router as kube_router
 from .routers.resources import router as resources_router
 from .routers.role_assignments import router as role_assignments_router
 from .routers.roles import router as roles_router
+from .routers.terminal import router as terminal_router
 from .routers.tokens import router as tokens_router
+from .routers.tunnels import router as tunnels_router
 from .routers.users import router as users_router
 
 logger = get_logger(__name__)
@@ -103,6 +105,16 @@ def create_application() -> FastAPI:
         """Route *.tunnel_domain requests to the HTTP proxy handler."""
         return await proxy_middleware(request, call_next)
 
+    # API self-audit middleware — captures API request/response exchanges.
+    # Runs after request ID (so request_id is available) and before proxy
+    # middleware (so it only captures API requests, not proxied web app traffic).
+    from bamf.api.middleware import api_audit_middleware
+
+    @app.middleware("http")
+    async def api_audit(request: Request, call_next: Any) -> Any:
+        """Record API request/response exchanges for audit."""
+        return await api_audit_middleware(request, call_next)
+
     # Request ID middleware
     @app.middleware("http")
     async def add_request_id(request: Request, call_next: Any) -> Any:
@@ -143,6 +155,8 @@ def create_application() -> FastAPI:
     app.include_router(resources_router, prefix=settings.api_prefix)
     app.include_router(role_assignments_router, prefix=settings.api_prefix)
     app.include_router(tokens_router, prefix=settings.api_prefix)
+    app.include_router(terminal_router, prefix=settings.api_prefix)
+    app.include_router(tunnels_router, prefix=settings.api_prefix)
     app.include_router(audit_router, prefix=settings.api_prefix)
 
     # Internal routes (called by Go bridge/agent, not end users)

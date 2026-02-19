@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search } from 'lucide-react'
+import { Search, Terminal } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
 import { clearAuth, getAuthState } from '@/lib/auth'
 
@@ -29,14 +29,11 @@ export default function Home() {
       return
     }
     fetchResources(state.token)
-  }, [router, typeFilter])
+  }, [router])
 
   const fetchResources = async (token: string) => {
     try {
-      const params = new URLSearchParams()
-      if (typeFilter) params.set('type', typeFilter)
-
-      const response = await fetch(`/api/v1/resources?${params}`, {
+      const response = await fetch('/api/v1/resources', {
         headers: { Authorization: `Bearer ${token}` },
       })
 
@@ -57,11 +54,23 @@ export default function Home() {
     }
   }
 
-  const filteredResources = resources.filter((r) =>
-    r.name.toLowerCase().includes(filter.toLowerCase())
-  )
+  const filteredResources = resources.filter((r) => {
+    if (filter && !r.name.toLowerCase().includes(filter.toLowerCase())) return false
+    if (typeFilter && !r.resource_type.startsWith(typeFilter)) return false
+    return true
+  })
 
-  const resourceTypes = ['ssh', 'http', 'postgres', 'mysql', 'kubernetes']
+  const terminalTypes = new Set([
+    'ssh', 'ssh-audit', 'postgres', 'postgres-audit', 'mysql', 'mysql-audit',
+  ])
+
+  const openTerminal = (resource: Resource) => {
+    router.push(
+      `/terminal/new?type=${resource.resource_type}&resource=${encodeURIComponent(resource.name)}`
+    )
+  }
+
+  const resourceTypes = ['ssh', 'http', 'postgres', 'mysql', 'kubernetes', 'tcp']
 
   const typeColors: Record<string, string> = {
     ssh: 'bg-green-900/30 text-green-400',
@@ -69,6 +78,7 @@ export default function Home() {
     postgres: 'bg-purple-900/30 text-purple-400',
     mysql: 'bg-purple-900/30 text-purple-400',
     http: 'bg-orange-900/30 text-orange-400',
+    tcp: 'bg-slate-700/50 text-slate-300',
   }
 
   return (
@@ -163,16 +173,28 @@ export default function Home() {
                   </div>
                 )}
 
-                {resource.connect_url && (
-                  <a
-                    href={resource.connect_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-center py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
-                  >
-                    Open
-                  </a>
-                )}
+                <div className="flex gap-2">
+                  {resource.connect_url && (
+                    <a
+                      href={resource.connect_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 block text-center py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
+                    >
+                      Open
+                    </a>
+                  )}
+                  {terminalTypes.has(resource.resource_type) && resource.status === 'available' && (
+                    <button
+                      onClick={() => openTerminal(resource)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
+                      title="Open web terminal"
+                    >
+                      <Terminal size={14} />
+                      Terminal
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {filteredResources.length === 0 && !error && (

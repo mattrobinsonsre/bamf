@@ -26,11 +26,12 @@ import (
 // For ssh-audit resources, the reliable stream is skipped because the bridge
 // terminates SSH directly and the framing would corrupt the SSH handshake.
 type TunnelHandler struct {
-	sessionID  string
-	bridgeHost string
-	bridgePort int
-	resource   *ResourceConfig
-	logger     *slog.Logger
+	sessionID    string
+	bridgeHost   string
+	bridgePort   int
+	resource     *ResourceConfig
+	protocolType string // protocol sent to bridge (may differ from resource type)
+	logger       *slog.Logger
 
 	// stream wraps the bridge connection with reliable framing.
 	// nil for ssh-audit resources (raw connection mode).
@@ -43,37 +44,45 @@ type TunnelHandler struct {
 }
 
 // NewTunnelHandler creates a new tunnel handler with session certificate.
+//
+// protocolType is the protocol sent to the bridge for routing (e.g., "ssh",
+// "ssh-audit", "web-ssh", "web-db"). It may differ from resource.ResourceType
+// when the API overrides the protocol for web terminal sessions.
 func NewTunnelHandler(
 	sessionID string,
 	bridgeHost string,
 	bridgePort int,
 	resource *ResourceConfig,
+	protocolType string,
 	sessionCertPEM []byte,
 	sessionKeyPEM []byte,
 	caCertPEM []byte,
 	logger *slog.Logger,
 ) (*TunnelHandler, error) {
-	// Dial bridge and send session ID + resource type.
-	bridgeConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, sessionID, resource.ResourceType)
+	// Dial bridge and send session ID + protocol type.
+	bridgeConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, sessionID, protocolType)
 	if err != nil {
 		return nil, err
 	}
 
 	t := &TunnelHandler{
-		sessionID:  sessionID,
-		bridgeHost: bridgeHost,
-		bridgePort: bridgePort,
-		resource:   resource,
-		logger:     logger,
-		bridgeConn: bridgeConn,
-		closeCh:    make(chan struct{}),
+		sessionID:    sessionID,
+		bridgeHost:   bridgeHost,
+		bridgePort:   bridgePort,
+		resource:     resource,
+		protocolType: protocolType,
+		logger:       logger,
+		bridgeConn:   bridgeConn,
+		closeCh:      make(chan struct{}),
 	}
 
-	// For ssh-audit, skip reliable stream — the bridge terminates SSH
-	// directly and the framing would corrupt the SSH handshake.
-	if resource.ResourceType == "ssh-audit" {
+	// For protocols where the bridge terminates the connection directly
+	// (SSH proxy, web terminal), skip the reliable stream — the bridge
+	// holds session state and the framing would corrupt the handshake.
+	switch protocolType {
+	case "ssh-audit", "web-ssh", "web-db":
 		t.rawMode = true
-	} else {
+	default:
 		t.stream = tunnel.NewStream(bridgeConn, tunnel.DefaultBufSize)
 	}
 
@@ -371,7 +380,7 @@ func (t *TunnelHandler) ReconnectBridge(
 		"new_bridge", fmt.Sprintf("%s:%d", bridgeHost, bridgePort),
 	)
 
-	newConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, t.sessionID, t.resource.ResourceType)
+	newConn, err := dialBridgeAgent(bridgeHost, bridgePort, sessionCertPEM, sessionKeyPEM, caCertPEM, t.sessionID, t.protocolType)
 	if err != nil {
 		return fmt.Errorf("failed to dial new bridge: %w", err)
 	}

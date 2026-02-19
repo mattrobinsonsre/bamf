@@ -28,6 +28,7 @@ class BridgeHeartbeatRequest(BAMFBaseModel):
     """Bridge heartbeat request."""
 
     active_tunnels: int = Field(default=0, ge=0)
+    hostname: str = Field(default="", description="Bridge hostname for re-registration")
 
 
 class SessionValidateRequest(BAMFBaseModel):
@@ -100,6 +101,36 @@ class SessionRecordingUpload(BAMFBaseModel):
         pattern="^(terminal|queries|http)$",
         description="Recording type (inferred from format if not set)",
     )
+
+
+class DrainTunnelInfo(BAMFBaseModel):
+    """Info about a tunnel on a draining bridge.
+
+    Go contract: pkg/bridge/api_client.go:DrainTunnelInfo
+    """
+
+    session_token: str = Field(..., min_length=1)
+    protocol: str = Field(..., min_length=1)
+
+
+class DrainRequest(BAMFBaseModel):
+    """Request to drain tunnels from a bridge.
+
+    Go contract: pkg/bridge/api_client.go:RequestDrain() sends this.
+    """
+
+    tunnels: list[DrainTunnelInfo] = Field(..., min_length=1)
+
+
+class DrainResponse(BAMFBaseModel):
+    """Response indicating which tunnels were migrated.
+
+    Go contract: pkg/bridge/api_client.go:DrainResponse
+    """
+
+    migrated_count: int = Field(default=0, ge=0)
+    non_migratable_sessions: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class BridgeBootstrapRequest(BAMFBaseModel):

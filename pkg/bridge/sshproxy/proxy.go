@@ -94,7 +94,7 @@ type SessionResult struct {
 // 3. For each client channel request, opens a matching channel on the target
 // 4. Records stdout from the target in asciicast v2 format
 // 5. Returns the recording when the session closes
-func (p *Proxy) Handle(ctx context.Context, clientConn net.Conn, agentConn net.Conn, sessionID string) (*SessionResult, error) {
+func (p *Proxy) Handle(ctx context.Context, clientConn net.Conn, agentConn net.Conn, sessionID string, warnCh <-chan string) (*SessionResult, error) {
 	logger := p.logger.With("session_id", sessionID[:min(16, len(sessionID))]+"...")
 
 	// Capture client credentials during SSH auth. The bridge SSH proxy
@@ -190,7 +190,7 @@ func (p *Proxy) Handle(ctx context.Context, clientConn net.Conn, agentConn net.C
 		wg.Add(1)
 		go func(nc ssh.NewChannel) {
 			defer wg.Done()
-			if err := p.handleSessionChannel(targetSSH, nc, recording, logger); err != nil {
+			if err := p.handleSessionChannel(targetSSH, nc, recording, logger, warnCh); err != nil {
 				logger.Debug("session channel ended", "error", err)
 			}
 		}(newCh)
@@ -210,7 +210,7 @@ func (p *Proxy) Handle(ctx context.Context, clientConn net.Conn, agentConn net.C
 //
 // The proxy only handles the client SSH handshake (NoClientAuth — mTLS already
 // authenticated the user) and channel forwarding with recording.
-func (p *Proxy) HandlePreAuth(ctx context.Context, clientConn net.Conn, targetSSH ssh.Conn, targetChans <-chan ssh.NewChannel, targetReqs <-chan *ssh.Request, sessionID string) (*SessionResult, error) {
+func (p *Proxy) HandlePreAuth(ctx context.Context, clientConn net.Conn, targetSSH ssh.Conn, targetChans <-chan ssh.NewChannel, targetReqs <-chan *ssh.Request, sessionID string, warnCh <-chan string) (*SessionResult, error) {
 	logger := p.logger.With("session_id", sessionID[:min(16, len(sessionID))]+"...")
 
 	// Accept client SSH with NoClientAuth — mTLS already authenticated,
@@ -254,7 +254,7 @@ func (p *Proxy) HandlePreAuth(ctx context.Context, clientConn net.Conn, targetSS
 		wg.Add(1)
 		go func(nc ssh.NewChannel) {
 			defer wg.Done()
-			if err := p.handleSessionChannel(targetSSH, nc, recording, logger); err != nil {
+			if err := p.handleSessionChannel(targetSSH, nc, recording, logger, warnCh); err != nil {
 				logger.Debug("session channel ended", "error", err)
 			}
 		}(newCh)
@@ -268,12 +268,196 @@ func (p *Proxy) HandlePreAuth(ctx context.Context, clientConn net.Conn, targetSS
 	}, nil
 }
 
+// HandleDirect sets up an SSH session to the target and returns the channel
+// as an io.ReadWriteCloser, plus a Recording for session capture. Unlike
+// Handle/HandlePreAuth which manage the full bidirectional relay internally,
+// HandleDirect returns the channel so the caller (webterm.Session) can manage
+// the relay with reconnection support.
+//
+// When record is true, the returned io.ReadWriteCloser is a RecordingChannel
+// that tees reads into the Recording. When false, no recording is created
+// and the returned Recording is nil. This respects the resource's audit
+// classification — only ssh-audit resources should be recorded.
+//
+// Used by web-ssh sessions where the bridge receives credentials from the
+// browser (via the API) and authenticates directly to the target.
+// authMethods should contain ssh.PublicKeys(signer) for key auth or
+// ssh.Password(password) for password auth.
+func (p *Proxy) HandleDirect(agentConn net.Conn, username string, authMethods []ssh.AuthMethod, cols, rows int, record bool, logger *slog.Logger) (io.ReadWriteCloser, *Recording, error) {
+	clientConfig := &ssh.ClientConfig{
+		User:            username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Agent tunnel is mTLS-authenticated
+		Auth:            authMethods,
+	}
+
+	targetSSH, targetChans, targetReqs, err := ssh.NewClientConn(agentConn, "target", clientConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("target SSH auth failed: %w", err)
+	}
+
+	go ssh.DiscardRequests(targetReqs)
+	go discardChannels(targetChans)
+
+	// Open a session channel on the target.
+	targetCh, targetReqCh, err := targetSSH.OpenChannel("session", nil)
+	if err != nil {
+		targetSSH.Close()
+		return nil, nil, fmt.Errorf("failed to open session channel: %w", err)
+	}
+	go ssh.DiscardRequests(targetReqCh)
+
+	var recording *Recording
+	if record {
+		recording = NewRecording()
+	}
+
+	// Request PTY.
+	ptyReqPayload := ssh.Marshal(struct {
+		Term     string
+		Width    uint32
+		Height   uint32
+		PxWidth  uint32
+		PxHeight uint32
+		Modes    string
+	}{
+		Term:   "xterm-256color",
+		Width:  uint32(cols),
+		Height: uint32(rows),
+		Modes:  "",
+	})
+	ok, err := targetCh.SendRequest("pty-req", true, ptyReqPayload)
+	if err != nil || !ok {
+		targetCh.Close()
+		targetSSH.Close()
+		if err != nil {
+			return nil, nil, fmt.Errorf("pty-req failed: %w", err)
+		}
+		return nil, nil, fmt.Errorf("pty-req rejected")
+	}
+
+	if recording != nil {
+		recording.Start(cols, rows, map[string]string{"TERM": "xterm-256color"})
+	}
+
+	// Request shell.
+	ok, err = targetCh.SendRequest("shell", true, nil)
+	if err != nil || !ok {
+		targetCh.Close()
+		targetSSH.Close()
+		if err != nil {
+			return nil, nil, fmt.Errorf("shell request failed: %w", err)
+		}
+		return nil, nil, fmt.Errorf("shell request rejected")
+	}
+
+	logger.Info("SSH session established via HandleDirect",
+		"user", username,
+		"cols", cols,
+		"rows", rows,
+		"recording", record,
+	)
+
+	if recording != nil {
+		// Wrap the SSH channel with a recording tee on reads (target→client).
+		rw := &RecordingChannel{
+			ch:        targetCh,
+			recording: recording,
+			targetSSH: targetSSH,
+		}
+		return rw, recording, nil
+	}
+
+	// No recording — return a plain channel wrapper.
+	rw := &PlainChannel{
+		ch:        targetCh,
+		targetSSH: targetSSH,
+	}
+	return rw, nil, nil
+}
+
+// PlainChannel wraps an ssh.Channel without recording.
+// Implements io.ReadWriteCloser. Used for non-audit web-ssh sessions.
+type PlainChannel struct {
+	ch        ssh.Channel
+	targetSSH ssh.Conn
+}
+
+func (pc *PlainChannel) Read(p []byte) (int, error) {
+	return pc.ch.Read(p)
+}
+
+func (pc *PlainChannel) Write(p []byte) (int, error) {
+	return pc.ch.Write(p)
+}
+
+func (pc *PlainChannel) Close() error {
+	pc.ch.Close()
+	return pc.targetSSH.Close()
+}
+
+// SendWindowChange sends a window-change request on the SSH channel.
+func (pc *PlainChannel) SendWindowChange(cols, rows uint16) {
+	payload := ssh.Marshal(struct {
+		Width    uint32
+		Height   uint32
+		PxWidth  uint32
+		PxHeight uint32
+	}{
+		Width:  uint32(cols),
+		Height: uint32(rows),
+	})
+	_, _ = pc.ch.SendRequest("window-change", false, payload)
+}
+
+// RecordingChannel wraps an ssh.Channel to record stdout on Read and
+// support window-change requests. Implements io.ReadWriteCloser.
+type RecordingChannel struct {
+	ch        ssh.Channel
+	recording *Recording
+	targetSSH ssh.Conn
+}
+
+func (rc *RecordingChannel) Read(p []byte) (int, error) {
+	n, err := rc.ch.Read(p)
+	if n > 0 {
+		rc.recording.Output(p[:n])
+	}
+	return n, err
+}
+
+func (rc *RecordingChannel) Write(p []byte) (int, error) {
+	return rc.ch.Write(p)
+}
+
+func (rc *RecordingChannel) Close() error {
+	rc.ch.Close()
+	return rc.targetSSH.Close()
+}
+
+// SendWindowChange sends a window-change request on the SSH channel.
+func (rc *RecordingChannel) SendWindowChange(cols, rows uint16) {
+	payload := ssh.Marshal(struct {
+		Width    uint32
+		Height   uint32
+		PxWidth  uint32
+		PxHeight uint32
+	}{
+		Width:  uint32(cols),
+		Height: uint32(rows),
+	})
+	_, _ = rc.ch.SendRequest("window-change", false, payload)
+	rc.recording.Resize(int(cols), int(rows))
+}
+
 // handleSessionChannel handles an SSH "session" channel with recording.
+// If warnCh is non-nil, a goroutine monitors it and writes drain warnings
+// to the client's stderr (visible in the user's terminal).
 func (p *Proxy) handleSessionChannel(
 	targetConn ssh.Conn,
 	clientNewCh ssh.NewChannel,
 	rec *Recording,
 	logger *slog.Logger,
+	warnCh <-chan string,
 ) error {
 	// Accept client channel.
 	clientCh, clientReqs, err := clientNewCh.Accept()
@@ -281,6 +465,22 @@ func (p *Proxy) handleSessionChannel(
 		return fmt.Errorf("failed to accept client channel: %w", err)
 	}
 	defer clientCh.Close()
+
+	// Monitor drain warning channel — write messages to the client's stderr
+	// so the user sees warnings in their terminal during bridge shutdown.
+	warnDone := make(chan struct{})
+	go func() {
+		defer close(warnDone)
+		if warnCh == nil {
+			return
+		}
+		for msg := range warnCh {
+			if _, err := clientCh.Stderr().Write([]byte(msg)); err != nil {
+				logger.Debug("failed to write drain warning to stderr", "error", err)
+				return
+			}
+		}
+	}()
 
 	// Open matching channel on target.
 	targetCh, targetReqs, err := targetConn.OpenChannel("session", nil)

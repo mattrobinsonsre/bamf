@@ -30,11 +30,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -o bamf-bridge \
     ./cmd/bamf-bridge
 
-# Final image
-FROM scratch
+# Final image — alpine for CA certs + psql/mysql CLI tools (web-db terminal)
+FROM alpine:3.21
 
-# Copy CA certificates for TLS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# CA certs + database client tools for web-db terminal sessions
+RUN apk add --no-cache ca-certificates postgresql16-client mysql-client
 
 # Copy the binary
 COPY --from=builder /build/bamf-bridge /bamf-bridge

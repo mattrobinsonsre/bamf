@@ -37,6 +37,8 @@ from bamf.api.models.bridges import (
     BridgeHeartbeatRequest,
     BridgeRegisterRequest,
     BridgeStatusRequest,
+    DrainRequest,
+    DrainResponse,
     SessionRecordingUpload,
     SessionValidateRequest,
     SessionValidateResponse,
@@ -435,6 +437,14 @@ async def tunnel_closed(
             # Clean up session from Redis
             await r.delete(session_key)
 
+        # Remove from active sessions index
+        if request.session_token:
+            await r.srem("sessions:active", request.session_token)
+
+        # Clean up client credentials (used for web terminal reconnection)
+        if request.session_token:
+            await r.delete(f"session:{request.session_token}:client_creds")
+
     # Audit: record that a connection ended
     details: dict = {
         "protocol": protocol,
@@ -471,6 +481,124 @@ async def tunnel_closed(
     )
 
     return SuccessResponse(message="OK")
+
+
+# ── Bridge Drain ────────────────────────────────────────────────────
+
+
+# Only ssh-audit is non-migratable. Database audit tunnels (postgres-audit,
+# mysql-audit) use passive byte-stream tapping over a standard tunnel and
+# ARE migratable — only the parser state is lost during reconnect.
+NON_MIGRATABLE_PROTOCOLS = {"ssh-audit"}
+
+
+@router.post("/bridges/{bridge_id}/drain", response_model=DrainResponse)
+async def drain_bridge(
+    bridge_id: str,
+    request: DrainRequest,
+    r: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+    bridge: BridgeIdentity = Depends(get_bridge_identity),
+) -> DrainResponse:
+    """Drain tunnels from a bridge during graceful shutdown.
+
+    For each tunnel on the draining bridge:
+    - Non-migratable protocols (ssh-audit): skip, return in non_migratable_sessions
+    - Migratable protocols: select a new bridge, issue new session certs with the
+      SAME session ID, and send a 'redial' command to the agent via Redis pub/sub.
+
+    Go contract: pkg/bridge/api_client.go:RequestDrain() sends
+    {tunnels: [{session_token, protocol}]} with X-Bamf-Client-Cert header.
+    """
+    from bamf.api.routers.connect import _issue_session
+
+    migrated_count = 0
+    non_migratable_sessions: list[str] = []
+    errors: list[str] = []
+
+    for tunnel_info in request.tunnels:
+        session_token = tunnel_info.session_token
+        protocol = tunnel_info.protocol
+
+        # Non-migratable: skip migration, keep on current bridge
+        if protocol in NON_MIGRATABLE_PROTOCOLS:
+            non_migratable_sessions.append(session_token)
+            continue
+
+        # Look up session data in Redis
+        raw = await r.get(f"session:{session_token}")
+        if not raw:
+            errors.append(f"Session {session_token[:8]}... not found")
+            continue
+
+        session_data = json.loads(raw)
+        agent_id = session_data.get("agent_id")
+        resource_name = session_data.get("resource_name")
+        resource_type = session_data.get("protocol", "ssh")
+        user_email = session_data.get("user_email")
+
+        if not agent_id:
+            errors.append(f"Session {session_token[:8]}... has no agent_id")
+            continue
+
+        # Check agent is still online
+        agent_status = await r.get(f"agent:{agent_id}:status")
+        if not agent_status:
+            errors.append(f"Agent {agent_id} offline for session {session_token[:8]}...")
+            continue
+
+        # Decrement old bridge tunnel count
+        await r.zincrby("bridges:available", -1, bridge_id)
+        await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
+
+        try:
+            # Create a minimal Session-like object for _issue_session
+            from datetime import UTC, datetime
+
+            from bamf.auth.sessions import Session
+
+            now = datetime.now(UTC).isoformat()
+            fake_session = Session(
+                email=user_email or "",
+                display_name="",
+                roles=[],
+                provider_name="internal",
+                created_at=now,
+                expires_at=now,
+                last_active_at=now,
+                token="drain-internal",
+            )
+
+            await _issue_session(
+                db=db,
+                r=r,
+                current_user=fake_session,
+                session_id=session_token,
+                resource_name=resource_name,
+                resource_type=resource_type,
+                agent_id=agent_id,
+                exclude_bridge_id=bridge_id,
+                session_ttl=300,  # 5 minutes for reconnect
+                command="redial",
+                audit_action="session_migrated",
+            )
+            migrated_count += 1
+        except Exception as e:
+            errors.append(f"Failed to migrate {session_token[:8]}...: {e!s}")
+
+    logger.info(
+        "Bridge drain processed",
+        bridge_id=bridge_id,
+        migrated=migrated_count,
+        non_migratable=len(non_migratable_sessions),
+        errors=len(errors),
+    )
+
+    return DrainResponse(
+        migrated_count=migrated_count,
+        non_migratable_sessions=non_migratable_sessions,
+        errors=errors,
+    )
 
 
 # ── Session Recordings ──────────────────────────────────────────────────

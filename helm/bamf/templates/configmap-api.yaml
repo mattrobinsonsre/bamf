@@ -39,6 +39,11 @@ data:
     # Bridge headless service for internal relay communication
     bridge_headless_service: {{ printf "%s-bridge-headless" (include "bamf.fullname" .) | quote }}
 
+    {{- if .Values.bridge.autoscaling.targetTunnelsPerPod }}
+    # Target tunnels per bridge pod — used for non-migratable session placement bias
+    target_tunnels_per_pod: {{ .Values.bridge.autoscaling.targetTunnelsPerPod }}
+    {{- end }}
+
     # Authentication
     auth:
       local_enabled: {{ .Values.auth.local.enabled }}

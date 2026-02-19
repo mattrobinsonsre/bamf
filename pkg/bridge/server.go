@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,9 @@ import (
 
 	"github.com/mattrobinsonsre/bamf/pkg/bridge/dbaudit"
 	"github.com/mattrobinsonsre/bamf/pkg/bridge/sshproxy"
+	"github.com/mattrobinsonsre/bamf/pkg/bridge/webterm"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -46,10 +50,15 @@ type Server struct {
 	relays       *RelayPool
 	apiClient    *APIClient
 	sshProxy     *sshproxy.Proxy
+	metrics      *metricsProvider
 
 	// Pending connections waiting for match (keyed by session ID)
 	pendingConns   map[string]*pendingConnection
 	pendingConnsMu sync.Mutex
+
+	// Active web terminal sessions (keyed by session ID) for reconnection.
+	webTermSessions   map[string]*webterm.Session
+	webTermSessionsMu sync.Mutex
 
 	// Shutdown coordination
 	shutdownOnce sync.Once
@@ -95,6 +104,10 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	// Initialize relay pool
 	s.relays = NewRelayPool(logger)
 
+	// Initialize Prometheus metrics collector
+	s.metrics = newMetricsProvider(s.tunnels, s.relays)
+	prometheus.MustRegister(s.metrics)
+
 	// Initialize SSH proxy for ssh-audit sessions. Use the shared SSH host
 	// key from the database (distributed via bootstrap), which is stable
 	// across pod restarts and identical on all bridge pods.
@@ -117,8 +130,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		s.sshProxy = proxy
 	}
 
-	// Initialize pending connections map
+	// Initialize pending connections map and web terminal sessions map
 	s.pendingConns = make(map[string]*pendingConnection)
+	s.webTermSessions = make(map[string]*webterm.Session)
 
 	return s, nil
 }
@@ -324,24 +338,27 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	s.logger.Info("initiating graceful shutdown")
 
+	// Set draining metric for Prometheus visibility
+	s.metrics.isDraining.Store(true)
+
 	// Notify API server we're draining
 	if err := s.notifyDraining(ctx); err != nil {
 		s.logger.Warn("failed to notify API of draining", "error", err)
 	}
 
-	// Create shutdown context with timeout
+	// Create shutdown context with timeout.
+	// ShutdownTimeout is derived from terminationGracePeriodSeconds - 5s buffer.
 	shutdownCtx, cancel := context.WithTimeout(ctx, s.cfg.ShutdownTimeout)
 	defer cancel()
 
-	// Stop accepting new connections
-	if s.httpsListener != nil {
-		s.httpsListener.Close()
-	}
-	if s.healthListener != nil {
-		s.healthListener.Close()
-	}
+	// Stop accepting new tunnel connections
 	if s.tunnelListener != nil {
 		s.tunnelListener.Close()
+	}
+
+	// Stop accepting new HTTPS connections
+	if s.httpsListener != nil {
+		s.httpsListener.Close()
 	}
 
 	// Gracefully shutdown HTTP server
@@ -351,19 +368,24 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Gracefully shutdown health server
-	if s.healthServer != nil {
-		if err := s.healthServer.Shutdown(shutdownCtx); err != nil {
-			s.logger.Warn("health server shutdown error", "error", err)
-		}
-	}
-
 	// Close all relay connections
 	s.relays.CloseAll()
 
-	// Wait for all tunnels to migrate or close
-	if err := s.tunnels.DrainAll(shutdownCtx); err != nil {
+	// Two-phase drain: migrate migratable tunnels, wait for non-migratable
+	if err := s.tunnels.DrainAll(shutdownCtx, s.apiClient, s.cfg.BridgeID); err != nil {
 		s.logger.Warn("tunnel drain error", "error", err)
+	}
+
+	// Now shut down the health server (kept alive during drain for metrics scraping)
+	if s.healthListener != nil {
+		s.healthListener.Close()
+	}
+	if s.healthServer != nil {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		if err := s.healthServer.Shutdown(closeCtx); err != nil {
+			s.logger.Warn("health server shutdown error", "error", err)
+		}
 	}
 
 	s.logger.Info("graceful shutdown complete")
@@ -386,6 +408,9 @@ func (s *Server) healthHandler() http.Handler {
 	// Health endpoints for Kubernetes probes (plain HTTP)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
+
+	// Prometheus metrics endpoint
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// Relay endpoint for HTTP proxy: API forwards requests here.
 	// On the internal port (8080) so only reachable within the cluster.
@@ -591,6 +616,21 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		"cn", peerCert.Subject.CommonName,
 	)
 
+	// Check if this is a client reconnection to an existing web terminal session.
+	if resourceType == "web-ssh" || resourceType == "web-db" {
+		s.webTermSessionsMu.Lock()
+		existing, exists := s.webTermSessions[sessionID]
+		s.webTermSessionsMu.Unlock()
+		if exists && existing.IsDetached() {
+			s.logger.Info("web terminal client reconnecting",
+				"session_id", sessionID[:16]+"...",
+				"resource_type", resourceType,
+			)
+			existing.Reconnect(&bufferedConn{r: reader, Conn: conn})
+			return
+		}
+	}
+
 	// Try to match with pending connection
 	s.pendingConnsMu.Lock()
 	pending, exists := s.pendingConns[sessionID]
@@ -679,6 +719,16 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 			return
 		}
 
+		if resourceType == "web-ssh" {
+			s.handleWebTerminalSSH(ctx, clientConn, agentConn, sessionID, resource)
+			return
+		}
+
+		if resourceType == "web-db" {
+			s.handleWebTerminalDB(ctx, clientConn, agentConn, sessionID, resource)
+			return
+		}
+
 		// Standard byte-splice tunnel (protocol-agnostic).
 		tunnel := NewTunnel(
 			sessionID,
@@ -743,6 +793,12 @@ func (s *Server) handleSSHAuditSession(ctx context.Context, clientConn, agentCon
 	)
 	logger.Info("starting SSH audit session")
 
+	// Register a tracking tunnel so the drain logic knows about this session.
+	// ssh-audit tunnels are non-migratable — the drain waits for them to finish.
+	tunnel := NewTunnel(sessionID, sessionID, "", "ssh-audit", clientConn, agentConn)
+	s.tunnels.Add(tunnel)
+	defer s.tunnels.Remove(sessionID)
+
 	// Get the buffered reader from the client connection. The connection
 	// is a *bufferedConn from header parsing — we need the reader for the
 	// pre-flight signing protocol.
@@ -769,7 +825,7 @@ func (s *Server) handleSSHAuditSession(ctx context.Context, clientConn, agentCon
 	if signCh.HasKeys() {
 		// Key-based auth path: pre-authenticate to target using remote
 		// signing, then handle client SSH with HandlePreAuth.
-		result, err = s.handleSSHAuditWithKeys(ctx, clientConn, agentConn, sessionID, signCh, clientReader, logger)
+		result, err = s.handleSSHAuditWithKeys(ctx, clientConn, agentConn, sessionID, signCh, clientReader, logger, tunnel.WarnCh)
 	} else {
 		// Password auth path: no keys available, fall through to the
 		// original Handle() which captures and replays passwords.
@@ -781,7 +837,7 @@ func (s *Server) handleSSHAuditSession(ctx context.Context, clientConn, agentCon
 		}
 		// Wrap connection to preserve buffered data from pre-flight reads.
 		wrappedClient := &bufferedConn{r: clientReader, Conn: clientConn}
-		result, err = s.sshProxy.Handle(ctx, wrappedClient, agentConn, sessionID)
+		result, err = s.sshProxy.Handle(ctx, wrappedClient, agentConn, sessionID, tunnel.WarnCh)
 	}
 
 	if err != nil {
@@ -825,6 +881,7 @@ func (s *Server) handleSSHAuditWithKeys(
 	signCh *sshproxy.SignChannel,
 	clientReader *bufio.Reader,
 	logger *slog.Logger,
+	warnCh <-chan string,
 ) (*sshproxy.SessionResult, error) {
 	// Build auth methods from remote signers. The SSH library tries each
 	// signer against the target; when the target challenges, the signer
@@ -877,7 +934,460 @@ func (s *Server) handleSSHAuditWithKeys(
 	// Wrap the client connection to preserve any buffered data.
 	wrappedClient := &bufferedConn{r: clientReader, Conn: clientConn}
 
-	return s.sshProxy.HandlePreAuth(ctx, wrappedClient, targetSSH, targetChans, targetReqs, sessionID)
+	return s.sshProxy.HandlePreAuth(ctx, wrappedClient, targetSSH, targetChans, targetReqs, sessionID, warnCh)
+}
+
+// handleWebTerminalSSH handles a browser-based SSH terminal session.
+// The bridge receives the SSH key from the client (via frame protocol),
+// authenticates to the target, and manages the session with reconnect support.
+func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn net.Conn, sessionID, resource string) {
+	logger := s.logger.With(
+		"session_id", sessionID[:min(16, len(sessionID))]+"...",
+		"resource", resource,
+		"resource_type", "web-ssh",
+	)
+	logger.Info("starting web SSH terminal session")
+
+	// Register tracking tunnel (non-migratable).
+	tunnel := NewTunnel(sessionID, sessionID, "", "web-ssh", clientConn, agentConn)
+	s.tunnels.Add(tunnel)
+	defer s.tunnels.Remove(sessionID)
+
+	// Read initial handshake from client via frame protocol.
+	fr := webterm.NewFrameReader(clientConn)
+	fw := webterm.NewFrameWriter(clientConn)
+
+	// First frame: status with session parameters.
+	typ, payload, err := fr.ReadFrame()
+	if err != nil || typ != webterm.FrameStatus {
+		logger.Error("failed to read initial handshake", "error", err)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	// Parse handshake: "cols=80\nrows=24\nuser=admin\naudit=true\nkey-begin" or
+	// "cols=80\nrows=24\nuser=admin\naudit=false\nauth=password"
+	params := parseHandshakeParams(string(payload))
+	cols := parseUint16(params["cols"], 80)
+	rows := parseUint16(params["rows"], 24)
+	username := params["user"]
+	authMethod := params["auth"]          // "password" or "" (key auth)
+	auditSession := params["audit"] == "true" // record only for -audit resources
+
+	if username == "" {
+		_ = fw.WriteStatus("error:username required")
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	var authMethods []ssh.AuthMethod
+
+	if authMethod == "password" {
+		// Read password data frames until password-end status.
+		var passBuf []byte
+		for {
+			typ, payload, err := fr.ReadFrame()
+			if err != nil {
+				logger.Error("failed to read password data", "error", err)
+				clientConn.Close()
+				agentConn.Close()
+				return
+			}
+			if typ == webterm.FrameStatus && string(payload) == "password-end" {
+				break
+			}
+			if typ == webterm.FrameData {
+				passBuf = append(passBuf, payload...)
+			}
+		}
+
+		password := string(passBuf)
+		// Zero the password buffer.
+		for i := range passBuf {
+			passBuf[i] = 0
+		}
+
+		authMethods = []ssh.AuthMethod{
+			ssh.Password(password),
+			ssh.KeyboardInteractive(func(name, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range answers {
+					answers[i] = password
+				}
+				return answers, nil
+			}),
+		}
+	} else {
+		// Read PEM key data frames until key-end status.
+		var pemBuf []byte
+		for {
+			typ, payload, err := fr.ReadFrame()
+			if err != nil {
+				logger.Error("failed to read key data", "error", err)
+				clientConn.Close()
+				agentConn.Close()
+				return
+			}
+			if typ == webterm.FrameStatus && string(payload) == "key-end" {
+				break
+			}
+			if typ == webterm.FrameData {
+				pemBuf = append(pemBuf, payload...)
+			}
+		}
+
+		// Parse SSH key.
+		signer, err := ssh.ParsePrivateKey(pemBuf)
+		if err != nil {
+			logger.Error("failed to parse SSH key", "error", err)
+			_ = fw.WriteStatus("error:invalid SSH key: " + err.Error())
+			// Zero the PEM buffer.
+			for i := range pemBuf {
+				pemBuf[i] = 0
+			}
+			clientConn.Close()
+			agentConn.Close()
+			return
+		}
+
+		// Zero the PEM buffer immediately.
+		for i := range pemBuf {
+			pemBuf[i] = 0
+		}
+
+		authMethods = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	}
+
+	// Authenticate to target via agent tunnel.
+	channel, recording, err := s.sshProxy.HandleDirect(agentConn, username, authMethods, int(cols), int(rows), auditSession, logger)
+	if err != nil {
+		logger.Error("SSH auth to target failed", "error", err)
+		_ = fw.WriteStatus("error:" + err.Error())
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	// Signal ready to client.
+	if err := fw.WriteStatus("ready"); err != nil {
+		logger.Error("failed to send ready", "error", err)
+		channel.Close()
+		clientConn.Close()
+		return
+	}
+
+	// Create web terminal session with reconnect support.
+	session := webterm.NewSession(sessionID, "web-ssh", clientConn, channel, logger)
+
+	// Set resize handler (SSH window-change).
+	switch ch := channel.(type) {
+	case *sshproxy.RecordingChannel:
+		session.SetResizeFunc(func(c, r uint16) {
+			ch.SendWindowChange(c, r)
+		})
+	case *sshproxy.PlainChannel:
+		session.SetResizeFunc(func(c, r uint16) {
+			ch.SendWindowChange(c, r)
+		})
+	}
+
+	// Register for client reconnection.
+	s.webTermSessionsMu.Lock()
+	s.webTermSessions[sessionID] = session
+	s.webTermSessionsMu.Unlock()
+	defer func() {
+		s.webTermSessionsMu.Lock()
+		delete(s.webTermSessions, sessionID)
+		s.webTermSessionsMu.Unlock()
+	}()
+
+	// Run session (handles reconnection internally).
+	if err := session.Run(); err != nil {
+		logger.Debug("web SSH session ended", "error", err)
+	}
+
+	logger.Info("web SSH terminal session complete")
+
+	// Upload recording (async — non-critical). Only present for audit sessions.
+	var recBytes []byte
+	if recording != nil {
+		recBytes = recording.Bytes()
+	}
+	if len(recBytes) > 0 {
+		go func() {
+			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.apiClient.UploadSessionRecording(uploadCtx, sessionID, recBytes); err != nil {
+				logger.Error("failed to upload session recording", "error", err)
+			}
+		}()
+	}
+
+	// Notify API (synchronous — must complete before handler returns).
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
+		logger.Warn("failed to notify tunnel closed", "error", err)
+	}
+}
+
+// handleWebTerminalDB handles a browser-based database terminal session.
+// The bridge spawns psql/mysql as a PTY subprocess, connecting through
+// the agent tunnel.
+func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn net.Conn, sessionID, resource string) {
+	logger := s.logger.With(
+		"session_id", sessionID[:min(16, len(sessionID))]+"...",
+		"resource", resource,
+		"resource_type", "web-db",
+	)
+	logger.Info("starting web DB terminal session")
+
+	// Register tracking tunnel (non-migratable).
+	tunnel := NewTunnel(sessionID, sessionID, "", "web-db", clientConn, agentConn)
+	s.tunnels.Add(tunnel)
+	defer s.tunnels.Remove(sessionID)
+
+	// Read initial handshake from client via frame protocol.
+	fr := webterm.NewFrameReader(clientConn)
+	fw := webterm.NewFrameWriter(clientConn)
+
+	typ, payload, err := fr.ReadFrame()
+	if err != nil || typ != webterm.FrameStatus {
+		logger.Error("failed to read initial handshake", "error", err)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
+	params := parseHandshakeParams(string(payload))
+	cols := parseUint16(params["cols"], 80)
+	rows := parseUint16(params["rows"], 24)
+	username := params["user"]
+	database := params["database"]
+	password := params["password"]
+	dbType := params["db_type"]           // "postgres" or "mysql"
+	auditSession := params["audit"] == "true" // capture queries for -audit resources
+
+	if dbType == "" {
+		dbType = "postgres"
+	}
+
+	// Set up query audit pipeline if this is an -audit resource.
+	var auditParser dbaudit.Parser
+	var collector *dbaudit.Collector
+	var eventCh chan dbaudit.QueryEvent
+	if auditSession {
+		switch dbType {
+		case "postgres":
+			auditParser = dbaudit.NewPostgresParser()
+		case "mysql":
+			auditParser = dbaudit.NewMySQLParser()
+		}
+		if auditParser != nil {
+			eventCh = make(chan dbaudit.QueryEvent, 1024)
+			collector = dbaudit.NewCollector()
+			go dbaudit.RunCollector(collector, eventCh)
+		}
+	}
+
+	// Bind ephemeral local TCP listener for the agent tunnel.
+	localListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		logger.Error("failed to bind local listener", "error", err)
+		_ = fw.WriteStatus("error:internal error")
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+	defer localListener.Close()
+
+	localAddr := localListener.Addr().(*net.TCPAddr)
+	localPort := localAddr.Port
+
+	// Splice agent tunnel to local listener (one connection).
+	// When audit is enabled, tap the client→server stream for query capture.
+	go func() {
+		localConn, err := localListener.Accept()
+		if err != nil {
+			return
+		}
+		done := make(chan struct{}, 2)
+		if auditParser != nil {
+			// Audited: tee the client→server stream through the parser.
+			teeReader := dbaudit.NewTeeReader(localConn, auditParser, eventCh)
+			go func() { io.Copy(agentConn, teeReader); done <- struct{}{} }() //nolint:errcheck
+		} else {
+			// Non-audited: plain bidirectional splice.
+			go func() { io.Copy(agentConn, localConn); done <- struct{}{} }() //nolint:errcheck
+		}
+		go func() { io.Copy(localConn, agentConn); done <- struct{}{} }() //nolint:errcheck
+		<-done
+		localConn.Close()
+		agentConn.Close()
+	}()
+
+	// Open PTY.
+	master, slave, err := webterm.OpenPTY()
+	if err != nil {
+		logger.Error("failed to open PTY", "error", err)
+		_ = fw.WriteStatus("error:" + err.Error())
+		clientConn.Close()
+		return
+	}
+	defer master.Close()
+
+	// Set terminal size.
+	if err := webterm.SetWinSize(master, cols, rows); err != nil {
+		logger.Warn("failed to set PTY window size", "error", err)
+	}
+
+	// Build command.
+	var cmd []string
+	var env []string
+	switch dbType {
+	case "postgres":
+		cmd = []string{"psql", "-h", "127.0.0.1", "-p", fmt.Sprintf("%d", localPort)}
+		if username != "" {
+			cmd = append(cmd, "-U", username)
+		}
+		if database != "" {
+			cmd = append(cmd, database)
+		}
+		if password != "" {
+			env = append(env, "PGPASSWORD="+password)
+		}
+	case "mysql":
+		cmd = []string{"mysql", "-h", "127.0.0.1", "-P", fmt.Sprintf("%d", localPort)}
+		if username != "" {
+			cmd = append(cmd, "-u", username)
+		}
+		if database != "" {
+			cmd = append(cmd, "-D", database)
+		}
+		if password != "" {
+			env = append(env, "MYSQL_PWD="+password)
+		}
+	default:
+		_ = fw.WriteStatus("error:unsupported db_type: " + dbType)
+		clientConn.Close()
+		return
+	}
+
+	// Spawn subprocess with PTY.
+	proc, err := webterm.StartProcess(cmd, env, slave)
+	slave.Close() // Close slave in parent after passing to child.
+	if err != nil {
+		logger.Error("failed to spawn database client", "error", err, "cmd", cmd[0])
+		_ = fw.WriteStatus("error:failed to start " + cmd[0])
+		clientConn.Close()
+		return
+	}
+
+	// Signal ready.
+	if err := fw.WriteStatus("ready"); err != nil {
+		logger.Error("failed to send ready", "error", err)
+		_ = proc.Kill()
+		clientConn.Close()
+		return
+	}
+
+	// Create web terminal session.
+	session := webterm.NewSession(sessionID, "web-db", clientConn, master, logger)
+	session.SetResizeFunc(func(c, r uint16) {
+		_ = webterm.SetWinSize(master, c, r)
+	})
+
+	// Register for reconnection.
+	s.webTermSessionsMu.Lock()
+	s.webTermSessions[sessionID] = session
+	s.webTermSessionsMu.Unlock()
+	defer func() {
+		s.webTermSessionsMu.Lock()
+		delete(s.webTermSessions, sessionID)
+		s.webTermSessionsMu.Unlock()
+	}()
+
+	// Run session.
+	if err := session.Run(); err != nil {
+		logger.Debug("web DB session ended", "error", err)
+	}
+
+	// Kill subprocess explicitly — PTY master close alone may not be
+	// sufficient if the process is blocked on a network read (e.g., psql
+	// waiting for a PostgreSQL response). Use Kill (SIGKILL) with a
+	// timeout on Wait to ensure we don't block the handler.
+	_ = proc.Kill()
+	waitDone := make(chan struct{})
+	go func() {
+		_, _ = proc.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(3 * time.Second):
+		logger.Warn("subprocess did not exit after kill, abandoning wait")
+	}
+
+	logger.Info("web DB terminal session complete")
+
+	// Upload query recording if audit was active.
+	if eventCh != nil {
+		close(eventCh)
+	}
+	if collector != nil {
+		queryCount := collector.Count()
+		if queryCount > 0 {
+			recording := collector.Recording()
+			go func() {
+				uploadCtx, uploadCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer uploadCancel()
+				if err := s.apiClient.UploadQueryRecording(uploadCtx, sessionID, recording); err != nil {
+					logger.Error("failed to upload query recording", "error", err)
+				} else {
+					logger.Info("query recording uploaded", "queries", queryCount)
+				}
+			}()
+		}
+	}
+
+	// Notify API (synchronous — must complete before handler returns).
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
+		logger.Warn("failed to notify tunnel closed", "error", err)
+	}
+}
+
+// parseHandshakeParams parses newline-separated key=value pairs.
+func parseHandshakeParams(s string) map[string]string {
+	params := make(map[string]string)
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if k, v, ok := strings.Cut(line, "="); ok {
+			params[k] = v
+		}
+	}
+	return params
+}
+
+// parseUint16 parses a string as uint16, returning def on failure.
+func parseUint16(s string, def uint16) uint16 {
+	if s == "" {
+		return def
+	}
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return def
+		}
+		n = n*10 + int(c-'0')
+		if n > 65535 {
+			return def
+		}
+	}
+	return uint16(n)
 }
 
 // handleDBAuditSession runs a database query audit session.

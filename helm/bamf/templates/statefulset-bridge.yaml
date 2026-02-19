@@ -18,6 +18,10 @@ spec:
     metadata:
       labels:
         {{- include "bamf.bridge.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -54,6 +58,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # Shutdown timeout = terminationGracePeriodSeconds - 5s buffer before SIGKILL
+            - name: BAMF_SHUTDOWN_TIMEOUT
+              value: "{{ sub .Values.bridge.terminationGracePeriodSeconds 5 }}s"
+            {{- if .Values.bridge.autoscaling.targetTunnelsPerPod }}
+            - name: BAMF_TARGET_TUNNELS_PER_POD
+              value: "{{ .Values.bridge.autoscaling.targetTunnelsPerPod }}"
+            {{- end }}
             {{- if .Values.bridge.bootstrap.enabled }}
             - name: BAMF_BOOTSTRAP_TOKEN
               valueFrom:

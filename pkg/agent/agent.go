@@ -453,12 +453,21 @@ func (a *Agent) handleTunnelRequest(ctx context.Context, data map[string]interfa
 		return
 	}
 
+	// Use the resource_type from the SSE event for the bridge header.
+	// This may differ from the resource's native type — e.g., "web-ssh"
+	// instead of "ssh" for web terminal sessions.
+	protocolType, _ := data["resource_type"].(string)
+	if protocolType == "" {
+		protocolType = resource.ResourceType
+	}
+
 	// Create tunnel handler with session certificate
 	handler, err := NewTunnelHandler(
 		sessionID,
 		bridgeHost,
 		int(bridgePort),
 		resource,
+		protocolType,
 		[]byte(sessionCert),
 		[]byte(sessionKey),
 		[]byte(caCert),

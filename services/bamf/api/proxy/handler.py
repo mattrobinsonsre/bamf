@@ -47,6 +47,7 @@ from bamf.redis.client import get_redis_client
 from bamf.services.audit_service import log_audit_event
 from bamf.services.resource_catalog import get_resource_by_tunnel_hostname
 
+from .redact import redact_body, redact_headers, redact_query
 from .rewrite import rewrite_request_headers, rewrite_response_headers
 
 logger = get_logger(__name__)
@@ -497,24 +498,36 @@ async def _store_http_recording(
 
         # Filter out proxy-internal and hop-by-hop headers from recorded headers
         skip_headers = {"host", "connection", "transfer-encoding", "keep-alive"}
-        req_headers = {
-            k: v for k, v in raw_request_headers.items() if k.lower() not in skip_headers
-        }
-        resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip_headers}
+        req_headers = redact_headers(
+            {k: v for k, v in raw_request_headers.items() if k.lower() not in skip_headers}
+        )
+        resp_headers = redact_headers(
+            {k: v for k, v in response.headers.items() if k.lower() not in skip_headers}
+        )
+
+        req_body_info = _capture_body(request_body, req_ct)
+        if req_body_info.get("body"):
+            req_body_info["body"] = redact_body(req_body_info["body"], req_ct)
+
+        resp_body_info = _capture_body(response.content, resp_ct)
+        if resp_body_info.get("body"):
+            resp_body_info["body"] = redact_body(resp_body_info["body"], resp_ct)
+
+        query = redact_query(request.url.query or "")
 
         exchange = {
             "version": 1,
             "request": {
                 "method": request.method,
                 "path": request.url.path,
-                "query": request.url.query or "",
+                "query": query,
                 "headers": req_headers,
-                **_capture_body(request_body, req_ct),
+                **req_body_info,
             },
             "response": {
                 "status": response.status_code,
                 "headers": resp_headers,
-                **_capture_body(response.content, resp_ct),
+                **resp_body_info,
             },
             "timing": {
                 "duration_ms": duration_ms,

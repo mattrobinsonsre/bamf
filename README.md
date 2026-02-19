@@ -25,6 +25,8 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
 | | BAMF (GPLv3) | Teleport Community |
 |---|---|---|
 | **SSO (OIDC/SAML)** | All providers included | GitHub only (Okta, Azure AD, SAML: Enterprise) |
+| **Session recording** | SSH + DB query + HTTP audit | SSH only (enhanced recording: Enterprise) |
+| **Web app access** | Included | Enterprise only |
 | **Commercial use** | Unrestricted | <100 employees **and** <$10M revenue |
 | **Build from source** | Go + Python, minutes | Go + Rust + C + libfido2, hours |
 | **License** | GPLv3 | Commercial (since v16, June 2024) |
@@ -58,20 +60,42 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
   [RBAC guide](docs/admin/rbac.md)
 
 - **Audit logging** of all authentication, authorization, and session events.
-  Exportable via REST API for SIEM integration.
+  Structured JSON audit log with cursor-based pagination, exportable via REST
+  API for SIEM integration.
+
+- **Browser-based terminal** — SSH, PostgreSQL, and MySQL access directly from the
+  web UI using xterm.js. Upload your SSH key per-session (never stored) or enter
+  database credentials. Sessions survive API pod restarts transparently. No CLI
+  installation required. [Guide](docs/guides/web-terminal.md)
 
 - **Session recording** — SSH terminal recording in asciicast v2 format (opt-in
-  `ssh-audit` type). Database query audit logging for PostgreSQL and MySQL
-  (planned, via passive wire protocol tapping).
+  `ssh-audit` type) with web-based playback. Database query audit logging for
+  PostgreSQL and MySQL via passive wire protocol tapping (`postgres-audit`,
+  `mysql-audit` types). HTTP request/response audit for web app proxy traffic
+  (`http-audit` type) with full exchange capture.
+
+- **Reliable tunnel streams** — TCP tunnels survive bridge pod failure
+  transparently. End-to-end reliable framing between CLI and agent retransmits
+  unacknowledged data through a new bridge. Application sessions (SSH, psql)
+  experience a brief stall, not a disconnect. Graceful bridge drain migrates
+  tunnels with zero data loss during scale-in, maintenance, and spot
+  termination.
 
 - **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH
   certificates. No long-lived secrets. Session certs encode the authorization
   decision directly, so the bridge relay has zero runtime dependencies.
 
-- **Modern web UI** with real-time resource discovery, session management, and
-  role administration.
+- **Real-time operations dashboard** — live tunnel monitoring, agent fleet
+  status, session management, resource discovery, audit log viewer, and
+  recording playback — all in a modern web UI with auto-refreshing data.
 
 ![Login](docs/images/ui-login.png)
+
+![Active Tunnels](docs/images/ui-tunnels.png)
+
+![Audit Log](docs/images/ui-audit.png)
+
+![Session Recordings](docs/images/ui-recordings.png)
 
 ## Architecture
 

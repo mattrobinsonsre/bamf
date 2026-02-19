@@ -152,7 +152,7 @@ func TestProxy_BasicSession(t *testing.T) {
 		defer proxyDone.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-id-1234567890")
+		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-id-1234567890", nil)
 	}()
 
 	// Connect as SSH client through the proxy (password auth forwarded to target).
@@ -259,7 +259,7 @@ func TestProxy_ExecCommand(t *testing.T) {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-exec-1234567890")
+		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-exec-1234567890", nil)
 	}()
 
 	clientConfig := &ssh.ClientConfig{
@@ -315,7 +315,7 @@ func TestProxy_HandshakeFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, proxyErr := proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-fail-session-1234567890")
+	_, proxyErr := proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-fail-session-1234567890", nil)
 	require.Error(t, proxyErr)
 	require.Contains(t, proxyErr.Error(), "client SSH handshake failed")
 }
@@ -390,7 +390,7 @@ func TestProxy_ExecNoPTY(t *testing.T) {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-nopty-1234567890")
+		result, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-session-nopty-1234567890", nil)
 	}()
 
 	clientConfig := &ssh.ClientConfig{
@@ -718,7 +718,7 @@ func TestProxy_HandlePreAuth(t *testing.T) {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		result, proxyErr = proxy.HandlePreAuth(ctx, proxyClientConn, targetSSH, targetChans, targetReqs, "test-preauth-session-1234567890")
+		result, proxyErr = proxy.HandlePreAuth(ctx, proxyClientConn, targetSSH, targetChans, targetReqs, "test-preauth-session-1234567890", nil)
 	}()
 
 	// Connect as SSH client through the proxy (NoClientAuth).
@@ -785,7 +785,7 @@ func TestProxy_PortForwardRejected(t *testing.T) {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-portfwd-session-1234567890")
+		_, proxyErr = proxy.Handle(ctx, proxyClientConn, proxyTargetConn, "test-portfwd-session-1234567890", nil)
 	}()
 
 	clientConfig := &ssh.ClientConfig{

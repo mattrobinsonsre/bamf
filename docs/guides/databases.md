@@ -181,6 +181,15 @@ login events, etc.).
 | Client TLS to target | Yes | No (blocked) | N/A | N/A | N/A | N/A |
 | User experience change | None | None | None | None | None | None |
 
+## Browser-Based Database Access
+
+If you don't have the BAMF CLI installed, you can access PostgreSQL and MySQL
+resources directly from the web UI. Click the **Terminal** button on any database
+resource card in the dashboard. You'll be prompted for database credentials, then
+a `psql` or `mysql` interactive session opens in the browser.
+
+For details, see the [Web Terminal guide](web-terminal.md).
+
 ## Troubleshooting
 
 **"Connection refused on local port"** — The tunnel process may have exited.
@@ -192,3 +201,4 @@ network issues.
 
 **"Port already in use"** — Another process is using the requested local port.
 Use a different port with `-p` or let BAMF auto-assign one.
+

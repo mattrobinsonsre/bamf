@@ -112,6 +112,10 @@ class AuditConfig(BaseSettings):
     """Audit log configuration."""
 
     retention_days: int = Field(default=90, description="Audit log retention in days")
+    api_audit_enabled: bool = Field(default=True, description="Enable API self-audit middleware")
+    api_audit_body_max_bytes: int = Field(
+        default=65536, description="Max request/response body size to capture in API audit (bytes)"
+    )
 
 
 class Settings(BaseSettings):
@@ -197,6 +201,14 @@ class Settings(BaseSettings):
     bridge_headless_service: str = Field(
         default="",
         description="Bridge headless service name for internal relay communication.",
+    )
+
+    # Bridge autoscaling: target tunnels per pod for HPA custom metric.
+    # Also used by bridge selection logic to compute oversubscription threshold
+    # for non-migratable sessions (ssh-audit).
+    target_tunnels_per_pod: int = Field(
+        default=0,
+        description="Target tunnel count per bridge pod for HPA scaling. 0 disables low-ordinal bias.",
     )
 
     # Kubernetes namespace (for constructing in-cluster service FQDNs)

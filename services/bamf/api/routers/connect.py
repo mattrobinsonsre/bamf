@@ -39,6 +39,7 @@ Downstream effects:
 """
 
 import json
+import re
 import secrets
 from datetime import UTC, datetime
 
@@ -67,6 +68,38 @@ SESSION_TTL_SECONDS = 30
 # Reconnect TTL: longer than setup because bridge selection and agent notification
 # need time after a failure event. Also accounts for agent SSE reconnect delay.
 RECONNECT_TTL_SECONDS = 300
+
+# Protocols that maintain bridge-local state and cannot survive migration.
+# Only ssh-audit qualifies: the bridge terminates SSH and holds encryption
+# state in-process. Database audit tunnels (postgres-audit, mysql-audit) use
+# passive byte-stream tapping over a standard tunnel and ARE migratable.
+NON_MIGRATABLE_PROTOCOLS = {"ssh-audit", "web-ssh", "web-db"}
+
+# Default oversubscription factor for non-migratable session bridge selection.
+# Low-ordinal bridges can accept up to this factor × targetTunnelsPerPod tunnels
+# before the selector spills to higher ordinals.
+NON_MIGRATABLE_OVERSUBSCRIBE_FACTOR = 1.5
+
+# Valid protocol overrides and the native resource types they're allowed for.
+_PROTOCOL_OVERRIDE_MAP: dict[str, set[str]] = {
+    "web-ssh": {"ssh", "ssh-audit"},
+    "web-db": {"postgres", "postgres-audit", "mysql", "mysql-audit"},
+}
+
+
+def _validate_protocol_override(protocol: str, native_type: str) -> None:
+    """Validate that a protocol override is compatible with the resource type."""
+    allowed = _PROTOCOL_OVERRIDE_MAP.get(protocol)
+    if allowed is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid protocol override: {protocol}",
+        )
+    if native_type not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Protocol '{protocol}' is not valid for resource type '{native_type}'",
+        )
 
 
 @router.post("", response_model=ConnectResponse)
@@ -148,6 +181,14 @@ async def _handle_new_connection(
         )
 
     # ── 4-7. Common: bridge selection, certs, session, agent notify ───
+    # Allow protocol override for web terminal sessions (web-ssh, web-db).
+    # Validate that the override matches the resource's native type.
+    original_resource_type = resource.resource_type
+    resource_type = original_resource_type
+    if request.protocol:
+        _validate_protocol_override(request.protocol, original_resource_type)
+        resource_type = request.protocol
+
     session_id = secrets.token_urlsafe(24)
     return await _issue_session(
         db=db,
@@ -155,7 +196,8 @@ async def _handle_new_connection(
         current_user=current_user,
         session_id=session_id,
         resource_name=resource.name,
-        resource_type=resource.resource_type,
+        resource_type=resource_type,
+        original_resource_type=original_resource_type,
         agent_id=agent_id,
         exclude_bridge_id=None,
         session_ttl=SESSION_TTL_SECONDS,
@@ -244,33 +286,64 @@ async def _handle_reconnect(
     )
 
 
+def _extract_ordinal(bridge_id: str) -> int:
+    """Extract the StatefulSet ordinal from a bridge ID like 'bamf-bridge-0'."""
+    m = re.search(r"-(\d+)$", bridge_id)
+    return int(m.group(1)) if m else 0
+
+
 async def _select_bridge(
     r: aioredis.Redis,
     exclude_bridge_id: str | None = None,
+    *,
+    prefer_low_ordinal: bool = False,
+    target_tunnels_per_pod: int = 0,
+    oversubscribe_factor: float = NON_MIGRATABLE_OVERSUBSCRIBE_FACTOR,
 ) -> tuple[str, dict[str, str]]:
-    """Select the least-loaded bridge, optionally excluding one.
+    """Select the best bridge, optionally excluding one.
+
+    When prefer_low_ordinal is True (used for non-migratable ssh-audit sessions),
+    the selector biases toward the lowest-ordinal bridge that is below the
+    oversubscription threshold. StatefulSet scale-down removes the highest
+    ordinal first, so low-ordinal bridges are the last to be drained.
 
     Returns (bridge_id, bridge_info_dict).
     Raises HTTPException if no bridges are available.
     """
-    # Fetch a few candidates in case we need to skip one.
-    num = 5 if exclude_bridge_id else 1
-    bridges = await r.zrangebyscore("bridges:available", "-inf", "+inf", start=0, num=num)
-    if not bridges:
+    # Fetch all candidates (withscores gives us tunnel counts).
+    bridges_with_scores = await r.zrangebyscore(
+        "bridges:available", "-inf", "+inf", start=0, num=50, withscores=True
+    )
+    if not bridges_with_scores:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="No bridges available",
         )
 
-    # Prefer a bridge that isn't the one we're avoiding.
-    selected = None
-    for bid in bridges:
-        if bid != exclude_bridge_id:
-            selected = bid
-            break
-    if selected is None:
+    # Filter out the excluded bridge.
+    candidates = [
+        (bid, int(score)) for bid, score in bridges_with_scores if bid != exclude_bridge_id
+    ]
+    if not candidates:
         # All candidates are the excluded bridge — use it as fallback.
-        selected = bridges[0]
+        candidates = [(bridges_with_scores[0][0], int(bridges_with_scores[0][1]))]
+
+    if prefer_low_ordinal and target_tunnels_per_pod > 0:
+        # Non-migratable session: prefer lowest ordinal within oversubscription threshold.
+        threshold = int(target_tunnels_per_pod * oversubscribe_factor)
+        eligible = [(bid, score) for bid, score in candidates if score < threshold]
+        if eligible:
+            # Sort by ordinal (lowest first), then by tunnel count.
+            eligible.sort(key=lambda x: (_extract_ordinal(x[0]), x[1]))
+            selected = eligible[0][0]
+        else:
+            # All low-ordinal bridges full — fall back to least-loaded.
+            candidates.sort(key=lambda x: x[1])
+            selected = candidates[0][0]
+    else:
+        # Standard: least-loaded (already sorted by score from Redis).
+        candidates.sort(key=lambda x: x[1])
+        selected = candidates[0][0]
 
     bridge_info = await r.hgetall(f"bridge:{selected}")
     if not bridge_info:
@@ -290,6 +363,7 @@ async def _issue_session(
     session_id: str,
     resource_name: str,
     resource_type: str,
+    original_resource_type: str | None = None,
     agent_id: str,
     exclude_bridge_id: str | None,
     session_ttl: int,
@@ -302,7 +376,12 @@ async def _issue_session(
     agent notification, audit logging, and response construction.
     """
     # ── Bridge selection ──────────────────────────────────────────────
-    bridge_id, bridge_info = await _select_bridge(r, exclude_bridge_id)
+    bridge_id, bridge_info = await _select_bridge(
+        r,
+        exclude_bridge_id,
+        prefer_low_ordinal=resource_type in NON_MIGRATABLE_PROTOCOLS,
+        target_tunnels_per_pod=settings.target_tunnels_per_pod,
+    )
     bridge_hostname = bridge_info.get("hostname", "")
 
     # ── Issue session certificates ────────────────────────────────────
@@ -329,19 +408,23 @@ async def _issue_session(
     expires_at = client_cert.not_valid_after_utc
 
     # ── Store session in Redis ────────────────────────────────────────
-    session_data = json.dumps(
-        {
-            "user_email": current_user.email,
-            "resource_name": resource_name,
-            "agent_id": agent_id,
-            "bridge_id": bridge_id,
-            "protocol": resource_type,
-            "status": "pending",
-            "created_at": datetime.now(UTC).isoformat(),
-            "expires_at": expires_at.isoformat(),
-        }
-    )
+    session_info: dict = {
+        "user_email": current_user.email,
+        "resource_name": resource_name,
+        "agent_id": agent_id,
+        "bridge_id": bridge_id,
+        "protocol": resource_type,
+        "status": "pending",
+        "created_at": datetime.now(UTC).isoformat(),
+        "expires_at": expires_at.isoformat(),
+    }
+    if original_resource_type:
+        session_info["original_resource_type"] = original_resource_type
+    session_data = json.dumps(session_info)
     await r.setex(f"session:{session_id}", session_ttl, session_data)
+
+    # Track session in active set for dashboard queries
+    await r.sadd("sessions:active", session_id)
 
     # Increment new bridge tunnel count.
     await r.zincrby("bridges:available", 1, bridge_id)
@@ -349,6 +432,29 @@ async def _issue_session(
 
     # ── Notify agent via Redis pub/sub ────────────────────────────────
     bridge_port = settings.bridge_tunnel_port
+
+    # Store client creds in Redis for web terminal WebSocket reconnection.
+    # Any API pod can use these to dial the same bridge on WS reconnect.
+    # The API always dials the bridge from within the cluster, so use the
+    # internal K8s service name (not the external hostname).
+    client_cert_pem = serialize_certificate(client_cert).decode()
+    client_key_pem = serialize_private_key(client_key).decode()
+    api_bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
+    api_bridge_port = settings.bridge_internal_tunnel_port
+    await r.setex(
+        f"session:{session_id}:client_creds",
+        session_ttl,
+        json.dumps(
+            {
+                "cert": client_cert_pem,
+                "key": client_key_pem,
+                "ca": ca.ca_cert_pem,
+                "bridge_host": api_bridge_host,
+                "bridge_port": api_bridge_port,
+                "bridge_id": bridge_id,
+            }
+        ),
+    )
 
     agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
     if agent_cluster_internal:
@@ -402,8 +508,8 @@ async def _issue_session(
     return ConnectResponse(
         bridge_hostname=bridge_hostname,
         bridge_port=bridge_port,
-        session_cert=serialize_certificate(client_cert).decode(),
-        session_key=serialize_private_key(client_key).decode(),
+        session_cert=client_cert_pem,
+        session_key=client_key_pem,
         ca_certificate=ca.ca_cert_pem,
         session_id=session_id,
         session_expires_at=expires_at,
