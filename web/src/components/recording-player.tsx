@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { Player } from 'asciinema-player'
+import 'asciinema-player/dist/bundle/asciinema-player.css'
 
 interface RecordingPlayerProps {
   recording: string

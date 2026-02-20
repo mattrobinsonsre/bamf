@@ -158,3 +158,16 @@ class BridgeBootstrapResponse(BAMFBaseModel):
     ssh_host_key: str | None = Field(
         None, description="PEM-encoded Ed25519 SSH host key for ssh-audit proxy"
     )
+
+
+class BridgeRenewResponse(BAMFBaseModel):
+    """Bridge certificate renewal response.
+
+    Go contract: pkg/bridge/api_client.go:RenewCertificate() reads this response.
+    Same shape as bootstrap but without ssh_host_key (already stored).
+    """
+
+    certificate: str = Field(..., description="PEM-encoded bridge certificate")
+    private_key: str = Field(..., description="PEM-encoded private key")
+    ca_certificate: str = Field(..., description="PEM-encoded CA certificate")
+    expires_at: datetime = Field(..., description="Certificate expiration time")

@@ -57,6 +57,26 @@ func (c *APIClient) Bootstrap(ctx context.Context, bridgeID, hostname, bootstrap
 	return &resp, nil
 }
 
+// RenewResponse contains the certificate material from renewal.
+// Matches Python BridgeRenewResponse in services/bamf/api/models/bridges.py.
+type RenewResponse struct {
+	Certificate   string `json:"certificate"`
+	PrivateKey    string `json:"private_key"`
+	CACertificate string `json:"ca_certificate"`
+	ExpiresAt     string `json:"expires_at"`
+}
+
+// RenewCertificate renews the bridge's certificate before it expires.
+// The bridge authenticates with its current valid certificate.
+// Calls: POST /api/v1/internal/bridges/renew
+func (c *APIClient) RenewCertificate(ctx context.Context) (*RenewResponse, error) {
+	var resp RenewResponse
+	if err := c.Client.Post(ctx, "/api/v1/internal/bridges/renew", map[string]any{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // RegisterBridge registers this bridge with the API server.
 // Calls: POST /api/v1/internal/bridges/register
 func (c *APIClient) RegisterBridge(ctx context.Context, bridgeID, hostname string) error {

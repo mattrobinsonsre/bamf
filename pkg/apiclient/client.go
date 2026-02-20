@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type Client struct {
 	httpClient *http.Client
 	userAgent  string
 	certPEM    []byte // PEM cert for X-Bamf-Client-Cert header
+	certMu     sync.RWMutex
 	logger     *slog.Logger
 }
 
@@ -77,8 +79,11 @@ func New(cfg Config) *Client {
 // a base64-encoded X-Bamf-Client-Cert header on every request. This is
 // the mechanism for cert-based auth through the Istio Gateway (which
 // terminates TLS and passes the cert as a header).
+// Thread-safe: may be called concurrently with requests.
 func (c *Client) SetClientCert(certPEM []byte) {
+	c.certMu.Lock()
 	c.certPEM = certPEM
+	c.certMu.Unlock()
 }
 
 // BaseURL returns the configured API base URL.
@@ -98,12 +103,15 @@ func (c *Client) UserAgentString() string {
 }
 
 // CertHeader returns the base64-encoded cert header value, or empty if
-// no client cert is set.
+// no client cert is set. Thread-safe.
 func (c *Client) CertHeader() string {
-	if len(c.certPEM) == 0 {
+	c.certMu.RLock()
+	pem := c.certPEM
+	c.certMu.RUnlock()
+	if len(pem) == 0 {
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString(c.certPEM)
+	return base64.StdEncoding.EncodeToString(pem)
 }
 
 // Post sends a JSON POST request and decodes the response into the
@@ -150,8 +158,8 @@ func (c *Client) do(req *http.Request, response any) error {
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
 	}
-	if len(c.certPEM) > 0 {
-		req.Header.Set("X-Bamf-Client-Cert", c.CertHeader())
+	if certHeader := c.CertHeader(); certHeader != "" {
+		req.Header.Set("X-Bamf-Client-Cert", certHeader)
 	}
 
 	c.logger.Debug("API request",

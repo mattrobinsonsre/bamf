@@ -223,6 +223,13 @@ async def _terminal_relay(websocket: WebSocket, session_id: str, resource_type: 
             original_resource_type = session_info.get("original_resource_type")
         is_audit = original_resource_type is not None and "-audit" in original_resource_type
 
+        logger.debug(
+            "Terminal relay audit check",
+            session_id=session_id,
+            original_resource_type=original_resource_type,
+            is_audit=is_audit,
+        )
+
         # Forward credentials to bridge via frame protocol
         await _send_credentials_to_bridge(writer, msg, resource_type, audit=is_audit)
 

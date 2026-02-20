@@ -40,10 +40,15 @@ type Server struct {
 	httpServer   *http.Server
 	healthServer *http.Server
 
-	// TLS configuration
+	// TLS configuration — protected by certMu for hot-swap during renewal.
+	// The tls.Config uses GetCertificate callbacks that read currentCert
+	// under certMu, so renewed certs are used for new TLS handshakes.
 	tlsConfig  *tls.Config
 	mtlsConfig *tls.Config // For tunnel connections (mTLS with session certs)
-	certPEM    []byte      // PEM cert for API authentication
+	certMu     sync.RWMutex
+	currentCert   *tls.Certificate // Hot-swappable via certMu
+	certNotBefore time.Time
+	certExpiry    time.Time
 
 	// Session management
 	tunnels      *TunnelManager
@@ -61,8 +66,13 @@ type Server struct {
 	webTermSessionsMu sync.Mutex
 
 	// Shutdown coordination
-	shutdownOnce sync.Once
-	shutdownCh   chan struct{}
+	shutdownOnce  sync.Once
+	shutdownCh    chan struct{}
+	certExpiredCh chan struct{} // closed when cert expires and renewal fails
+
+	// Handler goroutine tracking — Shutdown waits for all handlers to finish
+	// so that recording uploads complete before the process exits.
+	handlerWg sync.WaitGroup
 }
 
 // pendingConnection holds a connection waiting for its match
@@ -79,9 +89,10 @@ type pendingConnection struct {
 // NewServer creates a new bridge server
 func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	s := &Server{
-		cfg:        cfg,
-		logger:     logger,
-		shutdownCh: make(chan struct{}),
+		cfg:           cfg,
+		logger:        logger,
+		shutdownCh:    make(chan struct{}),
+		certExpiredCh: make(chan struct{}),
 	}
 
 	// Bootstrap certificates if they don't exist
@@ -90,13 +101,14 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	// Load TLS certificates
-	if err := s.loadTLSConfig(); err != nil {
+	certPEM, err := s.loadTLSConfig()
+	if err != nil {
 		return nil, fmt.Errorf("failed to load TLS config: %w", err)
 	}
 
 	// Initialize API client with certificate auth
 	s.apiClient = NewAPIClient(cfg.APIServerURL, logger)
-	s.apiClient.Client.SetClientCert(s.certPEM)
+	s.apiClient.Client.SetClientCert(certPEM)
 
 	// Initialize tunnel manager
 	s.tunnels = NewTunnelManager(logger)
@@ -208,48 +220,73 @@ func (s *Server) bootstrapIfNeeded() error {
 	return nil
 }
 
-func (s *Server) loadTLSConfig() error {
+// loadTLSConfig loads the bridge certificate and CA, sets up TLS configs
+// with GetCertificate callbacks for hot-swap during cert renewal, and
+// returns the PEM-encoded cert for API client header auth.
+func (s *Server) loadTLSConfig() (certPEM []byte, err error) {
 	// Load server certificate
 	cert, err := tls.LoadX509KeyPair(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
 	if err != nil {
-		return fmt.Errorf("failed to load TLS certificate: %w", err)
+		return nil, fmt.Errorf("failed to load TLS certificate: %w", err)
+	}
+
+	// Parse x509 cert for validity tracking (renewal scheduling)
+	x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse x509 certificate: %w", err)
 	}
 
 	// Load CA certificate for mTLS
 	caCert, err := os.ReadFile(s.cfg.CACertFile)
 	if err != nil {
-		return fmt.Errorf("failed to read CA certificate: %w", err)
+		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 	}
 
 	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caCert) {
-		return fmt.Errorf("failed to parse CA certificate")
+		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
-	// Standard TLS config (client auth optional)
+	// Store current cert under mutex for hot-swap via GetCertificate callback.
+	s.certMu.Lock()
+	s.currentCert = &cert
+	s.certNotBefore = x509Cert.NotBefore
+	s.certExpiry = x509Cert.NotAfter
+	s.certMu.Unlock()
+
+	// Standard TLS config — uses GetCertificate for hot-swap
 	s.tlsConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+		GetCertificate: s.getCertificate,
+		MinVersion:     tls.VersionTLS12,
 		// SNI routing callback
 		GetConfigForClient: s.getConfigForClient,
 	}
 
-	// mTLS config for agent connections (client auth required)
+	// mTLS config for agent connections — uses GetCertificate for hot-swap
 	s.mtlsConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientCAs:    caPool,
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		MinVersion:   tls.VersionTLS12,
+		GetCertificate: s.getCertificate,
+		ClientCAs:      caPool,
+		ClientAuth:     tls.RequireAndVerifyClientCert,
+		MinVersion:     tls.VersionTLS12,
 	}
 
 	// Load cert PEM for API client authentication (X-Bamf-Client-Cert header)
-	certPEM, err := os.ReadFile(s.cfg.TLSCertFile)
+	certPEM, err = os.ReadFile(s.cfg.TLSCertFile)
 	if err != nil {
-		return fmt.Errorf("failed to read certificate PEM: %w", err)
+		return nil, fmt.Errorf("failed to read certificate PEM: %w", err)
 	}
-	s.certPEM = certPEM
 
-	return nil
+	return certPEM, nil
+}
+
+// getCertificate returns the current bridge certificate for TLS handshakes.
+// This callback enables hot-swap: when the cert is renewed, new handshakes
+// automatically use the new cert without restarting listeners.
+func (s *Server) getCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	s.certMu.RLock()
+	cert := s.currentCert
+	s.certMu.RUnlock()
+	return cert, nil
 }
 
 // getConfigForClient handles SNI-based routing
@@ -300,6 +337,9 @@ func (s *Server) Run(ctx context.Context) error {
 	// Start heartbeat
 	go s.heartbeatLoop(ctx)
 
+	// Start certificate renewal loop
+	go s.certRenewalLoop(ctx)
+
 	// Start all handlers
 	errCh := make(chan error, 5)
 
@@ -321,10 +361,13 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	// Wait for context cancellation or error
+	// Wait for context cancellation, cert expiry, or error
 	select {
 	case <-ctx.Done():
 		return nil
+	case <-s.certExpiredCh:
+		s.logger.Error("bridge certificate expired and renewal failed, shutting down for re-bootstrap")
+		return fmt.Errorf("bridge certificate expired, need re-bootstrap")
 	case err := <-errCh:
 		return err
 	}
@@ -346,10 +389,23 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.logger.Warn("failed to notify API of draining", "error", err)
 	}
 
-	// Create shutdown context with timeout.
-	// ShutdownTimeout is derived from terminationGracePeriodSeconds - 5s buffer.
-	shutdownCtx, cancel := context.WithTimeout(ctx, s.cfg.ShutdownTimeout)
-	defer cancel()
+	// Budget allocation within ShutdownTimeout (terminationGracePeriodSeconds - 5s):
+	//   - Drain phase: sessions close naturally or are force-closed
+	//   - Upload phase (2 min): handlers upload recordings with retries
+	// The drain gets everything except the upload budget.
+	const uploadBudget = 2 * time.Minute
+	drainBudget := s.cfg.ShutdownTimeout - uploadBudget
+	if drainBudget < 10*time.Second {
+		drainBudget = 10 * time.Second // minimum drain time
+	}
+	s.logger.Info("shutdown budget",
+		"total", s.cfg.ShutdownTimeout,
+		"drain", drainBudget,
+		"upload", uploadBudget,
+	)
+
+	drainCtx, drainCancel := context.WithTimeout(ctx, drainBudget)
+	defer drainCancel()
 
 	// Stop accepting new tunnel connections
 	if s.tunnelListener != nil {
@@ -363,7 +419,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// Gracefully shutdown HTTP server
 	if s.httpServer != nil {
-		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+		if err := s.httpServer.Shutdown(drainCtx); err != nil {
 			s.logger.Warn("HTTP server shutdown error", "error", err)
 		}
 	}
@@ -371,9 +427,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Close all relay connections
 	s.relays.CloseAll()
 
-	// Two-phase drain: migrate migratable tunnels, wait for non-migratable
-	if err := s.tunnels.DrainAll(shutdownCtx, s.apiClient, s.cfg.BridgeID); err != nil {
+	// Two-phase drain: migrate migratable tunnels, wait for non-migratable.
+	// DrainAll force-closes remaining sessions when drainCtx expires.
+	if err := s.tunnels.DrainAll(drainCtx, s.apiClient, s.cfg.BridgeID); err != nil {
 		s.logger.Warn("tunnel drain error", "error", err)
+	}
+
+	// Wait for handler goroutines to finish. After DrainAll closes connections,
+	// audit handlers upload recordings before returning. Without this wait,
+	// the process would exit and recordings from the final sessions would be
+	// lost. The upload budget ensures time remains before SIGKILL.
+	handlerDone := make(chan struct{})
+	go func() {
+		s.handlerWg.Wait()
+		close(handlerDone)
+	}()
+	select {
+	case <-handlerDone:
+		s.logger.Info("all handler goroutines finished")
+	case <-time.After(uploadBudget):
+		s.logger.Warn("timed out waiting for handler goroutines to finish")
 	}
 
 	// Now shut down the health server (kept alive during drain for metrics scraping)
@@ -464,6 +537,127 @@ func (s *Server) heartbeatLoop(ctx context.Context) {
 	}
 }
 
+// certRenewalLoop periodically checks if the bridge certificate needs
+// renewal and renews it before expiry. If the cert expires without
+// successful renewal, it triggers graceful shutdown so K8s can restart
+// the pod (which will re-bootstrap a fresh certificate).
+//
+// Timing (for a 24h cert):
+//   - Check every 5 minutes
+//   - Renew at the halfway point (~12h before expiry)
+//   - If renewal fails repeatedly and cert expires: shutdown
+func (s *Server) certRenewalLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.shutdownCh:
+			return
+		case <-ticker.C:
+			if err := s.checkAndRenewCertificate(ctx); err != nil {
+				s.logger.Error("certificate renewal check failed", "error", err)
+			}
+		}
+	}
+}
+
+// checkAndRenewCertificate checks if the bridge certificate needs renewal
+// and renews it if past the halfway point. If the cert is already expired
+// and renewal fails, it closes certExpiredCh to trigger shutdown.
+func (s *Server) checkAndRenewCertificate(ctx context.Context) error {
+	now := time.Now()
+
+	s.certMu.RLock()
+	notBefore := s.certNotBefore
+	expiry := s.certExpiry
+	s.certMu.RUnlock()
+
+	// If cert is already expired, we can't renew (API will reject the cert).
+	// Close certExpiredCh to trigger graceful shutdown for re-bootstrap.
+	if now.After(expiry) {
+		s.logger.Error("bridge certificate has expired",
+			"expired_at", expiry.Format(time.RFC3339),
+			"expired_ago", time.Since(expiry).Round(time.Second),
+		)
+		select {
+		case <-s.certExpiredCh:
+			// Already closed
+		default:
+			close(s.certExpiredCh)
+		}
+		return fmt.Errorf("certificate expired at %s", expiry.Format(time.RFC3339))
+	}
+
+	// Calculate the halfway point of the certificate's validity period.
+	totalValidity := expiry.Sub(notBefore)
+	halfwayPoint := notBefore.Add(totalValidity / 2)
+
+	// If we haven't reached the halfway point, no renewal needed.
+	if now.Before(halfwayPoint) {
+		s.logger.Debug("certificate renewal not needed",
+			"expires_in", time.Until(expiry).Round(time.Minute),
+			"renews_at", halfwayPoint.Format(time.RFC3339),
+			"renews_in", time.Until(halfwayPoint).Round(time.Minute),
+		)
+		return nil
+	}
+
+	s.logger.Info("certificate past halfway point, requesting renewal",
+		"expires_in", time.Until(expiry).Round(time.Minute),
+		"validity_period", totalValidity.Round(time.Minute),
+	)
+
+	// Request renewal from API (authenticates with current valid cert).
+	renewCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := s.apiClient.RenewCertificate(renewCtx)
+	if err != nil {
+		return fmt.Errorf("renewal API call failed: %w", err)
+	}
+
+	// Write new cert and key to disk.
+	if err := os.WriteFile(s.cfg.TLSCertFile, []byte(resp.Certificate), 0600); err != nil {
+		return fmt.Errorf("failed to write renewed certificate: %w", err)
+	}
+	if err := os.WriteFile(s.cfg.TLSKeyFile, []byte(resp.PrivateKey), 0600); err != nil {
+		return fmt.Errorf("failed to write renewed key: %w", err)
+	}
+	if err := os.WriteFile(s.cfg.CACertFile, []byte(resp.CACertificate), 0644); err != nil {
+		return fmt.Errorf("failed to write renewed CA: %w", err)
+	}
+
+	// Load new cert into TLS config (hot-swap).
+	newCert, err := tls.LoadX509KeyPair(s.cfg.TLSCertFile, s.cfg.TLSKeyFile)
+	if err != nil {
+		return fmt.Errorf("failed to load renewed certificate: %w", err)
+	}
+
+	x509Cert, err := x509.ParseCertificate(newCert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse renewed certificate: %w", err)
+	}
+
+	s.certMu.Lock()
+	s.currentCert = &newCert
+	s.certNotBefore = x509Cert.NotBefore
+	s.certExpiry = x509Cert.NotAfter
+	s.certMu.Unlock()
+
+	// Update API client cert header for subsequent requests.
+	s.apiClient.Client.SetClientCert([]byte(resp.Certificate))
+
+	s.logger.Info("bridge certificate renewed successfully",
+		"new_expiry", x509Cert.NotAfter.Format(time.RFC3339),
+		"expires_in", time.Until(x509Cert.NotAfter).Round(time.Minute),
+	)
+
+	return nil
+}
+
 func (s *Server) serveTunnels(ctx context.Context) error {
 	for {
 		select {
@@ -483,7 +677,11 @@ func (s *Server) serveTunnels(ctx context.Context) error {
 			}
 		}
 
-		go s.handleTunnelConnection(ctx, conn)
+		s.handlerWg.Add(1)
+		go func() {
+			defer s.handlerWg.Done()
+			s.handleTunnelConnection(ctx, conn)
+		}()
 	}
 }
 
@@ -776,6 +974,36 @@ func (bc *bufferedConn) Read(p []byte) (int, error) {
 	return bc.r.Read(p)
 }
 
+// uploadRecordingWithRetry uploads a recording to the API with retries.
+// Uses exponential backoff (2s, 4s, 8s) for up to 3 retries. Each attempt
+// gets its own 30s context timeout. Total worst-case: ~50s (4 attempts).
+func (s *Server) uploadRecordingWithRetry(sessionID string, upload func(ctx context.Context) error, logger *slog.Logger) error {
+	const maxAttempts = 4
+	backoff := 2 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := upload(ctx)
+		cancel()
+
+		if err == nil {
+			return nil
+		}
+
+		if attempt == maxAttempts {
+			logger.Error("recording upload failed after retries",
+				"attempts", maxAttempts, "error", err)
+			return err
+		}
+
+		logger.Warn("recording upload failed, retrying",
+			"attempt", attempt, "error", err, "backoff", backoff)
+		time.Sleep(backoff)
+		backoff *= 2
+	}
+	return nil // unreachable
+}
+
 // handleSSHAuditSession runs an SSH-terminating proxy for session recording.
 // Instead of byte-splicing, the bridge terminates the client's SSH connection,
 // records terminal I/O in asciicast v2 format, then opens a new SSH connection
@@ -847,27 +1075,22 @@ func (s *Server) handleSSHAuditSession(ctx context.Context, clientConn, agentCon
 
 	logger.Info("SSH audit session complete", "recording_bytes", len(result.Recording))
 
-	// Upload recording to API (best-effort — don't fail the session for this).
+	// Upload recording to API with retries.
 	if len(result.Recording) > 0 {
-		go func() {
-			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := s.apiClient.UploadSessionRecording(uploadCtx, sessionID, result.Recording); err != nil {
-				logger.Error("failed to upload session recording", "error", err)
-			} else {
-				logger.Info("session recording uploaded")
-			}
-		}()
+		recData := result.Recording
+		if err := s.uploadRecordingWithRetry(sessionID, func(ctx context.Context) error {
+			return s.apiClient.UploadSessionRecording(ctx, sessionID, recData)
+		}, logger); err == nil {
+			logger.Info("session recording uploaded", "bytes", len(recData))
+		}
 	}
 
 	// Notify API that session is closed.
-	go func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
-			logger.Warn("failed to notify tunnel closed", "error", err)
-		}
-	}()
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer closeCancel()
+	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
+		logger.Warn("failed to notify tunnel closed", "error", err)
+	}
 }
 
 // handleSSHAuditWithKeys handles ssh-audit sessions with key-based auth.
@@ -972,8 +1195,13 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 	cols := parseUint16(params["cols"], 80)
 	rows := parseUint16(params["rows"], 24)
 	username := params["user"]
-	authMethod := params["auth"]          // "password" or "" (key auth)
+	authMethod := params["auth"]              // "password" or "" (key auth)
 	auditSession := params["audit"] == "true" // record only for -audit resources
+
+	logger.Debug("web SSH session params",
+		"cols", cols, "rows", rows, "user", username,
+		"auth_method", authMethod, "audit", auditSession,
+	)
 
 	if username == "" {
 		_ = fw.WriteStatus("error:username required")
@@ -1110,24 +1338,22 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 
 	logger.Info("web SSH terminal session complete")
 
-	// Upload recording (async — non-critical). Only present for audit sessions.
+	// Upload recording with retries. Only present for audit sessions.
 	var recBytes []byte
 	if recording != nil {
 		recBytes = recording.Bytes()
 	}
 	if len(recBytes) > 0 {
-		go func() {
-			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := s.apiClient.UploadSessionRecording(uploadCtx, sessionID, recBytes); err != nil {
-				logger.Error("failed to upload session recording", "error", err)
-			}
-		}()
+		if err := s.uploadRecordingWithRetry(sessionID, func(ctx context.Context) error {
+			return s.apiClient.UploadSessionRecording(ctx, sessionID, recBytes)
+		}, logger); err == nil {
+			logger.Info("session recording uploaded", "bytes", len(recBytes))
+		}
 	}
 
-	// Notify API (synchronous — must complete before handler returns).
-	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Notify API that session is closed.
+	closeCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
 	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
 		logger.Warn("failed to notify tunnel closed", "error", err)
 	}
@@ -1243,6 +1469,11 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 		logger.Warn("failed to set PTY window size", "error", err)
 	}
 
+	logger.Debug("web DB session params",
+		"cols", cols, "rows", rows, "user", username,
+		"database", database, "db_type", dbType, "audit", auditSession,
+	)
+
 	// Build command.
 	var cmd []string
 	var env []string
@@ -1258,6 +1489,11 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 		if password != "" {
 			env = append(env, "PGPASSWORD="+password)
 		}
+		// Disable SSL: the connection goes through an mTLS tunnel, so
+		// client↔server TLS is redundant. More importantly, when audit is
+		// active the tee reader must see plaintext wire protocol bytes —
+		// TLS would make the stream opaque to the query parser.
+		env = append(env, "PGSSLMODE=disable")
 	case "mysql":
 		cmd = []string{"mysql", "-h", "127.0.0.1", "-P", fmt.Sprintf("%d", localPort)}
 		if username != "" {
@@ -1269,6 +1505,8 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 		if password != "" {
 			env = append(env, "MYSQL_PWD="+password)
 		}
+		// Disable SSL for same reason as PostgreSQL (see above).
+		cmd = append(cmd, "--ssl-mode=DISABLED")
 	default:
 		_ = fw.WriteStatus("error:unsupported db_type: " + dbType)
 		clientConn.Close()
@@ -1332,27 +1570,23 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 
 	logger.Info("web DB terminal session complete")
 
-	// Upload query recording if audit was active.
+	// Upload query recording if audit was active, with retries.
 	if eventCh != nil {
 		close(eventCh)
 	}
 	if collector != nil {
 		queryCount := collector.Count()
 		if queryCount > 0 {
-			recording := collector.Recording()
-			go func() {
-				uploadCtx, uploadCancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer uploadCancel()
-				if err := s.apiClient.UploadQueryRecording(uploadCtx, sessionID, recording); err != nil {
-					logger.Error("failed to upload query recording", "error", err)
-				} else {
-					logger.Info("query recording uploaded", "queries", queryCount)
-				}
-			}()
+			rec := collector.Recording()
+			if err := s.uploadRecordingWithRetry(sessionID, func(ctx context.Context) error {
+				return s.apiClient.UploadQueryRecording(ctx, sessionID, rec)
+			}, logger); err == nil {
+				logger.Info("query recording uploaded", "queries", queryCount)
+			}
 		}
 	}
 
-	// Notify API (synchronous — must complete before handler returns).
+	// Notify API that session is closed.
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, 0, 0); err != nil {
@@ -1472,28 +1706,22 @@ func (s *Server) handleDBAuditSession(ctx context.Context, clientConn, agentConn
 	queryCount := collector.Count()
 	logger.Info("database audit session complete", "queries_captured", queryCount)
 
-	// Upload query recording to API (best-effort).
+	// Upload query recording to API with retries.
 	if queryCount > 0 {
-		recording := collector.Recording()
-		go func() {
-			uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := s.apiClient.UploadQueryRecording(uploadCtx, sessionID, recording); err != nil {
-				logger.Error("failed to upload query recording", "error", err)
-			} else {
-				logger.Info("query recording uploaded", "queries", queryCount)
-			}
-		}()
+		rec := collector.Recording()
+		if err := s.uploadRecordingWithRetry(sessionID, func(ctx context.Context) error {
+			return s.apiClient.UploadQueryRecording(ctx, sessionID, rec)
+		}, logger); err == nil {
+			logger.Info("query recording uploaded", "queries", queryCount)
+		}
 	}
 
 	// Notify API that tunnel is closed.
-	go func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
-			s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
-		}
-	}()
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
+		s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
+	}
 }
 
 // interceptPostgresSSL peeks at the first bytes from the client to check for

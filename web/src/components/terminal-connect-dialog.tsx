@@ -64,12 +64,13 @@ export default function TerminalConnectDialog({
 
         <div className="p-6">
           {isSSH ? (
-            <SSHForm onConnect={onConnect} onCancel={onCancel} />
+            <SSHForm onConnect={onConnect} onCancel={onCancel} resourceName={resourceName} />
           ) : (
             <DBForm
               dbType={isPostgres ? 'postgres' : 'mysql'}
               onConnect={onConnect}
               onCancel={onCancel}
+              resourceName={resourceName}
             />
           )}
         </div>
@@ -81,9 +82,11 @@ export default function TerminalConnectDialog({
 function SSHForm({
   onConnect,
   onCancel,
+  resourceName,
 }: {
   onConnect: (data: ConnectData) => void
   onCancel: () => void
+  resourceName: string
 }) {
   const [username, setUsername] = useState('')
   const [authMethod, setAuthMethod] = useState<'key' | 'password'>('password')
@@ -120,11 +123,14 @@ function SSHForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1">
+        <label htmlFor="ssh-username" className="block text-sm font-medium text-slate-300 mb-1">
           Username
         </label>
         <input
+          id="ssh-username"
+          name="username"
           type="text"
+          autoComplete={`section-${resourceName} username`}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="e.g. root, ubuntu"
@@ -165,7 +171,10 @@ function SSHForm({
 
         {authMethod === 'password' ? (
           <input
+            id="ssh-password"
+            name="password"
             type="password"
+            autoComplete={`section-${resourceName} current-password`}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter password"
@@ -221,10 +230,12 @@ function DBForm({
   dbType,
   onConnect,
   onCancel,
+  resourceName,
 }: {
   dbType: 'postgres' | 'mysql'
   onConnect: (data: ConnectData) => void
   onCancel: () => void
+  resourceName: string
 }) {
   const [username, setUsername] = useState('')
   const [database, setDatabase] = useState('')
@@ -248,14 +259,17 @@ function DBForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1">
-          Username
+        <label htmlFor="db-database" className="block text-sm font-medium text-slate-300 mb-1">
+          Database
         </label>
         <input
+          id="db-database"
+          name="database"
           type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder={dbType === 'postgres' ? 'e.g. postgres' : 'e.g. root'}
+          autoComplete="off"
+          value={database}
+          onChange={(e) => setDatabase(e.target.value)}
+          placeholder="e.g. mydb"
           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
           autoFocus
           required
@@ -263,25 +277,31 @@ function DBForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1">
-          Database
+        <label htmlFor="db-username" className="block text-sm font-medium text-slate-300 mb-1">
+          Username
         </label>
         <input
+          id="db-username"
+          name="username"
           type="text"
-          value={database}
-          onChange={(e) => setDatabase(e.target.value)}
-          placeholder="e.g. mydb"
+          autoComplete={`section-${resourceName} username`}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder={dbType === 'postgres' ? 'e.g. postgres' : 'e.g. root'}
           className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
           required
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1">
+        <label htmlFor="db-password" className="block text-sm font-medium text-slate-300 mb-1">
           Password
         </label>
         <input
+          id="db-password"
+          name="password"
           type="password"
+          autoComplete={`section-${resourceName} current-password`}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"

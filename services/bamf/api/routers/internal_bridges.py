@@ -36,6 +36,7 @@ from bamf.api.models.bridges import (
     BridgeBootstrapResponse,
     BridgeHeartbeatRequest,
     BridgeRegisterRequest,
+    BridgeRenewResponse,
     BridgeStatusRequest,
     DrainRequest,
     DrainResponse,
@@ -50,7 +51,7 @@ from bamf.api.models.bridges import (
 from bamf.api.models.common import SuccessResponse
 from bamf.auth.ca import get_ca, get_ssh_host_key_pem, serialize_certificate, serialize_private_key
 from bamf.config import settings
-from bamf.db.models import SessionRecording
+from bamf.db.models import SessionRecording, utc_now
 from bamf.db.session import get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
@@ -135,6 +136,63 @@ async def bootstrap_bridge(
         ca_certificate=ca.ca_cert_pem,
         expires_at=cert.not_valid_after_utc,
         ssh_host_key=get_ssh_host_key_pem(),
+    )
+
+
+# ── Bridge Certificate Renewal ───────────────────────────────────────────
+
+
+@router.post("/bridges/renew", response_model=BridgeRenewResponse)
+async def renew_bridge_certificate(
+    bridge: BridgeIdentity = Depends(get_bridge_identity),
+) -> BridgeRenewResponse:
+    """Renew a bridge's certificate before it expires.
+
+    The bridge authenticates with its current valid certificate via
+    X-Bamf-Client-Cert header. A new certificate is issued with the same
+    SANs (hostnames) extracted from the current certificate.
+
+    Go contract: pkg/bridge/api_client.go:RenewCertificate() sends no body,
+    authenticates via X-Bamf-Client-Cert, and reads BridgeRenewResponse.
+    """
+    # Extract DNS names from the current certificate to preserve SANs
+    from cryptography.x509.oid import ExtensionOID
+
+    dns_names: list[str] = []
+    try:
+        san_ext = bridge.certificate.extensions.get_extension_for_oid(
+            ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+        )
+        from cryptography.x509 import DNSName
+
+        dns_names = san_ext.value.get_values_for_type(DNSName)
+    except Exception:
+        # Fallback: use the CN as hostname
+        dns_names = [bridge.bridge_id]
+
+    if not dns_names:
+        dns_names = [bridge.bridge_id]
+
+    ca = get_ca()
+    cert, key = ca.issue_service_certificate(
+        service_name=bridge.bridge_id,
+        service_type="bridge",
+        dns_names=dns_names,
+    )
+
+    logger.info(
+        "Bridge certificate renewed",
+        bridge_id=bridge.bridge_id,
+        old_expires=bridge.expires_at.isoformat(),
+        new_expires=cert.not_valid_after_utc.isoformat(),
+        dns_names=dns_names,
+    )
+
+    return BridgeRenewResponse(
+        certificate=serialize_certificate(cert).decode(),
+        private_key=serialize_private_key(key).decode(),
+        ca_certificate=ca.ca_cert_pem,
+        expires_at=cert.not_valid_after_utc,
     )
 
 
@@ -637,13 +695,15 @@ async def upload_session_recording(
     if not recording_type:
         recording_type = "terminal" if request.format == "asciicast-v2" else "queries"
 
-    # Store recording in PostgreSQL
+    # Store recording in PostgreSQL.
+    # ended_at = now because recordings are uploaded after the session completes.
     recording = SessionRecording(
         session_id=_uuid.UUID(session_id) if len(session_id) == 36 else _uuid.uuid4(),
         user_email=user_email,
         resource_name=resource_name,
         recording_data=request.data,
         recording_type=recording_type,
+        ended_at=utc_now(),
     )
     db.add(recording)
 

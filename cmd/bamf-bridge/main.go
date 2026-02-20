@@ -72,6 +72,12 @@ func main() {
 	case err := <-errCh:
 		if err != nil {
 			slog.Error("bridge server error", "error", err)
+			cancel()
+
+			// Graceful shutdown even on error (drain tunnels before exit)
+			if shutdownErr := srv.Shutdown(context.Background()); shutdownErr != nil {
+				slog.Error("shutdown error", "error", shutdownErr)
+			}
 			os.Exit(1)
 		}
 	}
