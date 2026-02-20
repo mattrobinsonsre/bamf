@@ -23,7 +23,6 @@ cryptography = "^46.0.0"
 python-multipart = "^0.0.22"
 pyyaml = "^6.0.0"
 redis = "^5.2.0"
-python3-saml = "^1.16.0"
 zxcvbn = "^4.5.0"
 
 [tool.poetry.group.dev.dependencies]
