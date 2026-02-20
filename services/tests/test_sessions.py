@@ -311,7 +311,7 @@ class TestCreateSessionMaxTTL:
             patch("bamf.auth.sessions.get_redis_client", return_value=redis),
             patch("bamf.auth.sessions._session_ttl", return_value=43200),
         ):
-            session = await create_session(
+            await create_session(
                 email="user@example.com",
                 display_name=None,
                 roles=[],
@@ -331,7 +331,7 @@ class TestCreateSessionMaxTTL:
             patch("bamf.auth.sessions.get_redis_client", return_value=redis),
             patch("bamf.auth.sessions._session_ttl", return_value=3600),
         ):
-            session = await create_session(
+            await create_session(
                 email="user@example.com",
                 display_name=None,
                 roles=[],
