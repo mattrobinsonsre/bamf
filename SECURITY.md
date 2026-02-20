@@ -11,26 +11,10 @@ We recommend always running the latest release.
 
 ## Reporting a Vulnerability
 
-**Do not open a public GitHub issue for security vulnerabilities.**
-
-To report a vulnerability, email **security@bamf.dev** with:
-
-1. A description of the vulnerability
-2. Steps to reproduce
-3. Affected versions (if known)
-4. Any potential impact assessment
-
-You will receive an acknowledgment within 48 hours. We aim to provide an
-initial assessment within 5 business days and a fix or mitigation plan within
-30 days, depending on severity.
-
-## Disclosure Policy
-
-- We follow coordinated disclosure. We ask that reporters give us reasonable
-  time to address issues before public disclosure (typically 90 days).
-- We will credit reporters in the security advisory unless they prefer to
-  remain anonymous.
-- Security fixes are released as patch versions with a GitHub Security Advisory.
+To report a security vulnerability, please
+[open a GitHub issue](https://github.com/mattrobinsonsre/bamf/issues/new).
+Include a description of the vulnerability, steps to reproduce, and affected
+versions if known.
 
 ## Security Design
 
