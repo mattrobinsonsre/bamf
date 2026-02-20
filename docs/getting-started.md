@@ -102,7 +102,7 @@ Agents run alongside your target resources and register with the platform.
 In the web UI, navigate to **Tokens** and click **Create Token**. Or via CLI:
 
 ```zsh
-bamf tokens create --name my-first-agent --expires-in 24
+bamf tokens create --name my-first-agent --ttl 24h
 ```
 
 Save the token — it's shown only once.

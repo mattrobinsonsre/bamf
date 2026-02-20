@@ -218,7 +218,7 @@ bamf tokens create [flags]
 | Flag | Description |
 |------|-------------|
 | `--name` | Token name (required) |
-| `--expires-in` | Validity in hours (default: 24) |
+| `--ttl` | Token time-to-live, e.g., `1h`, `24h`, `7d` (default: `1h`) |
 | `--max-uses` | Maximum uses before expiry |
 | `--labels` | Labels to apply to agents (key=value,...) |
 

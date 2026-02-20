@@ -195,7 +195,7 @@ See [Deployment Guide](docs/admin/deployment.md) for production configuration.
 
 ```zsh
 # Create a join token
-bamf tokens create --name prod-agents --expires-in 24
+bamf tokens create --name prod-agents --ttl 24h
 
 # Deploy the agent (Kubernetes)
 helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \

@@ -117,9 +117,10 @@ After users log in, assign roles via the BAMF admin API or web UI:
 
 ```zsh
 # Grant admin role to an Auth0 user
-curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+curl -X PUT https://bamf.example.com/api/v1/role-assignments \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"provider_name": "auth0", "email": "alice@example.com", "role_name": "admin"}'
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "auth0", "email": "alice@example.com", "roles": ["admin"]}'
 ```
 
 That's it. Users can log in via Auth0 and you control their roles in BAMF.
@@ -289,9 +290,10 @@ After users log in, assign roles via the BAMF admin API or web UI:
 
 ```zsh
 # Grant admin role to an Okta user
-curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+curl -X PUT https://bamf.example.com/api/v1/role-assignments \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"provider_name": "okta", "email": "alice@example.com", "role_name": "admin"}'
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "okta", "email": "alice@example.com", "roles": ["admin"]}'
 ```
 
 That's it. Users can log in via Okta and you control their roles in BAMF.
@@ -725,9 +727,10 @@ kubectl -n bamf create secret generic bamf-jumpcloud \
 After users log in, assign roles via the BAMF admin API or web UI:
 
 ```zsh
-curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+curl -X PUT https://bamf.example.com/api/v1/role-assignments \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"provider_name": "jumpcloud", "email": "alice@example.com", "role_name": "admin"}'
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "jumpcloud", "email": "alice@example.com", "roles": ["admin"]}'
 ```
 
 ### Authorization Setup (JumpCloud manages roles)
@@ -859,9 +862,10 @@ auth:
 **4. Assign roles in BAMF**
 
 ```zsh
-curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+curl -X PUT https://bamf.example.com/api/v1/role-assignments \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"provider_name": "google", "email": "alice@example.com", "role_name": "admin"}'
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "google", "email": "alice@example.com", "roles": ["admin"]}'
 ```
 
 > **Note**: Any Google account can authenticate (including `@gmail.com`
@@ -979,9 +983,10 @@ the API. This is useful for:
 Internal assignments are keyed by `(provider_name, email)`:
 
 ```zsh
-curl -X POST https://bamf.example.com/api/v1/platform-roles/assignments \
+curl -X PUT https://bamf.example.com/api/v1/role-assignments \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"provider_name": "auth0", "email": "alice@example.com", "role_name": "admin"}'
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "auth0", "email": "alice@example.com", "roles": ["admin"]}'
 ```
 
 At login, internally-assigned roles are merged with IdP-derived roles.

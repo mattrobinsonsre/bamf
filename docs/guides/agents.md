@@ -155,7 +155,7 @@ accessible to all authenticated users via the implicit `everyone` role.
 
 ```zsh
 # Create token
-bamf tokens create --name prod-agents --expires-in 24 --max-uses 10
+bamf tokens create --name prod-agents --ttl 24h --max-uses 10
 
 # Revoke token (after agents have registered)
 bamf tokens revoke prod-agents

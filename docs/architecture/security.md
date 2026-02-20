@@ -307,7 +307,7 @@ resources within the user's RBAC permissions.
 denied by RBAC, delete audit logs.
 
 **Response**: Admin revokes all sessions for the user
-(`DELETE /api/v1/auth/sessions?email=user@corp.com`). Identity cert expires
+(`DELETE /api/v1/auth/sessions/user/user@corp.com`). Identity cert expires
 within 12 hours. Session token is instantly invalidated.
 
 ### Scenario: Compromised join token
