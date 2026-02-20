@@ -391,12 +391,17 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// Budget allocation within ShutdownTimeout (terminationGracePeriodSeconds - 5s):
 	//   - Drain phase: sessions close naturally or are force-closed
-	//   - Upload phase (2 min): handlers upload recordings with retries
-	// The drain gets everything except the upload budget.
-	const uploadBudget = 2 * time.Minute
+	//   - Upload phase: handlers upload recordings with retries
+	// Upload gets up to 2 minutes, but never more than 1/3 of the total budget.
+	// Drain gets everything else (minimum 10s).
+	const maxUploadBudget = 2 * time.Minute
+	uploadBudget := maxUploadBudget
+	if uploadBudget > s.cfg.ShutdownTimeout/3 {
+		uploadBudget = s.cfg.ShutdownTimeout / 3
+	}
 	drainBudget := s.cfg.ShutdownTimeout - uploadBudget
 	if drainBudget < 10*time.Second {
-		drainBudget = 10 * time.Second // minimum drain time
+		drainBudget = 10 * time.Second
 	}
 	s.logger.Info("shutdown budget",
 		"total", s.cfg.ShutdownTimeout,

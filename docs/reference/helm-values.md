@@ -73,7 +73,7 @@ bridge:
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
-  terminationGracePeriodSeconds: 120
+  terminationGracePeriodSeconds: 1800  # 30 min for non-migratable sessions; lower for spot (120)
   bootstrap:
     enabled: true                  # Token-based cert bootstrap
 ```
