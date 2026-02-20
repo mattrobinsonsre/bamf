@@ -85,8 +85,9 @@ audit history, and impersonate any user. This is the highest-value target.
 ### Boundary 2: Bridge
 
 The bridge is a protocol-agnostic relay. It validates certificates against the
-BAMF CA and splices bytes. It has **zero runtime dependencies** — no database,
-no Redis, no API calls during tunnel operation.
+BAMF CA and splices bytes. During steady-state tunnel operation, the bridge
+makes no API calls — it validates certs locally. It does call the API for
+startup registration, heartbeats, shutdown notifications, and recording uploads.
 
 **If a bridge is compromised**: The attacker can read traffic flowing through
 that specific bridge pod. They cannot issue new certificates, access other
@@ -120,7 +121,7 @@ history (those are in PostgreSQL).
 
 **Mitigations**:
 - Network policies restrict database access to API pods only
-- Passwords are bcrypt-hashed (cost 12)
+- Passwords are hashed with PBKDF2-SHA256 (100,000 iterations)
 - Session tokens are opaque random bytes (not JWTs — useless without Redis)
 - Redis keys have TTLs (sessions expire automatically)
 - PostgreSQL supports SSL/TLS for in-cluster connections
@@ -139,7 +140,7 @@ any user/group).
 **Mitigations**:
 - Agents are scoped: they only proxy resources listed in their config
 - Agent certificates identify the specific agent — all traffic is attributable
-- Agent certificates are short-lived (24h) and auto-renewed
+- Agent certificates have a 1-year lifetime (8760h) and are auto-renewed
 - Join tokens (used for initial registration) can be single-use and
   time-limited
 - Kubernetes agents use impersonation, not direct admin access — the K8s audit
@@ -182,7 +183,8 @@ x509 Certificate (signed by BAMF CA):
   SAN URIs:
     bamf://session/a1b2c3d4      — unique session ID
     bamf://resource/orders-db     — authorized resource
-    bamf://bridge/bridge-0        — assigned bridge pod
+    bamf://bridge/bamf-bridge-0   — assigned bridge pod
+    bamf://role/developer         — authorized role (one per role)
   Not After: 30 seconds (extended on successful connection)
   Key Usage: Client Authentication
 ```
@@ -216,8 +218,8 @@ If an attacker steals a user's identity cert (12-hour lifetime):
 - They can request tunnel sessions for any resource that user has access to
 - They cannot bypass RBAC — the API still evaluates permissions
 
-Mitigation: identity certs are stored in `~/.bamf/keys/` with 0600 permissions.
-The short lifetime (12 hours) limits the exposure window.
+Mitigation: session credentials are stored in `~/.bamf/credentials.json` with
+0600 permissions. The short lifetime (12 hours) limits the exposure window.
 
 ## Session Security
 

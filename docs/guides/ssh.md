@@ -8,13 +8,13 @@ Unlike Teleport, BAMF does not reimplement SSH — it wraps your system's native
 
 ```
 bamf ssh user@server
-  └── internally exec's ──▶ ssh -o ProxyCommand="bamf pipe %h %p" \
+  └── internally exec's ──▶ ssh -o ProxyCommand="bamf pipe %h %r" \
                                 -o UserKnownHostsFile=~/.bamf/known_hosts \
                                 user@server
 ```
 
 `bamf pipe` handles the BAMF-specific parts:
-1. Reads your cached certificate from `~/.bamf/keys/`
+1. Reads your cached session credentials from `~/.bamf/credentials.json`
 2. Connects to the assigned bridge via mTLS
 3. Becomes a stdio pipe — stdin/stdout splice to the tunnel
 
@@ -79,7 +79,7 @@ You can use BAMF directly in your `~/.ssh/config`:
 
 ```
 Host *.prod
-  ProxyCommand bamf pipe %h %p
+  ProxyCommand bamf pipe %h %r
   UserKnownHostsFile ~/.bamf/known_hosts
 ```
 

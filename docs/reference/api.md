@@ -117,7 +117,8 @@ CRUD API for resources — they are managed through agent configuration.
 | GET | `/tokens` | Admin/Audit | List tokens |
 | POST | `/tokens` | Admin | Create token |
 | GET | `/tokens/{id}` | Admin/Audit | Get token |
-| DELETE | `/tokens/{id}` | Admin | Revoke token |
+| DELETE | `/tokens/{id}` | Admin | Revoke token by ID |
+| POST | `/tokens/{name}/revoke` | Admin | Revoke token by name |
 
 **Create Request:**
 ```json
@@ -135,7 +136,7 @@ CRUD API for resources — they are managed through agent configuration.
 |--------|------|------|-------------|
 | GET | `/certificates/ca` | No | Get CA public certificate |
 | POST | `/certificates/user` | Yes | Issue user identity certificate |
-| POST | `/certificates/service` | Admin | Issue service certificate |
+| POST | `/certificates/service` | Yes | Issue service certificate |
 
 ## Audit Log
 
@@ -149,6 +150,9 @@ CRUD API for resources — they are managed through agent configuration.
 - `event_type` — Filter by type (auth, admin, session)
 - `action` — Filter by action (login, access, create, etc.)
 - `actor_id` — Filter by actor email
+- `target_type` — Filter by target type
+- `target_id` — Filter by target ID
+- `success` — Filter by success/failure
 - `since` / `until` — Time range (ISO 8601)
 
 ## Session Recordings

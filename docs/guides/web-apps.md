@@ -40,8 +40,6 @@ resources:
       team: platform
 ```
 
-Use `type: https` if the agent needs to connect to the target over TLS.
-
 The `tunnel_hostname` must be unique across all resources and follows DNS label
 rules: lowercase alphanumeric and hyphens, starting with a letter, max 63
 characters.
@@ -96,7 +94,7 @@ correctly through the tunnel:
 |--------|---------|
 | `Host` | `grafana.tunnel.bamf.example.com` → `grafana.internal.corp` |
 | `Origin` | `https://grafana.tunnel.bamf.example.com` → `http://grafana.internal.corp:3000` |
-| `X-Forwarded-User` | Injected with authenticated user's display name |
+| `X-Forwarded-User` | Injected with authenticated user's email |
 | `X-Forwarded-Email` | Injected with authenticated user's email |
 | `X-Forwarded-Roles` | Injected with user's BAMF roles |
 | `X-Forwarded-Host` | Set to `grafana.tunnel.bamf.example.com` (real browser origin) |
@@ -109,7 +107,7 @@ correctly through the tunnel:
 | `Location` | Target hostname → tunnel hostname (for redirects) |
 | `Set-Cookie` | Domain rewritten to tunnel hostname |
 | `Access-Control-Allow-Origin` | Rewritten to match browser origin |
-| `Content-Security-Policy` | Absolute URLs rewritten from target to tunnel hostname |
+| `Content-Security-Policy` | Passed through unchanged |
 
 ## Identity Injection
 

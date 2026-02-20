@@ -1,5 +1,8 @@
 package cmd
 
+// CLI reference: docs/reference/cli.md (Authentication section)
+// Architecture: docs/architecture/authentication.md
+
 import (
 	"context"
 	"crypto/rand"

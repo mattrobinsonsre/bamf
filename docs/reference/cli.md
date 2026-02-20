@@ -18,14 +18,15 @@ The `bamf` CLI is a single static binary for secure infrastructure access.
 Authenticate with a BAMF cluster. Opens browser for SSO or local login.
 
 ```
-bamf login [--provider NAME]
+bamf login [--provider NAME] [--no-browser]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--provider` | From config (`default_provider`) | Auth provider name |
+| `--no-browser` | `false` | Print login URL instead of opening browser |
 
-After login, credentials are stored in `~/.bamf/keys/`.
+After login, credentials are stored in `~/.bamf/credentials.json`.
 
 ### bamf logout
 
@@ -96,9 +97,10 @@ bamf tcp <resource> [flags]
 |------|-------|-------------|
 | `--port` | `-p` | Local port to listen on (auto-assigned if omitted) |
 | `--user` | `-U` | Username (for `--exec` template) |
-| `--password` | | Password (or set `BAMF_DB_PASSWORD` env) |
+| `--password` | | Password (or set `BAMF_TCP_PASSWORD` env) |
 | `--dbname` | `-d` | Database name (for `--exec` template) |
 | `--exec` | | Command to execute with template variables |
+| `--background` | `-b` | Run tunnel in background (exits after connection verified) |
 
 Template variables for `--exec`:
 
@@ -129,7 +131,7 @@ Without `--exec`, the tunnel stays open until Ctrl+C.
 Convenience alias for `bamf tcp --exec "psql ..."`.
 
 ```
-bamf psql <resource> [-U user] [-d dbname] [-p port] [-- psql-args...]
+bamf psql <resource> [-U user] [-d dbname] [-- psql-args...]
 ```
 
 ```zsh
@@ -142,7 +144,7 @@ bamf psql orders-db -U admin -d mydb -- -c "SELECT version();"
 Convenience alias for `bamf tcp --exec "mysql ..."`.
 
 ```
-bamf mysql <resource> [-u user] [-D dbname] [-p port] [-- mysql-args...]
+bamf mysql <resource> [-u user] [-D dbname] [-- mysql-args...]
 ```
 
 ```zsh
@@ -155,7 +157,7 @@ bamf mysql prod-mysql -u root -D mydb -- -e "SHOW DATABASES;"
 Pipe stdin/stdout through a tunnel. Used internally by ProxyCommand.
 
 ```
-bamf pipe <resource>
+bamf pipe <resource> [username]
 ```
 
 ## Kubernetes
@@ -168,7 +170,7 @@ Write a kubeconfig entry for a Kubernetes cluster accessed through BAMF.
 bamf kube login <resource-name>
 ```
 
-After this, `kubectl --context <resource-name>` routes through BAMF.
+After this, `kubectl --context bamf-<resource-name>` routes through BAMF.
 
 ### bamf kube-credentials
 
@@ -183,11 +185,16 @@ bamf kube-credentials
 
 ### bamf resources
 
-List accessible resources.
+List accessible resources. Aliases: `bamf ls`, `bamf list`.
 
 ```
-bamf resources
+bamf resources [--type TYPE] [--labels KEY=VALUE,...]
 ```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--type` | `-t` | Filter by resource type |
+| `--labels` | `-l` | Filter by labels (key=value,...) |
 
 ### bamf agents
 
@@ -217,7 +224,7 @@ bamf tokens create [flags]
 
 | Flag | Description |
 |------|-------------|
-| `--name` | Token name (required) |
+| `--name` | Token name (auto-generated if omitted) |
 | `--ttl` | Token time-to-live, e.g., `1h`, `24h`, `7d` (default: `1h`) |
 | `--max-uses` | Maximum uses before expiry |
 | `--labels` | Labels to apply to agents (key=value,...) |
@@ -253,8 +260,7 @@ api: https://bamf.example.com
 
 ```
 ~/.bamf/
-├── config.yaml      # CLI configuration
-├── keys/            # User certificates (0700)
-├── ca.crt           # BAMF CA public cert
-└── known_hosts      # SSH host key cache
+├── config.yaml        # CLI configuration
+├── credentials.json   # Session token, cert, key, CA (0600)
+└── known_hosts        # SSH host key cache
 ```

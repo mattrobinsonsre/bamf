@@ -1,5 +1,8 @@
 package cmd
 
+// CLI reference: docs/reference/cli.md (TCP Tunnels section)
+// Guide: docs/guides/databases.md
+
 import (
 	"context"
 	"fmt"

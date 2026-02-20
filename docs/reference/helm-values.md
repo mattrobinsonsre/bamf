@@ -38,16 +38,17 @@ api:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
-  podDisruptionBudget:
+  pdb:
     enabled: true
     minAvailable: 1
   terminationGracePeriodSeconds: 120
-  preStopSleep: 15                 # Seconds to sleep before SIGTERM
+  preStopSleepSeconds: 15          # Seconds to sleep before SIGTERM
   config:
     log_level: info                # error, warning, info, debug
-    certificate_ttl_hours: 12      # User certificate lifetime
-    agent_certificate_ttl_hours: 8760  # Agent cert lifetime (1 year)
-    service_certificate_ttl_hours: 24  # Bridge cert lifetime
+    certificates:
+      user_ttl_hours: 12           # User certificate lifetime
+      agent_ttl_hours: 8760        # Agent cert lifetime (1 year)
+      bridge_ttl_hours: 24         # Bridge cert lifetime
     audit:
       retention_days: 90           # Audit log retention
 ```
@@ -70,7 +71,9 @@ bridge:
     minReplicas: 2
     maxReplicas: 20
     targetCPUUtilizationPercentage: 70
-  podDisruptionBudget:
+    targetTunnelsPerPod: 50          # Custom metric scaling (requires prometheus-adapter)
+    nonMigratableOversubscribeFactor: 1.5  # Oversubscription for ssh-audit sessions
+  pdb:
     enabled: true
     minAvailable: 1
   terminationGracePeriodSeconds: 1800  # 30 min for non-migratable sessions; lower for spot (120)
@@ -82,8 +85,7 @@ bridge:
 
 ```yaml
 web:
-  standalone:
-    enabled: false                 # Enable separate web deployment
+  standalone: false                  # Enable separate web deployment
   replicas: 2
   image:
     repository: ghcr.io/mattrobinsonsre/bamf-web
@@ -105,15 +107,16 @@ agent:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 200m, memory: 128Mi }
-  name: ""                         # Agent name (required)
-  platform_url: ""                 # BAMF API URL
-  join_token: ""                   # Join token for registration
-  labels: {}                       # Agent labels (key: value)
-  resources_config: []             # Resource definitions
-  clusterInternal:
-    enabled: false                 # Use in-cluster API URL
-  impersonation:
-    enabled: false                 # Create K8s impersonation RBAC
+  config:
+    name: ""                       # Agent name (required when enabled)
+    labels: {}                     # Agent labels (key: value)
+    resources: []                  # Resource definitions (list)
+  platformUrl: ""                  # BAMF API URL
+  joinToken: ""                    # Join token for registration
+  clusterInternal: false           # Use in-cluster API URL
+  kubernetes:
+    impersonation:
+      enabled: false               # Create K8s impersonation RBAC
   dataDir: /var/lib/bamf-agent     # Certificate storage directory
 ```
 
@@ -124,14 +127,16 @@ postgresql:
   # Option A: Bundled (dev/staging)
   bundled:
     enabled: false
-    image: postgres:16-alpine
+    image:
+      repository: public.ecr.aws/docker/library/postgres
+      tag: "16-alpine"
     auth:
       database: bamf
       username: bamf
-    primary:
-      persistence:
-        size: 20Gi
-        storageClass: ""
+      password: ""               # Required when bundled
+    persistence:
+      size: 20Gi
+      storageClass: ""
 
   # Option B: External (production)
   external:
@@ -152,10 +157,16 @@ postgresql:
         kind: ClusterSecretStore
       remoteRef:
         key: ""
-        property: ""
+        property: password
     readReplica:                   # Optional read replica
-      host: ""
-      port: 5432
+      enabled: false
+      host: ""                     # Required when enabled
+      port: ""                     # Inherits from external.port if empty
+      database: ""                 # Inherits from external.database if empty
+      username: ""                 # Inherits from external.username if empty
+      sslmode: ""                  # Inherits from external.sslmode if empty
+      existingSecret: ""
+      existingSecretKey: password
 ```
 
 ## Redis
@@ -165,7 +176,9 @@ redis:
   # Option A: Bundled (dev/staging)
   bundled:
     enabled: false
-    image: redis:7-alpine
+    image:
+      repository: public.ecr.aws/docker/library/redis
+      tag: "7-alpine"
     auth:
       enabled: false
     persistence:
@@ -182,20 +195,9 @@ redis:
 
 ## Internal CA
 
-```yaml
-ca:
-  provider: helm                   # helm, cert-manager, or existing
-  duration: 87600h                 # 10 years (helm provider)
-  certManager:
-    issuerKind: ClusterIssuer
-    issuerName: ""                 # Empty = chart creates self-signed
-    duration: 87600h
-    renewBefore: 720h
-  existing:
-    secretName: ""
-    certKey: tls.crt
-    keyKey: tls.key
-```
+The internal CA is generated automatically at first install and stored in a
+Kubernetes Secret. See [Certificate Management](../admin/certificates.md) for
+CA options (Helm-generated, cert-manager, or existing).
 
 ## Authentication
 
@@ -204,18 +206,20 @@ auth:
   local:
     enabled: true                  # Enable local password auth
   sso:
-    default_provider: local
-    oidc:
-      auth0:
-        enabled: false
-        issuer_url: ""
-        client_id: ""             # From env var (K8s Secret)
-        client_secret: ""         # From env var (K8s Secret)
-        existingSecret: ""
-        clientIdKey: client-id
-        clientSecretKey: client-secret
-        scopes: [openid, profile, email]
-        claims_to_roles: []
+    defaultProvider: ""            # Default provider for login (e.g., "auth0")
+    oidc: {}                       # Map of OIDC providers keyed by name
+    # Example:
+    #   oidc:
+    #     auth0:
+    #       enabled: true
+    #       displayName: "Corporate SSO"
+    #       issuerUrl: https://myorg.us.auth0.com/
+    #       clientId: YOUR_CLIENT_ID
+    #       audience: https://bamf.example.com/api
+    #       scopes: [openid, profile, email]
+    #       groupsClaim: groups
+    #       existingSecret: bamf-auth0
+    #       existingSecretKey: client_secret
 ```
 
 ## TLS
@@ -228,7 +232,6 @@ tls:
       name: letsencrypt-prod
       kind: ClusterIssuer
   existingSecret: ""               # Override: existing TLS secret
-  existingTunnelSecret: ""         # Override: existing wildcard TLS secret
 ```
 
 ## Migrations

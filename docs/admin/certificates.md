@@ -9,7 +9,7 @@ This is separate from the public HTTPS certificates used by the Istio Gateway.
 |---|---|---|---|
 | **Identity cert** | CLI user (after login) | 12 hours | Proves user identity to API |
 | **Session cert** | CLI user + agent (per tunnel) | 30s setup, extended on connect | Authorizes a specific tunnel session |
-| **Agent cert** | Agent (at registration) | 24 hours | Proves agent identity |
+| **Agent cert** | Agent (at registration) | 1 year (8760 hours) | Proves agent identity |
 | **Bridge cert** | Bridge (at startup) | 24 hours | Proves bridge identity for mTLS |
 
 ## Session Certificates
@@ -22,6 +22,7 @@ SAN URIs:
   bamf://session/{session_id}      — pairs client + agent
   bamf://resource/{resource_name}  — target resource
   bamf://bridge/{bridge_id}        — which bridge this is for
+  bamf://role/{role_name}          — authorized role (one per role)
 ```
 
 The bridge validates the cert chain against the BAMF CA, reads the SAN URIs,

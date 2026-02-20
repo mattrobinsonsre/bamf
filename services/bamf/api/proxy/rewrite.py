@@ -1,5 +1,7 @@
 """Header rewriting for HTTP proxy requests and responses.
 
+Guide: docs/guides/web-apps.md (Header Rewriting section)
+
 Request headers are rewritten before sending to the target (via bridge relay):
 - Host, Origin → target's internal hostname
 - Inject X-Forwarded-*, identity headers, X-Bamf-Target

@@ -1,5 +1,8 @@
 package cmd
 
+// CLI reference: docs/reference/cli.md (Kubernetes section)
+// Guide: docs/guides/kubernetes.md
+
 import (
 	"encoding/json"
 	"fmt"

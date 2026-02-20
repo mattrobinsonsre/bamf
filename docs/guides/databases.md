@@ -31,11 +31,11 @@ bamf psql orders-db -U admin -d mydb
 bamf psql orders-db -U admin -d mydb -- -c "SELECT version();"
 
 # With password (from environment)
-export BAMF_DB_PASSWORD=secret
+export BAMF_TCP_PASSWORD=secret
 bamf psql orders-db -U admin -d mydb
 
-# Specific local port
-bamf psql orders-db -U admin -d mydb -p 15432
+# Specific local port (use bamf tcp for port control)
+bamf tcp orders-db -p 15432 --exec "psql -h {host} -p {port} -U admin -d mydb"
 ```
 
 `bamf psql` is a convenience alias for:
@@ -81,7 +81,7 @@ When using `--exec`, these variables are substituted:
 | `{host}` | Local listener address | Always `127.0.0.1` |
 | `{port}` | Local listener port | Auto-assigned or `-p` flag |
 | `{user}` | Username | `-U` / `--user` flag |
-| `{password}` | Password | `--password` flag or `BAMF_DB_PASSWORD` env |
+| `{password}` | Password | `--password` flag or `BAMF_TCP_PASSWORD` env |
 | `{dbname}` | Database name | `-d` / `--dbname` flag |
 
 ## Long-Running Tunnels

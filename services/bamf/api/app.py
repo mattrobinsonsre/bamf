@@ -5,6 +5,7 @@ Uses lifespan handler for startup/shutdown with async resource management.
 """
 
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -115,19 +116,16 @@ def create_application() -> FastAPI:
         """Record API request/response exchanges for audit."""
         return await api_audit_middleware(request, call_next)
 
-    # Request ID middleware
+    # Request ID middleware — propagate existing or generate new
     @app.middleware("http")
     async def add_request_id(request: Request, call_next: Any) -> Any:
-        """Add request ID to context for logging correlation."""
-        request_id = request.headers.get("X-Request-ID")
-        if request_id:
-            structlog.contextvars.bind_contextvars(request_id=request_id)
+        """Ensure every request has a request ID for logging correlation."""
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        structlog.contextvars.bind_contextvars(request_id=request_id)
 
         response = await call_next(request)
-
-        if request_id:
-            response.headers["X-Request-ID"] = request_id
-            structlog.contextvars.unbind_contextvars("request_id")
+        response.headers["X-Request-ID"] = request_id
+        structlog.contextvars.unbind_contextvars("request_id")
 
         return response
 

@@ -1,5 +1,9 @@
 """Authentication router.
 
+API reference: docs/reference/api.md (Authentication section)
+Architecture: docs/architecture/authentication.md
+Admin guide: docs/admin/sso.md
+
 All authentication — local password, OIDC, SAML — goes through the same
 /authorize → login → /callback → /token pipeline. The API server is the
 single gateway for all IDP communication. Clients never talk directly to

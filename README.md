@@ -83,7 +83,7 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
 
 - **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH
   certificates. No long-lived secrets. Session certs encode the authorization
-  decision directly, so the bridge relay has zero runtime dependencies.
+  decision directly — the bridge validates certs locally during tunnel operation.
 
 - **Real-time operations dashboard** — live tunnel monitoring, agent fleet
   status, session management, resource discovery, audit log viewer, and
@@ -96,7 +96,7 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
 | ![Login](docs/images/ui-login.png) | ![Resources](docs/images/ui-resources.png) |
 | Login (local + SSO providers) | Resource discovery with one-click terminal access |
 | ![Active Tunnels](docs/images/ui-tunnels.png) | ![Sessions](docs/images/ui-sessions.png) |
-| Live tunnel monitoring | Session management with sliding-window expiry |
+| Live tunnel monitoring | Session management with configurable TTL |
 | ![Audit Log](docs/images/ui-audit.png) | ![Recordings](docs/images/ui-recordings.png) |
 | Structured audit log with filters | SSH, database, and HTTP session recordings |
 | ![Roles](docs/images/ui-roles.png) | ![Access](docs/images/ui-access.png) |
@@ -181,12 +181,14 @@ curl -L https://github.com/mattrobinsonsre/bamf/releases/latest/download/bamf-li
 ### Deploy the Platform
 
 ```zsh
-helm install bamf oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
+helm install bamf oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf --create-namespace \
   --set gateway.hostname=bamf.example.com \
   --set gateway.tunnelDomain=tunnel.bamf.example.com \
   --set postgresql.bundled.enabled=true \
-  --set redis.bundled.enabled=true
+  --set redis.bundled.enabled=true \
+  --set bootstrap.adminEmail=admin \
+  --set bootstrap.adminPassword=changeme
 ```
 
 See [Deployment Guide](docs/admin/deployment.md) for production configuration.
@@ -198,10 +200,10 @@ See [Deployment Guide](docs/admin/deployment.md) for production configuration.
 bamf tokens create --name prod-agents --ttl 24h
 
 # Deploy the agent (Kubernetes)
-helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
-  --set mode=agent \
-  --set agent.platform_url=https://bamf.example.com \
-  --set agent.join_token=${TOKEN}
+helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf \
+  --set agent.enabled=true \
+  --set agent.platformUrl=https://bamf.example.com \
+  --set agent.joinToken=${TOKEN}
 
 # Or deploy on a VM
 curl -L https://github.com/mattrobinsonsre/bamf/releases/latest/download/bamf-agent-linux-amd64 \
@@ -225,7 +227,7 @@ bamf psql orders-db -U admin -d mydb
 
 # Kubernetes
 bamf kube login prod-cluster
-kubectl --context prod-cluster get pods
+kubectl --context bamf-prod-cluster get pods
 
 # Web apps — just open in browser
 # https://grafana.tunnel.bamf.example.com

@@ -1,5 +1,8 @@
 package cmd
 
+// CLI reference: docs/reference/cli.md (bamf psql section)
+// Guide: docs/guides/databases.md
+
 import (
 	"github.com/spf13/cobra"
 )

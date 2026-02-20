@@ -193,11 +193,17 @@ authenticated users.
 
 | Variable | Description |
 |----------|-------------|
-| `BAMF_JOIN_TOKEN` | Join token for registration |
 | `BAMF_PLATFORM_URL` | API server URL (overrides config) |
+| `BAMF_API_URL` | API server URL (alias, `BAMF_PLATFORM_URL` takes precedence) |
+| `BAMF_JOIN_TOKEN` | Join token for registration |
 | `BAMF_AGENT_NAME` | Agent name (overrides config) |
 | `BAMF_DATA_DIR` | Data directory (overrides config) |
-| `BAMF_LOG_LEVEL` | Log level: debug, info, warn, error |
+| `BAMF_CLUSTER_INTERNAL` | Use in-cluster bridge hostnames (`true`/`false`) |
+| `BAMF_LABELS` | Agent labels (key=value,key=value) |
+| `BAMF_RESOURCES` | Resource definitions (JSON) |
+| `BAMF_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g., `60s`) |
+| `BAMF_RECONNECT_BASE_DELAY` | Reconnect base delay (e.g., `1s`) |
+| `BAMF_RECONNECT_MAX_DELAY` | Reconnect max delay (e.g., `5m`) |
 
 ## Certificate Storage
 

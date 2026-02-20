@@ -66,12 +66,12 @@ Both API and bridge have PDBs enabled by default:
 
 ```yaml
 api:
-  podDisruptionBudget:
+  pdb:
     enabled: true
     minAvailable: 1
 
 bridge:
-  podDisruptionBudget:
+  pdb:
     enabled: true
     minAvailable: 1
 ```

@@ -27,13 +27,15 @@ registering an agent, and connecting to your first resource.
 kubectl create namespace bamf
 
 # Install with bundled PostgreSQL and Redis (evaluation only — not for production)
-helm install bamf oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
+helm install bamf oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf \
   --set gateway.hostname=bamf.example.com \
   --set gateway.tunnelDomain=tunnel.bamf.example.com \
   --set auth.local.enabled=true \
   --set postgresql.bundled.enabled=true \
-  --set redis.bundled.enabled=true
+  --set redis.bundled.enabled=true \
+  --set bootstrap.adminEmail=admin \
+  --set bootstrap.adminPassword=admin
 ```
 
 > **Note:** Bundled PostgreSQL and Redis are single-replica with no replication
@@ -62,11 +64,12 @@ kubectl get svc -A -l app.kubernetes.io/name=traefik -o jsonpath='{.items[0].sta
 Create DNS records:
 - `bamf.example.com` → Gateway IP (A record)
 - `*.tunnel.bamf.example.com` → Gateway IP (A record or CNAME)
+- `*.bridge.tunnel.bamf.example.com` → Gateway IP (A record or CNAME)
 
 ## 3. Log In
 
-Open `https://bamf.example.com` in your browser. If local auth is enabled, the
-bootstrap job creates a default admin account:
+Open `https://bamf.example.com` in your browser. The bootstrap job (triggered by
+the `bootstrap.*` values above) creates the initial admin account:
 
 - **Email**: `admin`
 - **Password**: `admin`
@@ -91,7 +94,7 @@ bamf login --api https://bamf.example.com
 ```
 
 This opens your browser for authentication. After login, BAMF stores your
-certificate in `~/.bamf/keys/`.
+session credentials in `~/.bamf/credentials.json`.
 
 ## 5. Deploy an Agent
 
@@ -110,12 +113,12 @@ Save the token — it's shown only once.
 ### Deploy on Kubernetes
 
 ```zsh
-helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
+helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf \
-  --set mode=agent \
-  --set agent.name=my-agent \
-  --set agent.platform_url=https://bamf.example.com \
-  --set agent.join_token=${TOKEN}
+  --set agent.enabled=true \
+  --set agent.config.name=my-agent \
+  --set agent.platformUrl=https://bamf.example.com \
+  --set agent.joinToken=${TOKEN}
 ```
 
 ### Deploy on a VM
@@ -128,8 +131,9 @@ cat > /etc/bamf/agent.yaml << 'EOF'
 platform_url: https://bamf.example.com
 join_token: YOUR_TOKEN_HERE
 resources:
-  ssh:
-    hostname: $(hostname)
+  - name: my-server
+    type: ssh
+    hostname: my-server.internal
     labels:
       env: prod
 EOF

@@ -2,27 +2,36 @@
 
 ## Prometheus Metrics
 
-BAMF exposes Prometheus metrics with the `bamf_` prefix. Enable ServiceMonitor
-creation in the Helm values:
+### Bridge Metrics
+
+The bridge exposes Prometheus metrics at `:8080/metrics` with the `bamf_bridge_`
+prefix. Enable ServiceMonitor creation in the Helm values:
 
 ```yaml
 metrics:
   enabled: true
   serviceMonitor:
-    enabled: true
+    enabled: true    # Requires Prometheus Operator
 ```
-
-### Key Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `bamf_http_requests_total` | Counter | Total HTTP requests by method, path, status |
-| `bamf_http_request_duration_seconds` | Histogram | Request latency |
-| `bamf_active_sessions` | Gauge | Currently active tunnel sessions |
-| `bamf_active_tunnels` | Gauge | Currently active tunnels per bridge |
-| `bamf_agents_online` | Gauge | Number of online agents |
-| `bamf_certificate_issued_total` | Counter | Certificates issued by type |
-| `bamf_auth_login_total` | Counter | Login attempts by provider and result |
+| `bamf_bridge_active_tunnels` | Gauge | Total active tunnels on this bridge pod |
+| `bamf_bridge_active_tunnels_by_protocol` | Gauge | Active tunnels by protocol type (label: `protocol`) |
+| `bamf_bridge_active_relays` | Gauge | Active HTTP relay connections to agents |
+| `bamf_bridge_bytes_sent_total` | Counter | Bytes sent through tunnels (client to agent) |
+| `bamf_bridge_bytes_received_total` | Counter | Bytes received through tunnels (agent to client) |
+| `bamf_bridge_draining` | Gauge | Whether pod is draining (1=draining, 0=normal) |
+| `bamf_bridge_non_migratable_tunnels` | Gauge | Active non-migratable tunnels (ssh-audit, web-ssh, web-db) |
+
+The bridge HPA can scale on `bamf_bridge_active_tunnels` via the Prometheus
+adapter (see [Scaling](scaling.md)).
+
+### API Metrics
+
+The API server does not currently expose Prometheus metrics. Monitor the API
+via structured logging, health endpoints, and Kubernetes resource metrics
+(CPU, memory, request counts from the ingress controller).
 
 ## Structured Logging
 
@@ -60,9 +69,10 @@ api:
 
 ### Request Tracing
 
-A request ID (UUID) is generated at the edge and propagated via
-`X-Request-ID` header through all components. Use it to correlate logs
-across API → bridge → agent for a single request.
+Every API request is assigned a request ID (UUID). If the client sends an
+`X-Request-ID` header, it is preserved; otherwise, the API generates one. The
+request ID is included in structured log entries and returned in the response
+`X-Request-ID` header for correlation across components.
 
 ## Health Checks
 

@@ -25,14 +25,14 @@ requests access to a resource.
 Deploy an agent into a cluster to provide access to that cluster's resources:
 
 ```zsh
-helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
+helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf \
-  --set mode=agent \
-  --set agent.name=prod-cluster \
-  --set agent.platform_url=https://bamf.example.com \
-  --set agent.join_token=${TOKEN} \
-  --set agent.labels.env=prod \
-  --set agent.labels.team=platform
+  --set agent.enabled=true \
+  --set agent.config.name=prod-cluster \
+  --set agent.platformUrl=https://bamf.example.com \
+  --set agent.joinToken=${TOKEN} \
+  --set agent.config.labels.env=prod \
+  --set agent.config.labels.team=platform
 ```
 
 In Kubernetes, certificates are stored in a K8s Secret (not filesystem), so
@@ -51,15 +51,16 @@ platform_url: https://bamf.example.com
 join_token: YOUR_TOKEN_HERE
 
 resources:
-  ssh:
+  - name: web-prod-01
+    type: ssh
     hostname: web-prod-01.internal
     labels:
       env: prod
       team: platform
 
-  postgres:
-    name: orders-db
-    host: localhost
+  - name: orders-db
+    type: postgres
+    hostname: localhost
     port: 5432
     labels:
       env: prod
@@ -85,34 +86,34 @@ join_token: ${BAMF_JOIN_TOKEN}        # Only needed for initial registration
 
 resources:
   # SSH resource — agent proxies SSH to this host
-  ssh:
+  - name: web-prod-01
+    type: ssh
     hostname: web-prod-01.internal
     labels:
       env: prod
       team: platform
 
   # PostgreSQL resource
-  postgres:
-    name: orders-db
-    host: localhost
+  - name: orders-db
+    type: postgres
+    hostname: localhost
     port: 5432
     labels:
       env: prod
 
   # HTTP resource (web application)
-  http:
-    name: grafana
+  - name: grafana
+    type: http
     tunnel_hostname: grafana
-    host: grafana.internal.corp
+    hostname: grafana.internal.corp
     port: 3000
-    protocol: http
     labels:
       env: prod
 
   # Kubernetes resource
-  kubernetes:
-    name: prod-cluster
-    host: kubernetes.default.svc
+  - name: prod-cluster
+    type: kubernetes
+    hostname: kubernetes.default.svc
     port: 6443
     labels:
       env: prod
@@ -122,12 +123,18 @@ resources:
 
 | Type | Description | Required Fields |
 |------|-------------|-----------------|
-| `ssh` | SSH server | `hostname` |
-| `postgres` | PostgreSQL database | `name`, `host`, `port` |
-| `mysql` | MySQL database | `name`, `host`, `port` |
-| `http` | Web application | `name`, `tunnel_hostname`, `host`, `port`, `protocol` |
-| `kubernetes` | Kubernetes API | `name`, `host`, `port` |
-| (generic TCP) | Any TCP service | `name`, `host`, `port` |
+| `ssh` | SSH server | `name`, `hostname` |
+| `ssh-audit` | SSH server with session recording | `name`, `hostname` |
+| `postgres` | PostgreSQL database | `name`, `hostname` |
+| `postgres-audit` | PostgreSQL with query audit | `name`, `hostname` |
+| `mysql` | MySQL database | `name`, `hostname` |
+| `mysql-audit` | MySQL with query audit | `name`, `hostname` |
+| `http` | Web application | `name`, `hostname`, `tunnel_hostname` |
+| `http-audit` | Web app with request/response audit | `name`, `hostname`, `tunnel_hostname` |
+| `kubernetes` | Kubernetes API | `name`, `hostname` |
+
+Port defaults to the standard port for each type if not specified (22 for SSH,
+5432 for PostgreSQL, 3306 for MySQL, 80 for HTTP, 6443 for Kubernetes).
 
 ### Labels
 
@@ -163,7 +170,7 @@ bamf tokens revoke prod-agents
 
 ## Heartbeats and Status
 
-Agents send heartbeats every 60 seconds via the SSE connection. After 3 missed
+Agents send heartbeats every 60 seconds via HTTP POST to the API. After 3 missed
 heartbeats (3 minutes), the agent is marked offline and its resources become
 unavailable.
 
@@ -179,8 +186,8 @@ no static resource table in the database.
 
 | Certificate | Lifetime | Storage | Renewal |
 |-------------|----------|---------|---------|
-| Agent identity cert | 24 hours (default) | Filesystem or K8s Secret | Auto-renewed via API |
-| BAMF CA public cert | Matches CA lifetime | Same as identity cert | Refreshed on heartbeat |
+| Agent identity cert | 1 year (8760 hours, default) | Filesystem or K8s Secret | Auto-renewed via API before expiry |
+| BAMF CA public cert | Matches CA lifetime | Same as identity cert | Obtained at registration |
 
 The agent auto-detects its environment:
 - In Kubernetes: stores certs in a K8s Secret

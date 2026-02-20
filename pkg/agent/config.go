@@ -1,5 +1,8 @@
 package agent
 
+// Agent config reference: docs/reference/agent-config.md
+// Guide: docs/guides/agents.md
+
 import (
 	"fmt"
 	"os"

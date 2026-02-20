@@ -62,7 +62,7 @@ bytes.
 - Exposed via Traefik IngressRouteTCP or Istio TLSRoute with SNI-based routing (TLS passthrough)
 - Each pod gets a dedicated Service for direct SNI routing
 - Registers in Redis on startup, renews via heartbeats
-- Zero runtime dependencies beyond the BAMF CA public key
+- During steady-state tunnel operation, validates certs locally (no API calls)
 - Also relays HTTP proxy traffic from API to agents
 
 ### Agent (Go)
@@ -73,7 +73,7 @@ target services.
 
 - SSE connection to API for receiving tunnel commands
 - On-demand mTLS connections to bridge pods
-- Reports heartbeats and resource catalog via SSE
+- Reports heartbeats via HTTP POST to the API
 - Auto-detects environment (K8s vs filesystem) for cert storage
 
 ### CLI (Go)
@@ -82,7 +82,7 @@ Single static binary for end users. Wraps native tools (`ssh`, `scp`, `psql`,
 `mysql`) with BAMF tunnel support.
 
 - SSO login via browser (localhost callback)
-- Stores certificates in `~/.bamf/keys/`
+- Stores credentials in `~/.bamf/credentials.json`
 - All SSH/SCP flags pass through to the native command
 
 ### Web UI (Next.js / React)

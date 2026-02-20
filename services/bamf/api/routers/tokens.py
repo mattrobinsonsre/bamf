@@ -238,3 +238,53 @@ async def revoke_token(
     )
 
     return SuccessResponse(message=f"Token '{token.name}' has been revoked")
+
+
+@router.post("/{token_name}/revoke", response_model=SuccessResponse)
+async def revoke_token_by_name(
+    token_name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Session = Depends(require_admin),
+) -> SuccessResponse:
+    """Revoke a join token by name.
+
+    Convenience endpoint used by the CLI (which works with token names,
+    not UUIDs). Equivalent to DELETE /tokens/{id}.
+    """
+    result = await db.execute(select(JoinToken).where(JoinToken.name == token_name))
+    token = result.scalar_one_or_none()
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Token not found: {token_name}",
+        )
+
+    if token.is_revoked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token is already revoked",
+        )
+
+    token.is_revoked = True
+    await db.commit()
+
+    logger.info(
+        "Join token revoked",
+        token_name=token.name,
+        revoked_by=current_user.email,
+    )
+
+    await log_audit_event(
+        db,
+        event_type="admin",
+        action="token_revoked",
+        actor_type="user",
+        actor_id=current_user.email,
+        target_type="join_token",
+        target_id=str(token.id),
+        success=True,
+        details={"token_name": token.name},
+    )
+
+    return SuccessResponse(message=f"Token '{token.name}' has been revoked")

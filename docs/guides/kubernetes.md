@@ -29,9 +29,9 @@ A Kubernetes cluster must be registered as a resource by an agent:
 ```yaml
 # Agent config
 resources:
-  kubernetes:
-    name: prod-cluster
-    host: kubernetes.default.svc
+  - name: prod-cluster
+    type: kubernetes
+    hostname: kubernetes.default.svc
     port: 6443
     labels:
       env: prod
@@ -43,15 +43,15 @@ resources:
 bamf kube login prod-cluster
 ```
 
-This writes a context to `~/.kube/config`:
+This writes a context to `~/.kube/config` with a `bamf-` prefix:
 
 ```yaml
 clusters:
 - cluster:
     server: https://bamf.example.com/api/v1/kube/prod-cluster
-  name: prod-cluster
+  name: bamf-prod-cluster
 users:
-- name: prod-cluster
+- name: bamf-prod-cluster
   user:
     exec:
       command: bamf
@@ -61,11 +61,11 @@ users:
 ### 3. Use kubectl
 
 ```zsh
-kubectl --context prod-cluster get pods
-kubectl --context prod-cluster get namespaces
+kubectl --context bamf-prod-cluster get pods
+kubectl --context bamf-prod-cluster get namespaces
 
 # Or set as default context
-kubectl config use-context prod-cluster
+kubectl config use-context bamf-prod-cluster
 kubectl get pods
 ```
 
@@ -73,10 +73,10 @@ All Kubernetes tooling works:
 
 ```zsh
 # Helm
-helm --kube-context prod-cluster list -A
+helm --kube-context bamf-prod-cluster list -A
 
 # k9s
-k9s --context prod-cluster
+k9s --context bamf-prod-cluster
 
 # Terraform
 # (set KUBE_CONFIG_PATH and context in provider block)
@@ -117,7 +117,7 @@ ClusterRoleBindings.
 ## Agent RBAC Requirements
 
 The agent's ServiceAccount needs permission to impersonate users and groups.
-The Helm chart creates this automatically when `agent.impersonation.enabled=true`:
+The Helm chart creates this automatically when `agent.kubernetes.impersonation.enabled=true`:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1

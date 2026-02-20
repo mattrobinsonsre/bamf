@@ -163,8 +163,8 @@ Source: [Teleport installation docs](https://goteleport.com/installing/)
 - **Next.js** for the web UI
 - Bridge is a protocol-agnostic byte relay — never interprets tunneled traffic
 - Agent is a lightweight static binary (~15 MB)
-- Session certificates encode authorization decisions directly — bridge has
-  zero runtime dependencies (no database, no Redis, no API calls)
+- Session certificates encode authorization decisions directly — bridge validates
+  certs locally during tunnel operation (no database or Redis access)
 
 ### Teleport
 

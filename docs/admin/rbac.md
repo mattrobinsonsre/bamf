@@ -127,14 +127,14 @@ IDP group "bamf:sre"    →  BAMF role "sre"
 
 ### Explicit Mapping
 
-Use `claims_to_roles` in the SSO configuration:
+Use `claimsToRoles` in the Helm SSO configuration:
 
 ```yaml
 auth:
   sso:
     oidc:
       auth0:
-        claims_to_roles:
+        claimsToRoles:
           - claim: https://bamf.myorg.com/groups
             value: platform-eng
             roles: [sre, developer]

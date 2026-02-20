@@ -182,9 +182,15 @@ func runTokensCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Parse TTL string into hours for API (which expects expires_in_hours: int)
+	expiresInHours, err := parseTTLToHours(tokenTTL)
+	if err != nil {
+		return err
+	}
+
 	reqBody := map[string]any{
-		"ttl":          tokenTTL,
-		"agent_labels": labels,
+		"expires_in_hours": expiresInHours,
+		"agent_labels":     labels,
 	}
 	if tokenMaxUses > 0 {
 		reqBody["max_uses"] = tokenMaxUses
@@ -271,4 +277,27 @@ func runTokensRevoke(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Token %s revoked.\n", tokenNameArg)
 	return nil
+}
+
+// parseTTLToHours parses a human-readable TTL string (e.g., "1h", "24h", "7d")
+// into integer hours for the API's expires_in_hours field.
+func parseTTLToHours(s string) (int, error) {
+	// Try standard Go duration first (e.g., "1h", "24h", "30m")
+	if d, err := time.ParseDuration(s); err == nil {
+		hours := int(d.Hours())
+		if hours < 1 {
+			hours = 1
+		}
+		return hours, nil
+	}
+
+	// Try "Nd" format for days (e.g., "7d", "30d")
+	if strings.HasSuffix(s, "d") {
+		var days int
+		if _, err := fmt.Sscanf(s, "%dd", &days); err == nil && days >= 1 {
+			return days * 24, nil
+		}
+	}
+
+	return 0, fmt.Errorf("invalid TTL format: %s (use e.g., 1h, 24h, 7d)", s)
 }

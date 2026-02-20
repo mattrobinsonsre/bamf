@@ -45,7 +45,7 @@ works with no additional ingress setup. For clusters with Istio, set
 ## Helm Installation
 
 ```zsh
-helm install bamf oci://ghcr.io/mattrobinsonsre/bamf/charts/bamf \
+helm install bamf oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf --create-namespace \
   --values production-values.yaml
 ```
@@ -83,13 +83,13 @@ auth:
   local:
     enabled: false
   sso:
-    default_provider: auth0
+    defaultProvider: auth0
     oidc:
       auth0:
-        issuer_url: https://myorg.us.auth0.com/
+        enabled: true
+        issuerUrl: https://myorg.us.auth0.com/
         existingSecret: bamf-auth0-credentials
-        clientIdKey: client-id
-        clientSecretKey: client-secret
+        existingSecretKey: client_secret
 ```
 
 ## Component Configuration
@@ -108,8 +108,10 @@ api:
     maxReplicas: 10
   config:
     log_level: info
-    certificate_ttl_hours: 12          # User cert lifetime
-    service_certificate_ttl_hours: 24  # Agent/bridge cert lifetime
+    certificates:
+      user_ttl_hours: 12               # User cert lifetime
+      agent_ttl_hours: 8760            # Agent cert lifetime (1 year)
+      bridge_ttl_hours: 24             # Bridge cert lifetime
     audit:
       retention_days: 90
 ```
@@ -369,6 +371,7 @@ Create these DNS records pointing to your ingress controller's external IP:
 |--------|------|-------|
 | `bamf.example.com` | A | Ingress controller external IP |
 | `*.tunnel.bamf.example.com` | A | Ingress controller external IP |
+| `*.bridge.tunnel.bamf.example.com` | A | Ingress controller external IP |
 
 ## Gateway Configuration
 
@@ -430,7 +433,7 @@ BAMF can be used as a dependency in a parent chart:
 dependencies:
   - name: bamf
     version: "1.x.x"
-    repository: "oci://ghcr.io/mattrobinsonsre/bamf/charts"
+    repository: "oci://ghcr.io/mattrobinsonsre"
 
 # parent-chart/values.yaml
 bamf:

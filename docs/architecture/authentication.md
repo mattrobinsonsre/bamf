@@ -41,7 +41,7 @@ bamf login --provider auth0
   └── opens browser to /auth/authorize
   └── browser → IDP login → callback → localhost
   └── CLI exchanges code for session
-  └── stores token + cert in ~/.bamf/keys/
+  └── stores credentials in ~/.bamf/credentials.json
 ```
 
 ### Web UI Login

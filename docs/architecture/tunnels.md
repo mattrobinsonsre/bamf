@@ -25,10 +25,11 @@ SAN URIs:
   bamf://session/{session_id}       — pairs client and agent
   bamf://resource/{resource_name}   — target resource
   bamf://bridge/{bridge_id}         — which bridge to connect to
+  bamf://role/{role_name}           — authorized role (one per role)
 ```
 
 The bridge validates the cert chain against the BAMF CA, reads the SAN URIs,
-and matches connections. No runtime API/Redis/database calls needed.
+and matches connections. No API calls needed during steady-state tunnel operation.
 
 ### Bridge Validation
 
