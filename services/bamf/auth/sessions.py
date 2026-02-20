@@ -9,7 +9,7 @@ in Redis, enabling immediate revocation.
 import json
 import secrets
 from dataclasses import asdict, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from bamf.config import settings
 from bamf.db.models import utc_now
@@ -57,11 +57,20 @@ async def create_session(
     roles: list[str],
     provider_name: str,
     kubernetes_groups: list[str] | None = None,
+    max_ttl: int | None = None,
 ) -> Session:
-    """Create a new session in Redis. Returns the Session with its token."""
+    """Create a new session in Redis. Returns the Session with its token.
+
+    Args:
+        max_ttl: Optional maximum TTL in seconds. When set and shorter than
+                 the configured session TTL, caps the session lifetime (e.g.,
+                 when the IDP id_token expires sooner than our default).
+    """
     redis = get_redis_client()
     token = generate_session_token()
     ttl = _session_ttl()
+    if max_ttl is not None and 0 < max_ttl < ttl:
+        ttl = max_ttl
     now = utc_now()
     expires_at = now + timedelta(seconds=ttl)
 
@@ -103,6 +112,49 @@ async def get_session(token: str) -> Session | None:
 
     parsed = json.loads(data)
     return Session(token=token, **parsed)
+
+
+# Minimum interval between session TTL refreshes (seconds).
+# Avoids hitting Redis on every single API request while still keeping
+# active sessions alive well before their TTL expires.
+SESSION_REFRESH_INTERVAL = 300  # 5 minutes
+
+
+async def refresh_session(token: str, session: Session) -> None:
+    """Extend session TTL on activity (sliding window).
+
+    Called by get_current_session when last_active_at is older than
+    SESSION_REFRESH_INTERVAL. Updates last_active_at, recalculates
+    expires_at, and resets the Redis TTL.
+    """
+    redis = get_redis_client()
+    ttl = _session_ttl()
+    now = utc_now()
+
+    session_key = SESSION_PREFIX + token
+    raw = await redis.get(session_key)
+    if raw is None:
+        return  # Session vanished between check and refresh — harmless
+
+    data = json.loads(raw)
+    data["last_active_at"] = now.isoformat()
+    data["expires_at"] = (now + timedelta(seconds=ttl)).isoformat()
+
+    user_key = USER_SESSIONS_PREFIX + session.email
+
+    async with redis.pipeline(transaction=True) as pipe:
+        pipe.set(session_key, json.dumps(data), ex=ttl)
+        pipe.expire(user_key, ttl)
+        await pipe.execute()
+
+
+def _should_refresh_session(session: Session) -> bool:
+    """Check if enough time has passed since last refresh."""
+    try:
+        last_active = datetime.fromisoformat(session.last_active_at)
+        return (utc_now() - last_active).total_seconds() > SESSION_REFRESH_INTERVAL
+    except (ValueError, TypeError):
+        return True  # If we can't parse, refresh to be safe
 
 
 async def revoke_session(token: str) -> bool:

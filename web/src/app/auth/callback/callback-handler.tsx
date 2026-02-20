@@ -56,10 +56,17 @@ export default function CallbackHandler() {
         return res.json()
       })
       .then((data) => {
-        setAuth(data.session_token, data.email, data.roles)
+        setAuth(data.session_token, data.email, data.roles, data.expires_at)
         sessionStorage.removeItem('bamf_pkce_verifier')
         sessionStorage.removeItem('bamf_auth_state')
-        router.push('/')
+        // Redirect to the page the user was on before login, if stored
+        const redirect = sessionStorage.getItem('bamf_redirect_after_login')
+        sessionStorage.removeItem('bamf_redirect_after_login')
+        if (redirect) {
+          window.location.href = redirect
+        } else {
+          router.push('/')
+        }
       })
       .catch((err) => {
         setError(err.message)

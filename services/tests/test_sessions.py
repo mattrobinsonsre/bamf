@@ -1,17 +1,22 @@
 """Tests for Redis session management."""
 
 import json
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from bamf.auth.sessions import (
+    SESSION_REFRESH_INTERVAL,
+    _should_refresh_session,
     create_session,
     get_session,
     list_user_sessions,
+    refresh_session,
     revoke_all_user_sessions,
     revoke_session,
 )
+from bamf.db.models import utc_now
 
 
 class TestCreateSession:
@@ -257,3 +262,248 @@ class TestRevokeAllUserSessions:
             count = await revoke_all_user_sessions("user@example.com")
 
         assert count == 0
+
+
+class TestCreateSessionMaxTTL:
+    """Test session creation with max_ttl (id_token cap)."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        redis = AsyncMock()
+        pipeline = AsyncMock()
+        pipeline.__aenter__ = AsyncMock(return_value=pipeline)
+        pipeline.__aexit__ = AsyncMock(return_value=None)
+        redis.pipeline = lambda **kwargs: pipeline
+        return redis, pipeline
+
+    @pytest.mark.asyncio
+    async def test_max_ttl_caps_session(self, mock_redis):
+        """When max_ttl < configured TTL, session expires sooner."""
+        redis, pipeline = mock_redis
+
+        with patch("bamf.auth.sessions.get_redis_client", return_value=redis):
+            session = await create_session(
+                email="user@example.com",
+                display_name=None,
+                roles=["admin"],
+                provider_name="auth0",
+                max_ttl=1800,  # 30 minutes
+            )
+
+        # Verify the pipeline.set was called with ex=1800 (capped TTL)
+        call_args = pipeline.set.call_args
+        assert call_args.kwargs.get("ex") == 1800 or call_args[1].get("ex") == 1800
+
+        # Verify expires_at is ~30 min from now, not 12 hours
+        from datetime import datetime
+
+        expires = datetime.fromisoformat(session.expires_at)
+        created = datetime.fromisoformat(session.created_at)
+        delta = (expires - created).total_seconds()
+        assert 1790 <= delta <= 1810  # ~30 minutes, with tolerance
+
+    @pytest.mark.asyncio
+    async def test_max_ttl_none_uses_default(self, mock_redis):
+        """When max_ttl is None, session uses configured TTL."""
+        redis, pipeline = mock_redis
+
+        with (
+            patch("bamf.auth.sessions.get_redis_client", return_value=redis),
+            patch("bamf.auth.sessions._session_ttl", return_value=43200),
+        ):
+            session = await create_session(
+                email="user@example.com",
+                display_name=None,
+                roles=[],
+                provider_name="local",
+                max_ttl=None,
+            )
+
+        call_args = pipeline.set.call_args
+        assert call_args.kwargs.get("ex") == 43200 or call_args[1].get("ex") == 43200
+
+    @pytest.mark.asyncio
+    async def test_max_ttl_larger_than_config_ignored(self, mock_redis):
+        """When max_ttl > configured TTL, configured TTL wins."""
+        redis, pipeline = mock_redis
+
+        with (
+            patch("bamf.auth.sessions.get_redis_client", return_value=redis),
+            patch("bamf.auth.sessions._session_ttl", return_value=3600),
+        ):
+            session = await create_session(
+                email="user@example.com",
+                display_name=None,
+                roles=[],
+                provider_name="auth0",
+                max_ttl=86400,  # 24 hours > configured 1 hour
+            )
+
+        call_args = pipeline.set.call_args
+        assert call_args.kwargs.get("ex") == 3600 or call_args[1].get("ex") == 3600
+
+    @pytest.mark.asyncio
+    async def test_max_ttl_zero_ignored(self, mock_redis):
+        """When max_ttl is 0, configured TTL is used (0 is not positive)."""
+        redis, pipeline = mock_redis
+
+        with (
+            patch("bamf.auth.sessions.get_redis_client", return_value=redis),
+            patch("bamf.auth.sessions._session_ttl", return_value=3600),
+        ):
+            await create_session(
+                email="user@example.com",
+                display_name=None,
+                roles=[],
+                provider_name="auth0",
+                max_ttl=0,
+            )
+
+        call_args = pipeline.set.call_args
+        assert call_args.kwargs.get("ex") == 3600 or call_args[1].get("ex") == 3600
+
+
+class TestShouldRefreshSession:
+    """Test the rate-limiting logic for session refresh."""
+
+    def test_recent_activity_no_refresh(self):
+        """Session active 1 minute ago — no refresh needed."""
+        from bamf.auth.sessions import Session
+
+        now = utc_now()
+        session = Session(
+            email="user@example.com",
+            display_name=None,
+            roles=[],
+            provider_name="local",
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=12)).isoformat(),
+            last_active_at=(now - timedelta(minutes=1)).isoformat(),
+        )
+        assert _should_refresh_session(session) is False
+
+    def test_stale_activity_needs_refresh(self):
+        """Session active 10 minutes ago — refresh needed."""
+        from bamf.auth.sessions import Session
+
+        now = utc_now()
+        session = Session(
+            email="user@example.com",
+            display_name=None,
+            roles=[],
+            provider_name="local",
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=12)).isoformat(),
+            last_active_at=(now - timedelta(minutes=10)).isoformat(),
+        )
+        assert _should_refresh_session(session) is True
+
+    def test_exactly_at_threshold(self):
+        """Session active exactly at threshold — no refresh (> not >=)."""
+        from bamf.auth.sessions import Session
+
+        fixed_now = utc_now()
+        session = Session(
+            email="user@example.com",
+            display_name=None,
+            roles=[],
+            provider_name="local",
+            created_at=fixed_now.isoformat(),
+            expires_at=(fixed_now + timedelta(hours=12)).isoformat(),
+            last_active_at=(fixed_now - timedelta(seconds=SESSION_REFRESH_INTERVAL)).isoformat(),
+        )
+        # Pin utc_now so no time elapses between setting last_active_at and the check
+        with patch("bamf.auth.sessions.utc_now", return_value=fixed_now):
+            # At exactly the threshold, (now - last_active).total_seconds() == 300
+            # The check is > 300, so this should be False
+            assert _should_refresh_session(session) is False
+
+    def test_invalid_timestamp_refreshes(self):
+        """Invalid last_active_at — refresh to be safe."""
+        from bamf.auth.sessions import Session
+
+        now = utc_now()
+        session = Session(
+            email="user@example.com",
+            display_name=None,
+            roles=[],
+            provider_name="local",
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=12)).isoformat(),
+            last_active_at="not-a-timestamp",
+        )
+        assert _should_refresh_session(session) is True
+
+
+class TestRefreshSession:
+    """Test session TTL refresh (sliding window)."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        redis = AsyncMock()
+        pipeline = AsyncMock()
+        pipeline.__aenter__ = AsyncMock(return_value=pipeline)
+        pipeline.__aexit__ = AsyncMock(return_value=None)
+        redis.pipeline = lambda **kwargs: pipeline
+        return redis, pipeline
+
+    @pytest.mark.asyncio
+    async def test_refresh_updates_ttl(self, mock_redis):
+        """Refreshing a session resets its Redis TTL and updates timestamps."""
+        redis, pipeline = mock_redis
+        from bamf.auth.sessions import Session
+
+        now = utc_now()
+        old_active = (now - timedelta(minutes=10)).isoformat()
+        session_data = {
+            "email": "user@example.com",
+            "display_name": None,
+            "roles": ["admin"],
+            "provider_name": "local",
+            "created_at": now.isoformat(),
+            "expires_at": (now + timedelta(hours=2)).isoformat(),
+            "last_active_at": old_active,
+            "kubernetes_groups": [],
+        }
+        redis.get = AsyncMock(return_value=json.dumps(session_data))
+
+        session = Session(token="test-token", **session_data)
+
+        with patch("bamf.auth.sessions.get_redis_client", return_value=redis):
+            await refresh_session("test-token", session)
+
+        # Pipeline should have set the session with new TTL and expire user key
+        pipeline.set.assert_called_once()
+        pipeline.expire.assert_called_once()
+        pipeline.execute.assert_called_once()
+
+        # Verify the stored data has updated timestamps
+        stored_data = json.loads(pipeline.set.call_args[0][1])
+        assert stored_data["last_active_at"] != old_active
+        assert stored_data["email"] == "user@example.com"
+
+    @pytest.mark.asyncio
+    async def test_refresh_vanished_session(self, mock_redis):
+        """Refreshing a session that vanished between check and refresh is harmless."""
+        redis, pipeline = mock_redis
+        from bamf.auth.sessions import Session
+
+        now = utc_now()
+        redis.get = AsyncMock(return_value=None)  # Session gone
+
+        session = Session(
+            email="user@example.com",
+            display_name=None,
+            roles=[],
+            provider_name="local",
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=12)).isoformat(),
+            last_active_at=now.isoformat(),
+            token="test-token",
+        )
+
+        with patch("bamf.auth.sessions.get_redis_client", return_value=redis):
+            await refresh_session("test-token", session)
+
+        # Pipeline should NOT have been used since session was gone
+        pipeline.set.assert_not_called()

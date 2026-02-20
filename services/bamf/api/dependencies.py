@@ -19,7 +19,12 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from bamf.auth.ca import get_ca
-from bamf.auth.sessions import Session, get_session
+from bamf.auth.sessions import (
+    Session,
+    _should_refresh_session,
+    get_session,
+    refresh_session,
+)
 from bamf.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -49,7 +54,9 @@ async def get_current_session(
 ) -> Session:
     """Dependency to get the current authenticated session.
 
-    Validates the session token against Redis.
+    Validates the session token against Redis. Extends the session TTL
+    on activity (sliding window) — at most once per 5 minutes to avoid
+    hitting Redis on every request.
     """
     token = credentials.credentials
     session = await get_session(token)
@@ -60,6 +67,10 @@ async def get_current_session(
             detail="Invalid or expired session",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Sliding window: refresh TTL on activity (rate-limited to every 5 min)
+    if _should_refresh_session(session):
+        await refresh_session(token, session)
 
     return session
 

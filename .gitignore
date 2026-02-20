@@ -85,8 +85,9 @@ helm/bamf/values-local.yaml
 .env.*
 !.env.example
 
-# Screenshots (development artifacts)
+# Screenshots (development artifacts, except docs images)
 *.png
+!docs/images/*.png
 
 # Playwright MCP artifacts
 .playwright-mcp/

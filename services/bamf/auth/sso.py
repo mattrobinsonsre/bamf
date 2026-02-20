@@ -7,6 +7,7 @@ plus the AuthenticatedIdentity returned after a successful SSO callback.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -29,6 +30,9 @@ class AuthenticatedIdentity:
     display_name: str | None = None
     groups: list[str] = field(default_factory=list)
     raw_claims: dict[str, Any] = field(default_factory=dict)
+    # Set by OIDC connector when the id_token has an 'exp' claim. Used to
+    # cap the BAMF session TTL so it never outlives the IDP token.
+    id_token_expires_at: datetime | None = None
 
 
 class SSOConnector(ABC):

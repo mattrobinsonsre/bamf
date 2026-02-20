@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Copy, Check, Tag } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface JoinTokenResponse {
   id: string
@@ -48,6 +48,10 @@ export default function TokensPage() {
   const [canEdit, setCanEdit] = useState(false)
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     setCanEdit(isAdmin())
     if (!isAdminOrAudit()) {
       router.push('/')
@@ -60,7 +64,7 @@ export default function TokensPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -78,7 +82,7 @@ export default function TokensPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch tokens')

@@ -25,6 +25,7 @@ Changes to response shapes must be coordinated with web UI auth code.
 
 import base64
 import hashlib
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -404,6 +405,9 @@ async def callback(
         details={"provider": auth_state.provider_name, "roles": login.roles},
     )
 
+    # Cap session TTL at id_token expiry if shorter than configured TTL
+    max_session_ttl = _compute_max_session_ttl(identity.id_token_expires_at)
+
     # Generate one-time bamf_code
     bamf_code = generate_code()
     auth_code = AuthCode(
@@ -413,6 +417,7 @@ async def callback(
         code_challenge=auth_state.code_challenge,
         code_challenge_method=auth_state.code_challenge_method,
         kubernetes_groups=login.kubernetes_groups,
+        max_session_ttl=max_session_ttl,
     )
     await store_auth_code(bamf_code, auth_code)
 
@@ -556,13 +561,14 @@ async def exchange_token(
             detail="PKCE verification failed",
         )
 
-    # Create session in Redis
+    # Create session in Redis (cap TTL at id_token expiry if set)
     session = await create_session(
         email=auth_code.email,
         display_name=None,
         roles=auth_code.roles,
         provider_name=auth_code.provider_name,
         kubernetes_groups=auth_code.kubernetes_groups,
+        max_ttl=auth_code.max_session_ttl,
     )
 
     logger.info(
@@ -588,7 +594,10 @@ async def exchange_token(
         parts = tunnel_domain.split(".", 1)
         parent_domain = parts[1] if len(parts) > 1 else tunnel_domain
         cookie_domain = f".{parent_domain}"
+        # Use the capped TTL if the session was shortened by id_token expiry
         max_age = int(settings.auth.session_ttl_hours * 3600)
+        if auth_code.max_session_ttl is not None and auth_code.max_session_ttl < max_age:
+            max_age = auth_code.max_session_ttl
         response.set_cookie(
             key="bamf_session",
             value=session.token,
@@ -788,6 +797,25 @@ def _enforce_external_sso_requirement(provider_name: str, roles: list[str]) -> N
                 "Local authentication is not permitted for these roles."
             ),
         )
+
+
+def _compute_max_session_ttl(id_token_expires_at: datetime | None) -> int | None:
+    """Compute max session TTL from id_token expiry.
+
+    Returns the remaining id_token lifetime in seconds if it's shorter than
+    the configured session TTL, otherwise None.
+    """
+    if id_token_expires_at is None:
+        return None
+
+    from bamf.db.models import utc_now
+
+    remaining = (id_token_expires_at - utc_now()).total_seconds()
+    configured = settings.auth.session_ttl_hours * 3600
+
+    if 0 < remaining < configured:
+        return int(remaining)
+    return None
 
 
 def _get_claims_rules(provider_name: str) -> list:

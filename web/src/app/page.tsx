@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, Terminal } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { clearAuth, getAuthState } from '@/lib/auth'
+import { clearAuth, getAuthState, loginRedirectUrl } from '@/lib/auth'
 
 interface Resource {
   name: string
@@ -25,7 +25,7 @@ export default function Home() {
   useEffect(() => {
     const state = getAuthState()
     if (!state) {
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return
     }
     fetchResources(state.token)
@@ -39,7 +39,7 @@ export default function Home() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
 

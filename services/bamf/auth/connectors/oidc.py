@@ -6,6 +6,7 @@ and /userinfo endpoint for additional claims.
 """
 
 import secrets
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -183,6 +184,17 @@ class OIDCConnector(SSOConnector):
         # API permissions (Auth0 style) are already plain names and unaffected.
         groups = _strip_role_prefixes(groups, self._config.role_prefixes)
 
+        # Extract id_token expiry to cap session TTL
+        id_token_expires_at = None
+        id_token_exp = claims.get("exp")
+        if id_token_exp is not None:
+            try:
+                id_token_expires_at = datetime.fromtimestamp(int(id_token_exp), tz=UTC)
+            except (ValueError, TypeError, OSError):
+                logger.warning(
+                    "Failed to parse id_token exp claim", provider=self.name, exp=id_token_exp
+                )
+
         logger.info(
             "OIDC authentication successful",
             provider=self.name,
@@ -198,6 +210,7 @@ class OIDCConnector(SSOConnector):
             display_name=display_name,
             groups=groups,
             raw_claims=merged_claims,
+            id_token_expires_at=id_token_expires_at,
         )
 
     async def _fetch_userinfo(self, access_token: str) -> dict[str, Any]:

@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Terminal, Database, Globe, Clock, User, Server } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 import dynamic from 'next/dynamic'
 import QueryViewer from '@/components/query-viewer'
 import HttpExchangeViewer from '@/components/http-exchange-viewer'
@@ -43,13 +43,17 @@ export default function RecordingDetailPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
   }, [router])
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdminOrAudit()) {
       router.push('/')
       return
@@ -63,7 +67,7 @@ export default function RecordingDetailPage() {
 
         if (response.status === 401) {
           clearAuth()
-          router.push('/login')
+          router.push(loginRedirectUrl())
           return
         }
         if (response.status === 403) {

@@ -13,6 +13,7 @@ interface AuthState {
   token: string
   email: string
   roles: string[]
+  expiresAt?: string  // ISO 8601
 }
 
 function loadAuth(): AuthState | null {
@@ -26,8 +27,8 @@ function loadAuth(): AuthState | null {
   }
 }
 
-export function setAuth(token: string, email: string, roles: string[]): void {
-  const state: AuthState = { token, email, roles }
+export function setAuth(token: string, email: string, roles: string[], expiresAt?: string): void {
+  const state: AuthState = { token, email, roles, expiresAt }
   if (typeof window !== 'undefined') {
     sessionStorage.setItem(AUTH_KEY, JSON.stringify(state))
   }
@@ -47,8 +48,30 @@ export function isAdminOrAudit(): boolean {
   return auth.roles.includes('admin') || auth.roles.includes('audit')
 }
 
+export function getExpiresAt(): Date | null {
+  const auth = loadAuth()
+  if (!auth?.expiresAt) return null
+  try {
+    return new Date(auth.expiresAt)
+  } catch {
+    return null
+  }
+}
+
 export function clearAuth(): void {
   if (typeof window !== 'undefined') {
     sessionStorage.removeItem(AUTH_KEY)
   }
+}
+
+/**
+ * Build the login URL with the current page path as redirect parameter.
+ * Use this when redirecting to login on 401 or missing auth so the user
+ * returns to the same page after re-authenticating.
+ */
+export function loginRedirectUrl(): string {
+  if (typeof window === 'undefined') return '/login'
+  const current = window.location.pathname + window.location.search
+  if (current === '/' || current === '/login') return '/login'
+  return `/login?redirect=${encodeURIComponent(current)}`
 }

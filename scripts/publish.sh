@@ -37,6 +37,80 @@ publish_chart() {
   success "Helm chart bamf:${chart_version} pushed to oci://${REGISTRY}"
 }
 
+# ── Generate release notes from conventional commits ─────
+generate_release_notes() {
+  # Find the previous tag to diff against
+  local prev_tag
+  prev_tag=$(git -C "$REPO_ROOT" describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
+
+  local range
+  if [[ -n "$prev_tag" ]]; then
+    range="${prev_tag}..${VERSION}"
+  else
+    range="$VERSION"
+  fi
+
+  # Use the annotated tag message as the summary line (strip the "vX.Y.Z: " prefix)
+  local tag_subject
+  tag_subject=$(git -C "$REPO_ROOT" tag -l --format='%(subject)' "$VERSION" 2>/dev/null || echo "")
+  local summary="${tag_subject#"${VERSION}: "}"
+
+  # Collect commits by category using conventional commit prefixes.
+  # Strip the "type: " or "type(scope): " prefix for cleaner notes.
+  local feats="" fixes="" docs="" refactors="" tests="" chores="" others=""
+
+  while IFS= read -r line; do
+    # Strip conventional commit prefix: "type: msg" or "type(scope): msg"
+    local msg
+    msg=$(printf '%s' "$line" | gsed -E 's/^[a-z]+(\([^)]*\))?[!]?:[[:space:]]*//')
+
+    case "$line" in
+      feat:*|feat\(*)     feats+="- ${msg}"$'\n' ;;
+      fix:*|fix\(*)       fixes+="- ${msg}"$'\n' ;;
+      docs:*|docs\(*)     docs+="- ${msg}"$'\n' ;;
+      refactor:*|refactor\(*) refactors+="- ${msg}"$'\n' ;;
+      test:*|test\(*)     tests+="- ${msg}"$'\n' ;;
+      chore:*|chore\(*|ci:*|ci\(*) chores+="- ${msg}"$'\n' ;;
+      *)                  others+="- ${line}"$'\n' ;;
+    esac
+  done < <(git -C "$REPO_ROOT" log --format='%s' "$range" 2>/dev/null)
+
+  # Build the notes body
+  local notes=""
+
+  if [[ -n "$summary" ]]; then
+    notes+="$summary"$'\n\n'
+  fi
+
+  if [[ -n "$feats" ]]; then
+    notes+="### Features"$'\n\n'"$feats"$'\n'
+  fi
+  if [[ -n "$fixes" ]]; then
+    notes+="### Bug Fixes"$'\n\n'"$fixes"$'\n'
+  fi
+  if [[ -n "$docs" ]]; then
+    notes+="### Documentation"$'\n\n'"$docs"$'\n'
+  fi
+  if [[ -n "$refactors" ]]; then
+    notes+="### Refactoring"$'\n\n'"$refactors"$'\n'
+  fi
+  if [[ -n "$tests" ]]; then
+    notes+="### Tests"$'\n\n'"$tests"$'\n'
+  fi
+  if [[ -n "$chores" ]]; then
+    notes+="### Maintenance"$'\n\n'"$chores"$'\n'
+  fi
+  if [[ -n "$others" ]]; then
+    notes+="### Other Changes"$'\n\n'"$others"$'\n'
+  fi
+
+  if [[ -n "$prev_tag" ]]; then
+    notes+="**Full Changelog**: https://github.com/mattrobinsonsre/bamf/compare/${prev_tag}...${VERSION}"$'\n'
+  fi
+
+  printf '%s' "$notes"
+}
+
 # ── Create GitHub Release with binaries + packages ────────
 publish_release() {
   info "Creating GitHub Release ${VERSION}..."
@@ -54,10 +128,14 @@ publish_release() {
   info "Generating checksums..."
   (cd "$REPO_ROOT/dist" && $sha_cmd -- * > checksums.txt)
 
+  info "Generating release notes..."
+  local notes
+  notes=$(generate_release_notes)
+
   info "Creating release..."
   gh release create "$VERSION" "$REPO_ROOT"/dist/* \
     --title "BAMF ${VERSION}" \
-    --generate-notes
+    --notes "$notes"
 
   success "GitHub Release ${VERSION} created"
 }

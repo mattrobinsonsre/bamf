@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Terminal } from 'lucide-react'
 import WebTerminal from '@/components/web-terminal'
 import TerminalConnectDialog, { type ConnectData } from '@/components/terminal-connect-dialog'
-import { clearAuth, getAuthState } from '@/lib/auth'
+import { clearAuth, getAuthState, loginRedirectUrl } from '@/lib/auth'
 
 export default function TerminalPage() {
   const params = useParams()
@@ -25,7 +25,7 @@ export default function TerminalPage() {
   useEffect(() => {
     const auth = getAuthState()
     if (!auth) {
-      router.push('/login')
+      router.push(loginRedirectUrl())
     }
   }, [router])
 
@@ -42,7 +42,7 @@ export default function TerminalPage() {
     setPhase('connecting')
     const auth = getAuthState()
     if (!auth) {
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return
     }
 
@@ -61,7 +61,7 @@ export default function TerminalPage() {
 
       if (resp.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
 

@@ -135,7 +135,7 @@ function LoginContent() {
       }
 
       const tokenData = await tokenRes.json()
-      setAuth(tokenData.session_token, tokenData.email, tokenData.roles)
+      setAuth(tokenData.session_token, tokenData.email, tokenData.roles, tokenData.expires_at)
 
       // If we came from a proxy auth redirect, go back to the original URL.
       // Use window.location for cross-origin redirects (different subdomain).
@@ -159,6 +159,10 @@ function LoginContent() {
 
       sessionStorage.setItem('bamf_pkce_verifier', verifier)
       sessionStorage.setItem('bamf_auth_state', state)
+      // Preserve redirect URL across the external SSO redirect
+      if (redirectUrl) {
+        sessionStorage.setItem('bamf_redirect_after_login', redirectUrl)
+      }
 
       const params = new URLSearchParams({
         provider: providerName,

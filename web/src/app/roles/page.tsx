@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface PermissionsBlock {
   labels: Record<string, string[]>
@@ -273,6 +273,10 @@ export default function RolesPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdmin()) {
       router.push('/')
       return
@@ -284,7 +288,7 @@ export default function RolesPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -301,7 +305,7 @@ export default function RolesPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch roles')

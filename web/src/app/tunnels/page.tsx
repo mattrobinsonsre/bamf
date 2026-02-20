@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Zap, Users, Server, Box, RefreshCw, XCircle } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 const REFRESH_INTERVAL = 5000
 
@@ -97,7 +97,7 @@ export default function TunnelsPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -111,7 +111,7 @@ export default function TunnelsPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch tunnels')
@@ -128,6 +128,10 @@ export default function TunnelsPage() {
   }, [authHeaders, router])
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdminOrAudit()) {
       router.push('/')
       return
@@ -158,7 +162,7 @@ export default function TunnelsPage() {
       })
       if (resp.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!resp.ok) {

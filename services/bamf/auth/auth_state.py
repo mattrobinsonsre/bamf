@@ -45,6 +45,9 @@ class AuthCode:
     code_challenge: str
     code_challenge_method: str
     kubernetes_groups: list[str] | None = None
+    # Maximum session TTL in seconds, set when the IDP id_token expires
+    # sooner than the configured session_ttl_hours.
+    max_session_ttl: int | None = None
 
 
 def generate_state() -> str:

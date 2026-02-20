@@ -89,13 +89,18 @@ BAMF is **GPLv3** — no usage restrictions, no feature gating:
   status, session management, resource discovery, audit log viewer, and
   recording playback — all in a modern web UI with auto-refreshing data.
 
-![Login](docs/images/ui-login.png)
+### Web UI
 
-![Active Tunnels](docs/images/ui-tunnels.png)
-
-![Audit Log](docs/images/ui-audit.png)
-
-![Session Recordings](docs/images/ui-recordings.png)
+| | |
+|---|---|
+| ![Login](docs/images/ui-login.png) | ![Resources](docs/images/ui-resources.png) |
+| Login (local + SSO providers) | Resource discovery with one-click terminal access |
+| ![Active Tunnels](docs/images/ui-tunnels.png) | ![Sessions](docs/images/ui-sessions.png) |
+| Live tunnel monitoring | Session management with sliding-window expiry |
+| ![Audit Log](docs/images/ui-audit.png) | ![Recordings](docs/images/ui-recordings.png) |
+| Structured audit log with filters | SSH, database, and HTTP session recordings |
+| ![Roles](docs/images/ui-roles.png) | ![Access](docs/images/ui-access.png) |
+| RBAC role definitions | Per-user role assignments (local + SSO) |
 
 ## Architecture
 
@@ -236,6 +241,7 @@ kubectl --context prod-cluster get pods
 | [TCP Tunnels](docs/guides/databases.md) | Databases, Redis, HTTP APIs, any TCP |
 | [Kubernetes](docs/guides/kubernetes.md) | kubectl through BAMF |
 | [HTTP Apps](docs/guides/web-apps.md) | Web apps and HTTP APIs (browser + CLI) |
+| [Web Terminal](docs/guides/web-terminal.md) | Browser-based SSH and database access |
 | [Agents](docs/guides/agents.md) | Deploying and managing agents |
 | **Administration** | |
 | [Deployment](docs/admin/deployment.md) | Production Helm deployment |

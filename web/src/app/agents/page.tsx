@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Tag, Server, Clock, Shield, Trash2 } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface AgentResponse {
   id: string
@@ -31,6 +31,10 @@ export default function AgentsPage() {
   const [confirmDelete, setConfirmDelete] = useState<AgentResponse | null>(null)
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdminOrAudit()) {
       router.push('/')
       return
@@ -42,7 +46,7 @@ export default function AgentsPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -66,7 +70,7 @@ export default function AgentsPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch agents')
@@ -103,7 +107,7 @@ export default function AgentsPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface SessionResponse {
   email: string
@@ -51,7 +51,7 @@ export default function SessionsPage() {
   useEffect(() => {
     const state = getAuthState()
     if (!state) {
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return
     }
     setAdmin(isAdmin())
@@ -62,7 +62,7 @@ export default function SessionsPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -74,7 +74,7 @@ export default function SessionsPage() {
       const response = await fetch(endpoint, { headers: authHeaders() })
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch sessions')
@@ -104,7 +104,7 @@ export default function SessionsPage() {
       const state = getAuthState()
       if (state && state.email === email) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { clearAuth, getAuthState } from '@/lib/auth'
+import { clearAuth, getAuthState, loginRedirectUrl } from '@/lib/auth'
 
 /**
  * WebTerminal — xterm.js terminal with auto-reconnect.
@@ -71,7 +71,7 @@ export default function WebTerminal({
         })
         if (resp.status === 401) {
           clearAuth()
-          window.location.href = '/login'
+          window.location.href = loginRedirectUrl()
           return null
         }
         if (!resp.ok) return null

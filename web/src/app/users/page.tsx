@@ -6,7 +6,7 @@ import { Plus, KeyRound, Trash2 } from 'lucide-react'
 import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core'
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdmin, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdmin, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 zxcvbnOptions.setOptions({
   dictionary: { ...zxcvbnCommonPackage.dictionary },
@@ -102,6 +102,10 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdmin()) {
       router.push('/')
       return
@@ -113,7 +117,7 @@ export default function UsersPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -129,7 +133,7 @@ export default function UsersPage() {
       })
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (!response.ok) throw new Error('Failed to fetch users')

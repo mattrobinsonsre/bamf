@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Shield, CheckCircle, XCircle, Filter, ChevronDown, ChevronUp, Film } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface AuditEntry {
   id: string
@@ -72,7 +72,7 @@ export default function AuditPage() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -93,7 +93,7 @@ export default function AuditPage() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (response.status === 403) {
@@ -119,6 +119,10 @@ export default function AuditPage() {
   }, [authHeaders, eventTypeFilter, actionFilter, actorFilter, router])
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdminOrAudit()) {
       router.push('/')
       return

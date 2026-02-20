@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X, Film, Zap } from 'lucide-react'
 import { clearAuth, isAdmin, isAdminOrAudit } from '@/lib/auth'
+import { SessionExpiryBanner } from '@/components/session-expiry-banner'
 
 function NavLink({
   href,
@@ -108,6 +109,8 @@ export default function NavBar() {
   )
 
   return (
+    <>
+    <SessionExpiryBanner />
     <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-10">
       <div className="px-4 sm:px-6 lg:px-8">
         {/* Desktop nav */}
@@ -157,5 +160,6 @@ export default function NavBar() {
         )}
       </div>
     </nav>
+    </>
   )
 }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Film, Terminal, Database, Globe } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
-import { getAuthState, isAdminOrAudit, clearAuth } from '@/lib/auth'
+import { getAuthState, isAdminOrAudit, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
 interface RecordingEntry {
   id: string
@@ -31,7 +31,7 @@ function RecordingsList() {
     const state = getAuthState()
     if (!state) {
       clearAuth()
-      router.push('/login')
+      router.push(loginRedirectUrl())
       return {}
     }
     return { Authorization: `Bearer ${state.token}` }
@@ -60,7 +60,7 @@ function RecordingsList() {
 
       if (response.status === 401) {
         clearAuth()
-        router.push('/login')
+        router.push(loginRedirectUrl())
         return
       }
       if (response.status === 403) {
@@ -86,6 +86,10 @@ function RecordingsList() {
   }, [authHeaders, searchParams, router])
 
   useEffect(() => {
+    if (!getAuthState()) {
+      router.push(loginRedirectUrl())
+      return
+    }
     if (!isAdminOrAudit()) {
       router.push('/')
       return

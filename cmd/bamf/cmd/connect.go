@@ -341,7 +341,7 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("unauthorized - credentials may have expired")
+		return nil, fmt.Errorf("session expired or revoked. Run 'bamf login' to re-authenticate")
 	}
 	if resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("access denied to resource %s", resource)
