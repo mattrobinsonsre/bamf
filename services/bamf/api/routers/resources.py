@@ -19,6 +19,8 @@ from bamf.config import settings
 from bamf.db.models import Agent
 from bamf.db.session import get_db_read
 from bamf.redis.client import get_redis
+from bamf.services.rbac_service import check_access
+from bamf.services.resource_catalog import ResourceInfo
 
 router = APIRouter(prefix="/resources", tags=["resources"])
 
@@ -84,7 +86,11 @@ async def list_resources(
     r: aioredis.Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db_read),
 ) -> ResourceListResponse:
-    """List accessible resources from the Redis catalog."""
+    """List accessible resources from the Redis catalog.
+
+    Resources are filtered by the user's RBAC roles — users only see
+    resources they are allowed to access.
+    """
     resources: list[ResourceResponse] = []
     agent_names = await _agent_name_lookup(db)
 
@@ -93,6 +99,17 @@ async def list_resources(
         if data is None:
             continue
         parsed = json.loads(data)
+
+        # RBAC filter: only include resources the user can access
+        info = ResourceInfo(
+            name=parsed["name"],
+            resource_type=parsed["resource_type"],
+            labels=parsed.get("labels", {}),
+            agent_id=parsed["agent_id"],
+        )
+        if not await check_access(db, current_user, info, current_user.roles):
+            continue
+
         resources.append(await _build_resource(parsed, agent_names, r))
 
     resources.sort(key=lambda r: r.name)
@@ -114,5 +131,19 @@ async def get_resource_by_name(
             detail=f"Resource '{name}' not found",
         )
     parsed = json.loads(data)
+
+    # RBAC check: user must have access to this resource
+    info = ResourceInfo(
+        name=parsed["name"],
+        resource_type=parsed["resource_type"],
+        labels=parsed.get("labels", {}),
+        agent_id=parsed["agent_id"],
+    )
+    if not await check_access(db, current_user, info, current_user.roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
     agent_names = await _agent_name_lookup(db)
     return await _build_resource(parsed, agent_names, r)
