@@ -41,7 +41,7 @@ def rewrite_request_headers(
     target_protocol: str,
     user_email: str,
     user_roles: list[str],
-    client_ip: str,
+    client_ip: str | None,
 ) -> dict[str, str]:
     """Rewrite HTTP request headers for proxying to the target.
 
@@ -86,7 +86,8 @@ def rewrite_request_headers(
     # X-Forwarded headers
     out["X-Forwarded-Host"] = f"{tunnel_hostname}.{tunnel_domain}"
     out["X-Forwarded-Proto"] = "https"
-    out["X-Forwarded-For"] = client_ip
+    if client_ip:
+        out["X-Forwarded-For"] = client_ip
     out["X-Forwarded-User"] = user_email
     out["X-Forwarded-Email"] = user_email
     out["X-Forwarded-Roles"] = ",".join(user_roles)

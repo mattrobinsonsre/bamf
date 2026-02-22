@@ -16,14 +16,18 @@ Flow:
 from __future__ import annotations
 
 import asyncio
-import json
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bamf.api.bridge_relay import (
+    RELAY_CONNECT_WAIT_SECONDS,
+    assign_relay_bridge,
+    build_bridge_relay_url,
+    forward_to_bridge,
+    send_relay_connect,
+)
 from bamf.api.dependencies import get_current_user
-from bamf.auth.ca import get_ca
 from bamf.auth.sessions import Session
 from bamf.config import settings
 from bamf.db.session import get_db_read
@@ -34,12 +38,6 @@ from bamf.services.resource_catalog import get_resource
 
 router = APIRouter(prefix="/kube", tags=["kube"])
 logger = get_logger(__name__)
-
-# Bridge internal relay port
-BRIDGE_INTERNAL_PORT = 8080
-
-# How long to wait for relay connection after sending relay_connect
-RELAY_CONNECT_WAIT_SECONDS = 5
 
 
 @router.api_route(
@@ -106,29 +104,25 @@ async def kube_proxy(
     needs_relay_connect = relay_bridge is None
 
     if needs_relay_connect:
-        relay_bridge = await _assign_relay_bridge(r, agent_id)
+        relay_bridge = await assign_relay_bridge(r, agent_id)
         if relay_bridge is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="No bridges available",
             )
-        await _send_relay_connect(r, agent_id, relay_bridge)
+        await send_relay_connect(r, agent_id, relay_bridge)
 
     # Resolve agent name for relay URL
     agent_name = await r.get(f"agent:{agent_id}:name")
     if not agent_name:
         agent_name = agent_id
 
-    # Build bridge internal URL — path is just the K8s API path, no /kube/ prefix.
+    # Path is just the K8s API path, no /kube/ prefix.
     # The /kube/{resource_name} prefix is for BAMF's API routing only; the agent
     # forwards the remaining path directly to the K8s API server.
-    headless_svc = settings.bridge_headless_service
-    bridge_url = (
-        f"http://{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
-        f":{BRIDGE_INTERNAL_PORT}/relay/{agent_name}/{path}"
+    bridge_url = build_bridge_relay_url(
+        relay_bridge, agent_name, f"/{path}", request.url.query
     )
-    if request.url.query:
-        bridge_url += f"?{request.url.query}"
 
     # Determine target
     target_protocol = "https"
@@ -150,18 +144,18 @@ async def kube_proxy(
     body = await request.body()
 
     # Forward to bridge
-    resp = await _forward_to_bridge(request.method, bridge_url, headers, body)
+    resp = await forward_to_bridge(request.method, bridge_url, headers, body)
 
     # If 502 and we didn't just send relay_connect, try reconnect
     if resp is not None and resp.status_code == 502 and not needs_relay_connect:
-        await _send_relay_connect(r, agent_id, relay_bridge)
+        await send_relay_connect(r, agent_id, relay_bridge)
         await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await _forward_to_bridge(request.method, bridge_url, headers, body)
+        resp = await forward_to_bridge(request.method, bridge_url, headers, body)
 
     # If we just triggered relay_connect and first attempt failed, wait and retry
     if resp is not None and resp.status_code == 502 and needs_relay_connect:
         await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await _forward_to_bridge(request.method, bridge_url, headers, body)
+        resp = await forward_to_bridge(request.method, bridge_url, headers, body)
 
     if resp is None:
         raise HTTPException(
@@ -185,74 +179,4 @@ async def kube_proxy(
         content=resp.content,
         status_code=resp.status_code,
         headers=resp_headers,
-    )
-
-
-async def _forward_to_bridge(
-    method: str,
-    url: str,
-    headers: dict[str, str],
-    body: bytes,
-) -> httpx.Response | None:
-    """Forward an HTTP request to the bridge relay endpoint."""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                content=body,
-            )
-    except httpx.ConnectError:
-        logger.warning("Bridge connection failed", url=url)
-        return None
-    except httpx.TimeoutException:
-        logger.warning("Bridge request timed out", url=url)
-        return None
-
-
-async def _assign_relay_bridge(r, agent_id: str) -> str | None:
-    """Assign a bridge for the agent's relay connection."""
-    bridges = await r.zrangebyscore("bridges:available", "-inf", "+inf", start=0, num=1)
-    if not bridges:
-        return None
-
-    bridge_id = bridges[0]
-    await r.setex(f"agent:{agent_id}:relay_bridge", 180, bridge_id)
-    logger.info("Assigned relay bridge", agent_id=agent_id, bridge_id=bridge_id)
-    return bridge_id
-
-
-async def _send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
-    """Send a relay_connect SSE event to the agent via Redis pub/sub."""
-    agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
-    bridge_info = await r.hgetall(f"bridge:{bridge_id}")
-    bridge_hostname = bridge_info.get("hostname", bridge_id)
-
-    if agent_cluster_internal:
-        bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
-        bridge_port = settings.bridge_internal_tunnel_port
-    else:
-        bridge_host = bridge_hostname
-        bridge_port = settings.bridge_tunnel_port
-
-    ca = get_ca()
-
-    await r.publish(
-        f"agent:{agent_id}:commands",
-        json.dumps(
-            {
-                "command": "relay_connect",
-                "bridge_host": bridge_host,
-                "bridge_port": bridge_port,
-                "ca_certificate": ca.ca_cert_pem,
-            }
-        ),
-    )
-
-    logger.info(
-        "Sent relay_connect to agent",
-        agent_id=agent_id,
-        bridge_host=bridge_host,
-        bridge_port=bridge_port,
     )

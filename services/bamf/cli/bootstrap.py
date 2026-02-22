@@ -13,6 +13,7 @@ Reads configuration from environment variables:
 
 import asyncio
 import hashlib
+import logging
 import os
 import secrets
 import sys
@@ -24,6 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from bamf.auth.passwords import hash_password
 from bamf.db.models import JoinToken, PlatformRoleAssignment, User
 
+# Use stdlib logging — structlog isn't configured yet during bootstrap
+logger = logging.getLogger("bamf.bootstrap")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
 
 async def bootstrap() -> None:
     admin_email = os.environ.get("BAMF_BOOTSTRAP_ADMIN_EMAIL", "").strip()
@@ -31,11 +36,11 @@ async def bootstrap() -> None:
     database_url = os.environ.get("DATABASE_URL", "").strip()
 
     if not admin_email:
-        print("BAMF_BOOTSTRAP_ADMIN_EMAIL is required")
+        logger.error("BAMF_BOOTSTRAP_ADMIN_EMAIL is required")
         sys.exit(1)
 
     if not database_url:
-        print("DATABASE_URL is required")
+        logger.error("DATABASE_URL is required")
         sys.exit(1)
 
     generated = False
@@ -54,7 +59,7 @@ async def bootstrap() -> None:
     async with engine.begin() as conn:
         # Verify connection
         await conn.execute(text("SELECT 1"))
-        print("Connected to database")
+        logger.info("Connected to database")
 
     async with AsyncSession(engine, expire_on_commit=False) as session:
         async with session.begin():
@@ -63,7 +68,7 @@ async def bootstrap() -> None:
             existing_user = result.scalar_one_or_none()
 
             if existing_user:
-                print(f"User {admin_email} already exists, skipping user creation")
+                logger.info("User %s already exists, skipping user creation", admin_email)
             else:
                 user = User(
                     email=admin_email,
@@ -72,10 +77,10 @@ async def bootstrap() -> None:
                     is_active=True,
                 )
                 session.add(user)
-                print(f"Created user: {admin_email}")
+                logger.info("Created user: %s", admin_email)
                 if generated:
-                    print(f"Generated password: {admin_password}")
-                    print("IMPORTANT: Save this password now. It will not be shown again.")
+                    logger.info("Generated password: %s", admin_password)
+                    logger.warning("IMPORTANT: Save this password now. It will not be shown again.")
 
             # Check if admin role assignment exists
             result = await session.execute(
@@ -88,7 +93,7 @@ async def bootstrap() -> None:
             existing_assignment = result.scalar_one_or_none()
 
             if existing_assignment:
-                print(f"Admin role already assigned to {admin_email}, skipping")
+                logger.info("Admin role already assigned to %s, skipping", admin_email)
             else:
                 assignment = PlatformRoleAssignment(
                     provider_name="local",
@@ -96,7 +101,7 @@ async def bootstrap() -> None:
                     role_name="admin",
                 )
                 session.add(assignment)
-                print(f"Assigned admin role to {admin_email} (provider: local)")
+                logger.info("Assigned admin role to %s (provider: local)", admin_email)
 
             # Create join token if specified
             join_token = os.environ.get("BAMF_BOOTSTRAP_JOIN_TOKEN", "").strip()
@@ -108,7 +113,7 @@ async def bootstrap() -> None:
                 existing_token = result.scalar_one_or_none()
 
                 if existing_token:
-                    print("Join token already exists, skipping")
+                    logger.info("Join token already exists, skipping")
                 else:
                     token = JoinToken(
                         name="bootstrap-token",
@@ -119,10 +124,10 @@ async def bootstrap() -> None:
                         created_by="system@bootstrap",
                     )
                     session.add(token)
-                    print("Created join token: bootstrap-token")
+                    logger.info("Created join token: bootstrap-token")
 
     await engine.dispose()
-    print("Bootstrap complete")
+    logger.info("Bootstrap complete")
 
 
 if __name__ == "__main__":

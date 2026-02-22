@@ -37,7 +37,13 @@ from fastapi import Request, Response
 from starlette.responses import RedirectResponse
 from starlette.responses import Response as StarletteResponse
 
-from bamf.auth.ca import get_ca
+from bamf.api.bridge_relay import (
+    RELAY_CONNECT_WAIT_SECONDS,
+    assign_relay_bridge,
+    build_bridge_relay_url,
+    forward_to_bridge,
+    send_relay_connect,
+)
 from bamf.auth.sessions import Session, get_session
 from bamf.config import settings
 from bamf.db.models import SessionRecording, generate_uuid7
@@ -51,12 +57,6 @@ from .redact import redact_body, redact_headers, redact_query
 from .rewrite import rewrite_request_headers, rewrite_response_headers
 
 logger = get_logger(__name__)
-
-# How long to wait for a relay connection to establish after sending relay_connect
-RELAY_CONNECT_WAIT_SECONDS = 5
-
-# Bridge internal health/relay port
-BRIDGE_INTERNAL_PORT = 8080
 
 # Session cookie name — set on the parent domain so it covers both
 # bamf.example.com and *.tunnel.bamf.example.com
@@ -123,10 +123,6 @@ async def handle_proxy_request(request: Request) -> Response:
     if session is None:
         return _auth_error_response(request)
 
-    # RBAC check (simplified — check access inline)
-    # TODO: use rbac_service.check_access() with full DB session
-    # For now, allow all authenticated users (matching the plan's initial scope)
-
     agent_id = resource.agent_id
     if not agent_id:
         return StarletteResponse(content="Resource has no agent", status_code=503)
@@ -141,10 +137,10 @@ async def handle_proxy_request(request: Request) -> Response:
     needs_relay_connect = relay_bridge is None
 
     if needs_relay_connect:
-        relay_bridge = await _assign_relay_bridge(r, agent_id)
+        relay_bridge = await assign_relay_bridge(r, agent_id)
         if relay_bridge is None:
             return StarletteResponse(content="No bridges available", status_code=503)
-        await _send_relay_connect(r, agent_id, relay_bridge)
+        await send_relay_connect(r, agent_id, relay_bridge)
 
     # Resolve agent name for relay URL — the bridge relay pool is keyed by
     # agent name (cert CN), not UUID.
@@ -152,15 +148,9 @@ async def handle_proxy_request(request: Request) -> Response:
     if not agent_name:
         agent_name = agent_id  # Fallback to UUID
 
-    # Build bridge internal URL using headless service DNS:
-    # {pod-name}.{headless-svc}.{namespace}.svc.cluster.local:8080
-    headless_svc = settings.bridge_headless_service
-    bridge_url = (
-        f"http://{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
-        f":{BRIDGE_INTERNAL_PORT}/relay/{agent_name}{request.url.path}"
+    bridge_url = build_bridge_relay_url(
+        relay_bridge, agent_name, request.url.path, request.url.query
     )
-    if request.url.query:
-        bridge_url += f"?{request.url.query}"
 
     # Determine target
     target_protocol = "http"
@@ -168,7 +158,7 @@ async def handle_proxy_request(request: Request) -> Response:
     target_port = resource.port or 80
 
     # Rewrite request headers
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = request.client.host if request.client else None
     raw_headers = dict(request.headers)
     rewritten = rewrite_request_headers(
         headers=raw_headers,
@@ -187,7 +177,7 @@ async def handle_proxy_request(request: Request) -> Response:
 
     # Forward to bridge relay endpoint (timed for http-audit)
     t0 = time.monotonic()
-    resp = await _forward_to_bridge(
+    resp = await forward_to_bridge(
         method=request.method,
         url=bridge_url,
         headers=rewritten,
@@ -197,9 +187,9 @@ async def handle_proxy_request(request: Request) -> Response:
     # If 502 and we didn't just send relay_connect, try once more
     if resp is not None and resp.status_code == 502 and not needs_relay_connect:
         # Relay connection may have been idle-reaped — trigger reconnect
-        await _send_relay_connect(r, agent_id, relay_bridge)
+        await send_relay_connect(r, agent_id, relay_bridge)
         await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await _forward_to_bridge(
+        resp = await forward_to_bridge(
             method=request.method,
             url=bridge_url,
             headers=rewritten,
@@ -209,7 +199,7 @@ async def handle_proxy_request(request: Request) -> Response:
     # If we just triggered relay_connect and first attempt failed, wait and retry
     if resp is not None and resp.status_code == 502 and needs_relay_connect:
         await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await _forward_to_bridge(
+        resp = await forward_to_bridge(
             method=request.method,
             url=bridge_url,
             headers=rewritten,
@@ -330,86 +320,6 @@ def _auth_error_response(request: Request) -> Response:
         content="Authorization required",
         status_code=401,
         headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-async def _forward_to_bridge(
-    method: str,
-    url: str,
-    headers: dict[str, str],
-    body: bytes,
-) -> httpx.Response | None:
-    """Forward an HTTP request to the bridge relay endpoint."""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                content=body,
-            )
-    except httpx.ConnectError:
-        logger.warning("Bridge connection failed", url=url)
-        return None
-    except httpx.TimeoutException:
-        logger.warning("Bridge request timed out", url=url)
-        return None
-
-
-async def _assign_relay_bridge(r, agent_id: str) -> str | None:
-    """Assign a bridge for the agent's relay connection.
-
-    Picks the least-loaded bridge from the sorted set and stores
-    the assignment in Redis.
-    """
-    bridges = await r.zrangebyscore("bridges:available", "-inf", "+inf", start=0, num=1)
-    if not bridges:
-        return None
-
-    bridge_id = bridges[0]
-
-    # Store assignment with agent TTL (refreshed on heartbeat)
-    await r.setex(f"agent:{agent_id}:relay_bridge", 180, bridge_id)
-
-    logger.info("Assigned relay bridge", agent_id=agent_id, bridge_id=bridge_id)
-    return bridge_id
-
-
-async def _send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
-    """Send a relay_connect SSE event to the agent via Redis pub/sub."""
-    # Determine bridge host for the agent
-    agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
-    bridge_info = await r.hgetall(f"bridge:{bridge_id}")
-    bridge_hostname = bridge_info.get("hostname", bridge_id)
-
-    if agent_cluster_internal:
-        bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
-        bridge_port = settings.bridge_internal_tunnel_port
-    else:
-        bridge_host = bridge_hostname
-        bridge_port = settings.bridge_tunnel_port
-
-    # Include CA cert so the agent can verify the bridge's certificate.
-    # The agent may have joined with a previous CA — always send the current one.
-    ca = get_ca()
-
-    await r.publish(
-        f"agent:{agent_id}:commands",
-        json.dumps(
-            {
-                "command": "relay_connect",
-                "bridge_host": bridge_host,
-                "bridge_port": bridge_port,
-                "ca_certificate": ca.ca_cert_pem,
-            }
-        ),
-    )
-
-    logger.info(
-        "Sent relay_connect to agent",
-        agent_id=agent_id,
-        bridge_host=bridge_host,
-        bridge_port=bridge_port,
     )
 
 
