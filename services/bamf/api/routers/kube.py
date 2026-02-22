@@ -29,7 +29,6 @@ from bamf.api.bridge_relay import (
 )
 from bamf.api.dependencies import get_current_user
 from bamf.auth.sessions import Session
-from bamf.config import settings
 from bamf.db.session import get_db_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis_client
