@@ -135,9 +135,8 @@ export default function TokensPage() {
       setCreatedToken(created)
       setShowCreate(false)
       resetForm()
-      setTokens([])
-      setLoading(true)
-      fetchTokens()
+      // Prepend to local list — avoids read-after-write against a stale replica
+      setTokens((prev) => [created, ...prev])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create token')
     } finally {
@@ -158,9 +157,10 @@ export default function TokensPage() {
         throw new Error(body.detail || `Failed to revoke token (${response.status})`)
       }
       setRevokingToken(null)
-      setTokens([])
-      setLoading(true)
-      fetchTokens()
+      // Optimistic update — mark as revoked locally
+      setTokens((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, is_revoked: true } : t))
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke token')
     } finally {

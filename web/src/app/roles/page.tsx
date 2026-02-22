@@ -338,10 +338,10 @@ export default function RolesPage() {
         const body = await response.json().catch(() => ({}))
         throw new Error(body.detail || `Failed to create role (${response.status})`)
       }
+      const created = await response.json()
       setShowCreate(false)
-      setRoles([])
-      setLoading(true)
-      fetchRoles()
+      // Prepend to local list — avoids read-after-write against a stale replica
+      setRoles((prev) => [created, ...prev])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create role')
     } finally {
@@ -362,10 +362,10 @@ export default function RolesPage() {
         const body = await response.json().catch(() => ({}))
         throw new Error(body.detail || `Failed to update role (${response.status})`)
       }
+      const updated = await response.json()
       setEditingRole(null)
-      setRoles([])
-      setLoading(true)
-      fetchRoles()
+      // Replace in local list — avoids read-after-write against a stale replica
+      setRoles((prev) => prev.map((r) => (r.name === name ? updated : r)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update role')
     } finally {

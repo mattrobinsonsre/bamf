@@ -170,10 +170,10 @@ export default function UsersPage() {
         const detail = Array.isArray(b.detail) ? b.detail[0]?.msg : b.detail
         throw new Error(detail || `Failed to create user (${response.status})`)
       }
+      const created = await response.json()
       setShowCreate(false)
-      setUsers([])
-      setLoading(true)
-      fetchUsers()
+      // Prepend to local list — avoids read-after-write against a stale replica
+      setUsers((prev) => [created, ...prev])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user')
     } finally {
@@ -198,9 +198,7 @@ export default function UsersPage() {
         throw new Error(detail || `Failed to update user (${response.status})`)
       }
       setEditingUser(null)
-      setUsers([])
-      setLoading(true)
-      fetchUsers()
+      // Password was reset — no list data changed, no refetch needed
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update user')
     } finally {

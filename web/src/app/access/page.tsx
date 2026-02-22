@@ -107,8 +107,21 @@ export default function AccessPage() {
       }
       setEditingKey(null)
       setShowAssign(false)
-      setLoading(true)
-      fetchIdentities()
+      // Update local list — avoids read-after-write against a stale replica
+      setIdentities((prev) => {
+        const exists = prev.some(
+          (i) => i.provider_name === providerName && i.email === email
+        )
+        if (exists) {
+          return prev.map((i) =>
+            i.provider_name === providerName && i.email === email
+              ? { ...i, roles }
+              : i
+          )
+        }
+        // New identity — prepend
+        return [{ provider_name: providerName, email, display_name: null, roles }, ...prev]
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update roles')
     } finally {
@@ -131,8 +144,10 @@ export default function AccessPage() {
         throw new Error(detail || `Failed to remove roles (${response.status})`)
       }
       setDeletingKey(null)
-      setLoading(true)
-      fetchIdentities()
+      // Remove from local list — avoids read-after-write against a stale replica
+      setIdentities((prev) =>
+        prev.filter((i) => !(i.provider_name === providerName && i.email === email))
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove roles')
     } finally {
