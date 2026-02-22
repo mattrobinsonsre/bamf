@@ -47,10 +47,11 @@ from bamf.api.bridge_relay import (
 from bamf.auth.sessions import Session, get_session
 from bamf.config import settings
 from bamf.db.models import SessionRecording, generate_uuid7
-from bamf.db.session import async_session_factory
+from bamf.db.session import async_session_factory, async_session_factory_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis_client
 from bamf.services.audit_service import log_audit_event
+from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource_by_tunnel_hostname
 
 from .redact import redact_body, redact_headers, redact_query
@@ -122,6 +123,23 @@ async def handle_proxy_request(request: Request) -> Response:
     session = await _authenticate(request)
     if session is None:
         return _auth_error_response(request)
+
+    # RBAC check — verify user's roles grant access to this resource
+    async with async_session_factory_read() as db:
+        allowed = await check_access(db, session, resource, session.roles)
+    if not allowed:
+        logger.info(
+            "Proxy access denied",
+            user=session.email,
+            resource=resource.name,
+            tunnel_hostname=tunnel_hostname,
+        )
+        if _is_browser_request(request):
+            return StarletteResponse(
+                content="Access denied — you do not have permission to access this resource",
+                status_code=403,
+            )
+        return StarletteResponse(content="Access denied", status_code=403)
 
     agent_id = resource.agent_id
     if not agent_id:
