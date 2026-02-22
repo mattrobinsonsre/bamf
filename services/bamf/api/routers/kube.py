@@ -119,9 +119,7 @@ async def kube_proxy(
     # Path is just the K8s API path, no /kube/ prefix.
     # The /kube/{resource_name} prefix is for BAMF's API routing only; the agent
     # forwards the remaining path directly to the K8s API server.
-    bridge_url = build_bridge_relay_url(
-        relay_bridge, agent_name, f"/{path}", request.url.query
-    )
+    bridge_url = build_bridge_relay_url(relay_bridge, agent_name, f"/{path}", request.url.query)
 
     # Determine target
     target_protocol = "https"
