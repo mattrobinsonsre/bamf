@@ -53,6 +53,11 @@ build_binaries() {
       build linux "$arch" bamf-bridge bamf-bridge
     done
 
+    # Create macOS universal binary for CLI (replaces arch-specific binaries)
+    echo "  Creating universal binary: dist/bamf-darwin-universal..."
+    go run ./tools/makefat dist/bamf-darwin-universal dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
+    rm dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
+
     echo "Done."
   '
 
