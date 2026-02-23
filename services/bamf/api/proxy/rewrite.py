@@ -14,7 +14,10 @@ Response headers are rewritten before returning to the browser:
 
 from __future__ import annotations
 
-# Headers that should not be forwarded (hop-by-hop)
+# Headers that should not be forwarded (hop-by-hop).
+# Note: "upgrade" is intentionally excluded — it must be preserved for
+# WebSocket requests. The Connection header is also selectively preserved
+# when it carries "Upgrade".
 _HOP_BY_HOP = frozenset(
     {
         "connection",
@@ -22,7 +25,6 @@ _HOP_BY_HOP = frozenset(
         "transfer-encoding",
         "te",
         "trailer",
-        "upgrade",
         "proxy-authorization",
         "proxy-authenticate",
     }
@@ -42,6 +44,7 @@ def rewrite_request_headers(
     user_email: str,
     user_roles: list[str],
     client_ip: str | None,
+    kubernetes_groups: list[str] | None = None,
 ) -> dict[str, str]:
     """Rewrite HTTP request headers for proxying to the target.
 
@@ -50,10 +53,16 @@ def rewrite_request_headers(
     """
     out: dict[str, str] = {}
 
+    # Detect upgrade request — preserve Upgrade and Connection headers
+    is_upgrade = any(k.lower() == "upgrade" for k in headers)
+
     # Copy headers, skipping hop-by-hop, auth, and headers we rewrite below
     for k, v in headers.items():
         lower_k = k.lower()
         if lower_k in _HOP_BY_HOP:
+            # For upgrade requests, preserve "connection" header
+            if lower_k == "connection" and is_upgrade:
+                out[k] = v
             continue
         # Skip headers we rewrite explicitly below
         if lower_k in ("host", "origin"):
@@ -91,6 +100,8 @@ def rewrite_request_headers(
     out["X-Forwarded-User"] = user_email
     out["X-Forwarded-Email"] = user_email
     out["X-Forwarded-Roles"] = ",".join(user_roles)
+    if kubernetes_groups:
+        out["X-Forwarded-Groups"] = ",".join(kubernetes_groups)
 
     # BAMF internal headers (agent reads X-Bamf-Target to determine target)
     out["X-Bamf-Target"] = target_origin
@@ -106,19 +117,27 @@ def rewrite_response_headers(
     target_host: str,
     target_port: int | None,
     target_protocol: str,
+    *,
+    is_upgrade: bool = False,
 ) -> dict[str, str]:
     """Rewrite HTTP response headers before returning to the browser.
 
     Rewrites Location redirects, Set-Cookie domains, and CORS origins
     from the target's internal hostname to the tunnel hostname.
+
+    When ``is_upgrade`` is True, Upgrade and Connection headers are
+    preserved (needed for 101 Switching Protocols responses).
     """
     out: dict[str, str] = {}
     tunnel_origin = f"https://{tunnel_hostname}.{tunnel_domain}"
 
-    # Build target origin variations for replacement
-    target_origins = [f"{target_protocol}://{target_host}"]
+    # Build target origin variations for replacement.
+    # More specific origins (with port) must come first to avoid partial matches
+    # (e.g., replacing "http://host" in "http://host:3000/path" leaves ":3000").
+    target_origins: list[str] = []
     if target_port and target_port not in (80, 443):
         target_origins.append(f"{target_protocol}://{target_host}:{target_port}")
+    target_origins.append(f"{target_protocol}://{target_host}")
     # Also catch the opposite protocol
     if target_protocol == "http":
         target_origins.append(f"https://{target_host}")
@@ -128,8 +147,14 @@ def rewrite_response_headers(
     for k, v in headers.items():
         lower_k = k.lower()
 
-        # Skip hop-by-hop
+        # Skip hop-by-hop — but preserve connection/upgrade for 101 responses
         if lower_k in _HOP_BY_HOP:
+            if is_upgrade and lower_k == "connection":
+                out[k] = v
+            continue
+
+        # Preserve Upgrade header for upgrade responses
+        if lower_k == "upgrade" and not is_upgrade:
             continue
 
         if lower_k == "location":

@@ -20,5 +20,9 @@ maintainers:
   - name: Matt Robinson
     email: matt@example.com
 
-# No subchart dependencies — PostgreSQL and Redis are simple StatefulSets
-# using standard container images. External instances are supported via config.
+dependencies:
+  - name: kubamf
+    version: "0.1.0"
+    repository: "file://../../../kubamf/charts/kubamf"
+    condition: kubamf.enabled
+    alias: kubamf

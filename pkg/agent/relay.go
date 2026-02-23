@@ -33,6 +33,10 @@ type RelayManager struct {
 	running bool
 	stopCh  chan struct{}
 	stopped chan struct{}
+
+	// Cached bridge address for auto-reconnect after upgrade consumes a conn
+	lastBridgeHost string
+	lastBridgePort int
 }
 
 // NewRelayManager creates a new relay manager.
@@ -73,6 +77,8 @@ func (rm *RelayManager) Connect(bridgeHost string, bridgePort int) error {
 	rm.running = true
 	rm.stopCh = make(chan struct{})
 	rm.stopped = make(chan struct{})
+	rm.lastBridgeHost = bridgeHost
+	rm.lastBridgePort = bridgePort
 	go rm.serve()
 	rm.mu.Unlock()
 
@@ -139,11 +145,57 @@ func (rm *RelayManager) serve() {
 			return
 		}
 
-		// Forward to target and write response.
-		// Read the full body so we can set Content-Length for proper relay
-		// framing.  Target servers may use HTTP/1.0 with body-terminated-by-
-		// close, which doesn't work on a persistent relay connection.
+		// Upgrade requests (WebSocket) — consume the relay conn for
+		// bidirectional byte-splice. After the upgrade finishes, the
+		// relay conn is dead and serve() returns.
+		if isUpgradeRequest(req) {
+			rm.logger.Info("relay handling upgrade request",
+				"path", req.URL.Path,
+				"upgrade", req.Header.Get("Upgrade"),
+			)
+			// Detach conn from the manager so Close()/Connect() won't
+			// interfere while the splice is running.
+			rm.mu.Lock()
+			rm.conn = nil
+			rm.mu.Unlock()
+
+			// Proactively open a new relay conn for subsequent HTTP traffic
+			rm.mu.Lock()
+			bridgeHost := rm.lastBridgeHost
+			bridgePort := rm.lastBridgePort
+			rm.mu.Unlock()
+			go rm.reconnect(bridgeHost, bridgePort)
+
+			// handleUpgrade blocks until the splice ends, then closes conn
+			rm.handleUpgrade(req, conn)
+			return
+		}
+
+		// Check if the response should be streamed rather than buffered
 		resp := rm.forwardRequest(req)
+
+		if isStreamingResponse(resp) {
+			// Streaming response (SSE, chunked without Content-Length).
+			// Write the response using Go's http.Response.Write which
+			// handles chunked transfer encoding automatically.
+			resp.TransferEncoding = []string{"chunked"}
+			resp.ContentLength = -1
+			resp.Close = false
+			resp.Proto = "HTTP/1.1"
+			resp.ProtoMajor = 1
+			resp.ProtoMinor = 1
+
+			if err := resp.Write(conn); err != nil {
+				rm.logger.Info("relay streaming write error", "error", err)
+				resp.Body.Close()
+				return
+			}
+			resp.Body.Close()
+			continue
+		}
+
+		// Buffered response — read the full body so we can set
+		// Content-Length for proper relay framing.
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
@@ -162,6 +214,235 @@ func (rm *RelayManager) serve() {
 			rm.logger.Info("relay write error, connection lost", "error", err)
 			return
 		}
+	}
+}
+
+// isUpgradeRequest returns true if the request contains an Upgrade header.
+func isUpgradeRequest(req *http.Request) bool {
+	return req.Header.Get("Upgrade") != ""
+}
+
+// isStreamingResponse returns true if the response should be streamed
+// rather than fully buffered. Detected by Content-Type text/event-stream
+// or chunked Transfer-Encoding with no Content-Length.
+func isStreamingResponse(resp *http.Response) bool {
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.HasPrefix(ct, "text/event-stream") {
+		return true
+	}
+	// Chunked with no known Content-Length — stream it
+	if resp.ContentLength < 0 {
+		for _, te := range resp.TransferEncoding {
+			if strings.EqualFold(te, "chunked") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// handleUpgrade forwards an HTTP upgrade request (WebSocket) to the target
+// using a raw TCP connection, then splices bytes bidirectionally between the
+// relay conn and the target conn. When the splice ends, both conns are closed.
+func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
+	defer relayConn.Close()
+
+	targetURL := req.Header.Get("X-Bamf-Target")
+	req.Header.Del("X-Bamf-Target")
+	req.Header.Del("X-Bamf-Resource")
+
+	if targetURL == "" {
+		resp := errorResponse(req, http.StatusBadGateway, "missing X-Bamf-Target header")
+		_ = resp.Write(relayConn)
+		return
+	}
+
+	// Detect K8s request
+	k8sGroups := req.Header.Get("X-Forwarded-K8s-Groups")
+	userEmail := req.Header.Get("X-Forwarded-Email")
+	isK8sRequest := k8sGroups != ""
+
+	// Always strip Impersonate-* headers — prevent injection from clients
+	for key := range req.Header {
+		if strings.HasPrefix(strings.ToLower(key), "impersonate-") {
+			req.Header.Del(key)
+		}
+	}
+
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		resp := errorResponse(req, http.StatusBadGateway, "invalid X-Bamf-Target: "+err.Error())
+		_ = resp.Write(relayConn)
+		return
+	}
+
+	// For K8s requests: strip forwarded headers and set impersonation headers
+	if isK8sRequest {
+		req.Header.Del("X-Forwarded-K8s-Groups")
+		req.Header.Del("X-Forwarded-Email")
+		req.Header.Del("X-Forwarded-User")
+		req.Header.Del("X-Forwarded-Roles")
+		req.Header.Del("X-Forwarded-Groups")
+		req.Header.Del("X-Forwarded-Host")
+		req.Header.Del("X-Forwarded-Proto")
+		req.Header.Del("X-Forwarded-For")
+
+		if userEmail == "" {
+			resp := errorResponse(req, http.StatusForbidden, "missing X-Forwarded-Email for K8s request")
+			_ = resp.Write(relayConn)
+			return
+		}
+		req.Header.Set("Impersonate-User", userEmail)
+		for _, group := range strings.Split(k8sGroups, ",") {
+			group = strings.TrimSpace(group)
+			if group != "" {
+				req.Header.Add("Impersonate-Group", group)
+			}
+		}
+		saToken, tokenErr := readSAToken()
+		if tokenErr != nil {
+			rm.logger.Error("failed to read SA token for upgrade", "error", tokenErr)
+			resp := errorResponse(req, http.StatusBadGateway, "agent SA token unavailable")
+			_ = resp.Write(relayConn)
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+saToken)
+	}
+
+	// Dial target directly with raw TCP (or TLS for K8s/HTTPS targets)
+	targetAddr := parsed.Host
+	if !strings.Contains(targetAddr, ":") {
+		if parsed.Scheme == "https" {
+			targetAddr += ":443"
+		} else {
+			targetAddr += ":80"
+		}
+	}
+
+	var targetConn net.Conn
+	if parsed.Scheme == "https" {
+		var tlsCfg *tls.Config
+		if isK8sRequest {
+			// Use K8s cluster CA
+			caCert, readErr := os.ReadFile(saCACertPath)
+			if readErr != nil {
+				resp := errorResponse(req, http.StatusBadGateway, "agent K8s CA cert unavailable")
+				_ = resp.Write(relayConn)
+				return
+			}
+			pool := x509.NewCertPool()
+			pool.AppendCertsFromPEM(caCert)
+			tlsCfg = &tls.Config{RootCAs: pool}
+		} else {
+			tlsCfg = &tls.Config{}
+		}
+		tlsCfg.ServerName = parsed.Hostname()
+		targetConn, err = tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", targetAddr, tlsCfg)
+	} else {
+		targetConn, err = net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	}
+	if err != nil {
+		rm.logger.Error("upgrade: target dial failed", "target", targetAddr, "error", err)
+		resp := errorResponse(req, http.StatusBadGateway, "target dial failed: "+err.Error())
+		_ = resp.Write(relayConn)
+		return
+	}
+	defer targetConn.Close()
+
+	// Write the HTTP upgrade request to the target
+	outURL := *parsed
+	outURL.Path = req.URL.Path
+	outURL.RawQuery = req.URL.RawQuery
+	req.URL = &outURL
+	req.Host = parsed.Host
+	req.RequestURI = ""
+	if err := req.Write(targetConn); err != nil {
+		rm.logger.Error("upgrade: write to target failed", "error", err)
+		resp := errorResponse(req, http.StatusBadGateway, "write to target failed")
+		_ = resp.Write(relayConn)
+		return
+	}
+
+	// Read the target's response
+	targetReader := bufio.NewReader(targetConn)
+	resp, err := http.ReadResponse(targetReader, req)
+	if err != nil {
+		rm.logger.Error("upgrade: read target response failed", "error", err)
+		errResp := errorResponse(req, http.StatusBadGateway, "target response error")
+		_ = errResp.Write(relayConn)
+		return
+	}
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		// Not a 101 — write the error response back to relay conn
+		rm.logger.Warn("upgrade: target did not switch protocols",
+			"status", resp.StatusCode,
+		)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp.ContentLength = int64(len(body))
+		resp.Proto = "HTTP/1.1"
+		resp.ProtoMajor = 1
+		resp.ProtoMinor = 1
+		_ = resp.Write(relayConn)
+		return
+	}
+	resp.Body.Close()
+
+	// Write the 101 response back to relay conn
+	resp.Proto = "HTTP/1.1"
+	resp.ProtoMajor = 1
+	resp.ProtoMinor = 1
+	if err := resp.Write(relayConn); err != nil {
+		rm.logger.Error("upgrade: write 101 to relay failed", "error", err)
+		return
+	}
+
+	rm.logger.Info("upgrade: splicing relay ↔ target",
+		"path", outURL.Path,
+		"upgrade", resp.Header.Get("Upgrade"),
+	)
+
+	// Bidirectional byte splice
+	done := make(chan struct{}, 2)
+	go func() {
+		_, _ = io.Copy(targetConn, relayConn)
+		done <- struct{}{}
+	}()
+	go func() {
+		// Flush any buffered data from the target reader first
+		if targetReader.Buffered() > 0 {
+			buffered := make([]byte, targetReader.Buffered())
+			_, _ = targetReader.Read(buffered)
+			_, _ = relayConn.Write(buffered)
+		}
+		_, _ = io.Copy(relayConn, targetConn)
+		done <- struct{}{}
+	}()
+	<-done
+
+	rm.logger.Info("upgrade: splice ended", "path", outURL.Path)
+}
+
+// reconnect opens a new relay connection in the background. Used after
+// an upgrade request consumes the current relay conn.
+func (rm *RelayManager) reconnect(bridgeHost string, bridgePort int) {
+	if bridgeHost == "" {
+		return
+	}
+	// Brief delay to avoid racing with the bridge detaching the old conn
+	time.Sleep(500 * time.Millisecond)
+
+	if err := rm.Connect(bridgeHost, bridgePort); err != nil {
+		rm.logger.Warn("relay auto-reconnect failed",
+			"bridge", fmt.Sprintf("%s:%d", bridgeHost, bridgePort),
+			"error", err,
+		)
+	} else {
+		rm.logger.Info("relay auto-reconnect succeeded",
+			"bridge", fmt.Sprintf("%s:%d", bridgeHost, bridgePort),
+		)
 	}
 }
 
@@ -186,15 +467,6 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 	userEmail := req.Header.Get("X-Forwarded-Email")
 	isK8sRequest := k8sGroups != ""
 
-	// Strip forwarded/bamf headers — never pass them to the target
-	req.Header.Del("X-Forwarded-K8s-Groups")
-	req.Header.Del("X-Forwarded-Email")
-	req.Header.Del("X-Forwarded-User")
-	req.Header.Del("X-Forwarded-Roles")
-	req.Header.Del("X-Forwarded-Host")
-	req.Header.Del("X-Forwarded-Proto")
-	req.Header.Del("X-Forwarded-For")
-
 	// Parse the target URL and construct the full URL
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
@@ -217,18 +489,28 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 	outReq.Host = parsed.Host
 	outReq.ContentLength = req.ContentLength
 
-	// For K8s requests: add impersonation headers and SA token auth
+	// Always strip Impersonate-* headers — prevent injection from clients
+	for key := range outReq.Header {
+		if strings.HasPrefix(strings.ToLower(key), "impersonate-") {
+			outReq.Header.Del(key)
+		}
+	}
+
+	// For K8s requests: strip forwarded headers, add impersonation + SA token
 	client := &http.Client{Timeout: 30 * time.Second}
 	if isK8sRequest {
+		// Strip X-Forwarded-* headers — consumed for impersonation, not passed to K8s API
+		outReq.Header.Del("X-Forwarded-K8s-Groups")
+		outReq.Header.Del("X-Forwarded-Email")
+		outReq.Header.Del("X-Forwarded-User")
+		outReq.Header.Del("X-Forwarded-Roles")
+		outReq.Header.Del("X-Forwarded-Groups")
+		outReq.Header.Del("X-Forwarded-Host")
+		outReq.Header.Del("X-Forwarded-Proto")
+		outReq.Header.Del("X-Forwarded-For")
+
 		if userEmail == "" {
 			return errorResponse(req, http.StatusForbidden, "missing X-Forwarded-Email for K8s request")
-		}
-
-		// Strip any existing Impersonate-* headers (prevent injection)
-		for key := range outReq.Header {
-			if strings.HasPrefix(strings.ToLower(key), "impersonate-") {
-				outReq.Header.Del(key)
-			}
 		}
 
 		// Set impersonation headers

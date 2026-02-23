@@ -1,4 +1,9 @@
 {{- if .Values.agent.enabled }}
+{{- $kubamfEnabled := and (hasKey .Values "kubamf") .Values.kubamf.enabled }}
+{{- $agentName := required "agent.config.name is required when agent.enabled=true" .Values.agent.config.name }}
+{{- $kubamfResourceName := .Values.kubamf.resourceName | default (printf "%s-kubamf" $agentName) }}
+{{- $kubamfTunnelHostname := .Values.kubamf.tunnelHostname | default $kubamfResourceName }}
+{{- $kubamfServiceName := printf "%s-kubamf" (include "bamf.fullname" .) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,7 +18,7 @@ data:
     platform_url: {{ .Values.agent.platformUrl | default (printf "http://%s-api:8000" (include "bamf.fullname" .)) | quote }}
 
     # Agent name (required, must be unique)
-    agent_name: {{ required "agent.config.name is required when agent.enabled=true" .Values.agent.config.name | quote }}
+    agent_name: {{ $agentName | quote }}
 
     # Data directory for storing certificates
     data_dir: {{ .Values.agent.dataDir | quote }}
@@ -32,7 +37,7 @@ data:
     {{- end }}
 
     # Resources this agent provides access to (list format)
-    {{- if .Values.agent.config.resources }}
+    {{- if or .Values.agent.config.resources $kubamfEnabled }}
     resources:
       {{- range .Values.agent.config.resources }}
       - name: {{ required "resource name is required" .name | quote }}
@@ -46,10 +51,24 @@ data:
         {{- if .tunnel_hostname }}
         tunnel_hostname: {{ .tunnel_hostname | quote }}
         {{- end }}
-        {{- if .labels }}
         labels:
+          {{- if .labels }}
           {{- toYaml .labels | nindent 10 }}
-        {{- end }}
+          {{- end }}
+          {{- if and $kubamfEnabled (eq .type "kubernetes") }}
+          kubamf-tunnel-hostname: {{ $kubamfTunnelHostname | quote }}
+          {{- end }}
+      {{- end }}
+      {{- if $kubamfEnabled }}
+      # Auto-registered kubamf (Kubernetes GUI)
+      - name: {{ $kubamfResourceName | quote }}
+        type: "http"
+        hostname: {{ $kubamfServiceName | quote }}
+        port: 3001
+        tunnel_hostname: {{ $kubamfTunnelHostname | quote }}
+        labels:
+          app: kubamf
+          managed-by: bamf
       {{- end }}
     {{- else }}
     resources: []

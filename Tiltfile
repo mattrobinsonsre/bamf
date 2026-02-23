@@ -139,6 +139,16 @@ docker_build(
     },
 )
 
+# Kubamf (Kubernetes GUI)
+docker_build(
+    'kubamf',
+    context='../kubamf',
+    dockerfile='../kubamf/Dockerfile',
+    live_update=[
+        sync('../kubamf/src', '/app/src'),
+    ],
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Kubernetes Resources
 # ─────────────────────────────────────────────────────────────────────────────
@@ -170,6 +180,11 @@ k8s_yaml(helm(
         'agent.image.repository=bamf-agent',
         'agent.image.tag=latest',
         'agent.image.pullPolicy=Never',
+        # Kubamf (Kubernetes GUI)
+        'kubamf.enabled=true',
+        'kubamf.image.repository=kubamf',
+        'kubamf.image.tag=latest',
+        'kubamf.image.pullPolicy=Never',
     ],
 ))
 
@@ -216,6 +231,13 @@ k8s_resource(
     'bamf-agent',
     labels=['backend'],
     resource_deps=['bamf-bootstrap-1'],
+)
+
+# Kubamf (Kubernetes GUI — deployed alongside agent)
+k8s_resource(
+    'bamf-kubamf',
+    labels=['frontend'],
+    resource_deps=['bamf-agent'],
 )
 
 # Migrations job (name includes revision suffix from Helm)

@@ -14,6 +14,7 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.websockets import WebSocket
 
 from bamf.auth.ca import init_ca
 from bamf.auth.connectors import init_connectors
@@ -160,6 +161,16 @@ def create_application() -> FastAPI:
 
     # Internal routes (called by Go bridge/agent, not end users)
     app.include_router(internal_bridges_router, prefix=settings.api_prefix)
+
+    # Catch-all WebSocket route for proxy requests (*.tunnel.domain).
+    # Must come AFTER all other routers so it doesn't shadow specific
+    # WebSocket endpoints (terminal, kube).
+    from bamf.api.proxy.handler import handle_proxy_websocket
+
+    @app.websocket("/{path:path}")
+    async def proxy_ws_catch_all(websocket: WebSocket, path: str) -> None:
+        """Proxy WebSocket connections to *.tunnel.domain web apps."""
+        await handle_proxy_websocket(websocket)
 
     return app
 

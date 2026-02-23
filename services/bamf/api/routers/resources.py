@@ -37,6 +37,7 @@ class ResourceResponse(BAMFBaseModel):
     hostname: str | None = None
     port: int | None = None
     connect_url: str | None = None
+    kubamf_url: str | None = None
 
 
 class ResourceListResponse(BAMFBaseModel):
@@ -51,6 +52,15 @@ def _build_connect_url(parsed: dict) -> str | None:
     if not tunnel_hostname or not settings.tunnel_domain:
         return None
     return f"https://{tunnel_hostname}.{settings.tunnel_domain}"
+
+
+def _build_kubamf_url(parsed: dict) -> str | None:
+    """Build kubamf URL from the kubamf-tunnel-hostname label."""
+    labels = parsed.get("labels", {})
+    kubamf_hostname = labels.get("kubamf-tunnel-hostname")
+    if not kubamf_hostname or not settings.tunnel_domain:
+        return None
+    return f"https://{kubamf_hostname}.{settings.tunnel_domain}"
 
 
 async def _build_resource(
@@ -71,6 +81,7 @@ async def _build_resource(
         hostname=parsed.get("hostname"),
         port=parsed.get("port"),
         connect_url=_build_connect_url(parsed),
+        kubamf_url=_build_kubamf_url(parsed),
     )
 
 
@@ -108,6 +119,10 @@ async def list_resources(
             agent_id=parsed["agent_id"],
         )
         if not await check_access(db, current_user, info, current_user.roles):
+            continue
+
+        # Hide infrastructure resources (e.g. kubamf sidecar)
+        if parsed.get("labels", {}).get("managed-by") == "bamf":
             continue
 
         resources.append(await _build_resource(parsed, agent_names, r))

@@ -1,0 +1,6 @@
+dependencies:
+- name: kubamf
+  repository: file://../../../kubamf/charts/kubamf
+  version: 0.1.0
+digest: sha256:19e723709756b921e4b7c02b64154d3d16a854ae677ccfb7c35abfaba6e44046
+generated: "2026-02-23T16:23:16.977961Z"

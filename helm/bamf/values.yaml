@@ -455,6 +455,21 @@ tls:
   internal:
     minVersion: "1.3"  # "1.2" or "1.3"
 
+# ── Kubamf (Kubernetes GUI) ───────────────────────────────────────────────────
+# Deploys kubamf alongside the agent for browser-based K8s access.
+# Only meaningful when agent.enabled=true.
+kubamf:
+  enabled: false
+  bamf:
+    enabled: true  # Always BAMF mode when deployed via BAMF chart
+  image:
+    repository: ghcr.io/mattrobinsonsre/kubamf
+    tag: latest
+  # Resource name for agent registration (defaults to "{agent.config.name}-kubamf")
+  resourceName: ""
+  # Tunnel hostname for HTTP proxy access (defaults to resourceName)
+  tunnelHostname: ""
+
 # ── Monitoring ────────────────────────────────────────────────────────────────
 metrics:
   enabled: true

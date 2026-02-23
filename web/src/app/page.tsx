@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Terminal } from 'lucide-react'
+import { ExternalLink, Search, Terminal } from 'lucide-react'
 import NavBar from '@/components/nav-bar'
 import { clearAuth, getAuthState, loginRedirectUrl } from '@/lib/auth'
 
@@ -13,6 +13,7 @@ interface Resource {
   status: string
   agent_name?: string
   connect_url?: string
+  kubamf_url?: string
 }
 
 export default function Home() {
@@ -162,7 +163,9 @@ export default function Home() {
 
                 {Object.keys(resource.labels).length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-3">
-                    {Object.entries(resource.labels).map(([key, value]) => (
+                    {Object.entries(resource.labels)
+                      .filter(([key]) => key !== 'kubamf-tunnel-hostname')
+                      .map(([key, value]) => (
                       <span
                         key={key}
                         className="px-2 py-0.5 text-xs bg-slate-700/50 text-slate-400 rounded"
@@ -193,6 +196,18 @@ export default function Home() {
                       <Terminal size={14} />
                       Terminal
                     </button>
+                  )}
+                  {resource.kubamf_url && (
+                    <a
+                      href={resource.kubamf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors btn-smoke"
+                      title="Open Kubernetes GUI"
+                    >
+                      <ExternalLink size={14} />
+                      Kubamf
+                    </a>
                   )}
                 </div>
               </div>

@@ -7,6 +7,7 @@ and HTTP forwarding.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -118,3 +119,22 @@ def build_bridge_relay_url(
     if query:
         url += f"?{query}"
     return url
+
+
+def build_bridge_relay_host(relay_bridge: str) -> str:
+    """Return the FQDN of a bridge pod's internal relay endpoint."""
+    headless_svc = settings.bridge_headless_service
+    return f"{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
+
+
+async def dial_bridge_relay(
+    relay_bridge: str,
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Open a raw TCP connection to a bridge pod's internal relay port.
+
+    Used for WebSocket upgrade requests where we need a persistent
+    bidirectional connection rather than request/response HTTP.
+    No TLS needed — bridge:8080 is internal cluster network.
+    """
+    host = build_bridge_relay_host(relay_bridge)
+    return await asyncio.open_connection(host, BRIDGE_INTERNAL_PORT)
