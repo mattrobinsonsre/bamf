@@ -1,0 +1,20 @@
+# Traefik rate limit Middleware — protects HTTP-terminated routes
+# (API, web UI, web app proxy) from brute-force and DoS.
+# Does NOT apply to IngressRouteTCP (bridge tunnels use TLS passthrough).
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.rateLimit.enabled }}
+{{- $fullName := include "bamf.fullname" . }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullName }}-rate-limit
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ .Values.gateway.rateLimit.average }}
+    burst: {{ .Values.gateway.rateLimit.burst }}
+    period: {{ .Values.gateway.rateLimit.period | default "1s" }}
+    sourceCriterion:
+      ipStrategy:
+        depth: 0
+{{- end }}

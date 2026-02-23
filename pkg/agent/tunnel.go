@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mattrobinsonsre/bamf/pkg/tlsutil"
 	"github.com/mattrobinsonsre/bamf/pkg/tunnel"
 )
 
@@ -110,12 +111,7 @@ func dialBridgeAgent(
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-		ServerName:   bridgeHost,
-		MinVersion:   tls.VersionTLS12,
-	}
+	tlsConfig := tlsutil.ClientConfig(cert, caPool, bridgeHost, tls.VersionTLS13)
 
 	bridgeAddr := fmt.Sprintf("%s:%d", bridgeHost, bridgePort)
 	conn, err := tls.Dial("tcp", bridgeAddr, tlsConfig)

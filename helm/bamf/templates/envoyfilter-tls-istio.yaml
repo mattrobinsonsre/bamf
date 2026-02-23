@@ -1,0 +1,41 @@
+# TLS hardening for Istio Gateway API: docs/architecture/security.md (TLS Configuration)
+# Patches the auto-generated Envoy listener to enforce TLS version and cipher policy.
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") }}
+{{- $fullName := include "bamf.fullname" . }}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ $fullName }}-tls-policy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio.io/gateway-name: {{ $fullName }}
+  configPatches:
+    - applyTo: FILTER_CHAIN
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: {{ .Values.gateway.ports.https | default 443 }}
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          transport_socket:
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_params:
+                  {{- if eq (.Values.tls.ingress.minVersion | default "VersionTLS13") "VersionTLS13" }}
+                  tls_minimum_protocol_version: TLSv1_3
+                  {{- else }}
+                  tls_minimum_protocol_version: TLSv1_2
+                  {{- end }}
+                  {{- with .Values.tls.ingress.istioCipherSuites }}
+                  cipher_suites:
+                    {{- toYaml . | nindent 20 }}
+                  {{- end }}
+{{- end }}

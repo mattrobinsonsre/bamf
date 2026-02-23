@@ -22,9 +22,17 @@ spec:
     # HostRegexp uses Traefik v3 raw Go regex syntax
     - match: HostRegexp(`^.+\.{{ $tunnelDomainEscaped }}$`)
       kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
       services:
         - name: {{ $fullName }}-api
           port: 8000
   tls:
     secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+    options:
+      name: {{ $fullName }}-hardened
+      namespace: {{ .Release.Namespace }}
 {{- end }}

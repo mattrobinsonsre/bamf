@@ -1,0 +1,21 @@
+# TLS hardening: docs/architecture/security.md (TLS Configuration)
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") }}
+{{- $fullName := include "bamf.fullname" . }}
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata:
+  name: {{ $fullName }}-hardened
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  minVersion: {{ .Values.tls.ingress.minVersion | default "VersionTLS13" }}
+  sniStrict: true
+  {{- with .Values.tls.ingress.cipherSuites }}
+  cipherSuites:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.tls.ingress.curvePreferences }}
+  curvePreferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

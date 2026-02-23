@@ -21,6 +21,23 @@ When `provider: traefik`, the chart creates Traefik IngressRoute and
 IngressRouteTCP CRDs. When `provider: istio`, it creates Gateway API resources
 (Gateway, HTTPRoute, TLSRoute) for the Istio controller.
 
+### Rate Limiting
+
+```yaml
+gateway:
+  rateLimit:
+    enabled: true              # Enable HTTP rate limiting at the ingress layer
+    average: 100               # Requests per period per source IP (Traefik) / tokens per fill (Istio)
+    burst: 200                 # Max burst size
+    period: 1s                 # Token refill period
+```
+
+Rate limiting protects HTTP-terminated routes (API, web UI, web app proxy).
+Does not apply to tunnel traffic (IngressRouteTCP with TLS passthrough).
+
+For Traefik, creates a `Middleware` CRD referenced by all HTTP IngressRoutes.
+For Istio, creates an `EnvoyFilter` with Envoy's local rate limit filter.
+
 ## API Server
 
 ```yaml
@@ -229,9 +246,29 @@ tls:
   certManager:
     enabled: true
     issuerRef:
-      name: letsencrypt-prod
+      name: letsencrypt-prod       # cert-manager issuer for Let's Encrypt
       kind: ClusterIssuer
   existingSecret: ""               # Override: existing TLS secret
+
+  # Ingress TLS hardening (Traefik TLSOption / Istio EnvoyFilter)
+  ingress:
+    minVersion: VersionTLS13       # VersionTLS13 (default) or VersionTLS12
+    cipherSuites:                  # Only used when minVersion is VersionTLS12
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+    curvePreferences:
+      - X25519
+      - CurveP256
+      - CurveP384
+    # istioCipherSuites: []        # Envoy cipher names for Istio (when VersionTLS12)
+
+  # Internal mTLS hardening (Bridge ↔ Agent ↔ CLI)
+  internal:
+    minVersion: "1.3"              # "1.2" or "1.3"
 ```
 
 ## Migrations

@@ -21,6 +21,7 @@ import (
 	"github.com/mattrobinsonsre/bamf/pkg/bridge/dbaudit"
 	"github.com/mattrobinsonsre/bamf/pkg/bridge/sshproxy"
 	"github.com/mattrobinsonsre/bamf/pkg/bridge/webterm"
+	"github.com/mattrobinsonsre/bamf/pkg/tlsutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/ssh"
@@ -254,21 +255,20 @@ func (s *Server) loadTLSConfig() (certPEM []byte, err error) {
 	s.certExpiry = x509Cert.NotAfter
 	s.certMu.Unlock()
 
-	// Standard TLS config — uses GetCertificate for hot-swap
-	s.tlsConfig = &tls.Config{
-		GetCertificate: s.getCertificate,
-		MinVersion:     tls.VersionTLS12,
-		// SNI routing callback
-		GetConfigForClient: s.getConfigForClient,
+	// Parse configured TLS min version (default TLS 1.3).
+	minVersion, err := tlsutil.ParseMinVersion(s.cfg.TLSMinVersion)
+	if err != nil {
+		return nil, fmt.Errorf("invalid TLS min version: %w", err)
 	}
 
-	// mTLS config for agent connections — uses GetCertificate for hot-swap
-	s.mtlsConfig = &tls.Config{
-		GetCertificate: s.getCertificate,
-		ClientCAs:      caPool,
-		ClientAuth:     tls.RequireAndVerifyClientCert,
-		MinVersion:     tls.VersionTLS12,
-	}
+	// Standard TLS config — uses GetCertificate for hot-swap
+	s.tlsConfig = tlsutil.ServerConfig(minVersion)
+	s.tlsConfig.GetCertificate = s.getCertificate
+	s.tlsConfig.GetConfigForClient = s.getConfigForClient
+
+	// mTLS config for tunnel connections — uses GetCertificate for hot-swap
+	s.mtlsConfig = tlsutil.ServerMTLSConfig(caPool, minVersion)
+	s.mtlsConfig.GetCertificate = s.getCertificate
 
 	// Load cert PEM for API client authentication (X-Bamf-Client-Cert header)
 	certPEM, err = os.ReadFile(s.cfg.TLSCertFile)

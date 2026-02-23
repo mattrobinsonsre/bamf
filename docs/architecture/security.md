@@ -404,6 +404,52 @@ retention (default 90 days).
 
 See [Monitoring](../operations/monitoring.md) for querying the audit log.
 
+## TLS Configuration
+
+BAMF uses a two-layer TLS model with hardened defaults on both layers.
+
+### Layer 1: Ingress (browser-facing)
+
+Public HTTPS for the API, web UI, and web app proxy. TLS is terminated by the
+ingress controller (Traefik or Istio) using Let's Encrypt certificates.
+
+- **Default minimum version:** TLS 1.3 (all mainstream browsers since 2019)
+- **TLS 1.2 fallback:** Available via `tls.ingress.minVersion: VersionTLS12`
+- **TLS 1.2 cipher suites:** ECDHE key exchange only (forward secrecy), AESGCM
+  and CHACHA20-POLY1305 only (authenticated encryption)
+- **Excluded:** RSA key exchange (no forward secrecy), CBC mode ciphers
+  (padding oracle), 3DES, RC4, all legacy algorithms
+- **Curve preferences:** X25519 (preferred), P-256 (fallback)
+
+Traefik enforces this via a `TLSOption` CRD referenced by all IngressRoutes.
+Istio uses an `EnvoyFilter` that patches the gateway listener.
+
+### Layer 2: Internal mTLS (tunnel infrastructure)
+
+CLI ↔ Bridge ↔ Agent connections use BAMF CA certificates for mutual TLS.
+Since BAMF controls both endpoints, this layer is maximally aggressive.
+
+- **Default minimum version:** TLS 1.3 (no fallback needed for controlled endpoints)
+- **TLS 1.2 fallback:** Available via `tls.internal.minVersion: "1.2"` and
+  `BAMF_TLS_MIN_VERSION` environment variable on the bridge
+- **Shared config:** All Go components use `pkg/tlsutil` for consistent TLS
+  settings across bridge, agent, and CLI
+
+The bridge is the only component with a configurable TLS minimum version
+(via Helm values). The CLI and agent always use TLS 1.3 for tunnel connections.
+
+### Why TLS 1.3 everywhere
+
+TLS 1.3 eliminates entire classes of attacks:
+- No vulnerable cipher suites (all TLS 1.3 suites use AEAD)
+- No renegotiation attacks
+- Fewer round trips (1-RTT handshake, 0-RTT resumption)
+- No RSA key exchange (forward secrecy is mandatory)
+- Encrypted handshake (server certificate is not visible to passive observers)
+
+Every mainstream browser has supported TLS 1.3 since March 2019 (Safari 12.1
+was last). There is no practical reason to default to TLS 1.2.
+
 ## Network Security
 
 ### External Access
@@ -427,6 +473,8 @@ mesh can be enabled for internal mTLS if required.
 
 ## Hardening Checklist
 
+- [x] TLS 1.3 on ingress and internal mTLS (default since v0.4.0)
+- [x] Rate limiting on public HTTP endpoints (default since v0.4.0)
 - [ ] Use external SSO (not local auth) for production
 - [ ] Set `require_external_sso_for_roles: [admin]`
 - [ ] Enable MFA in your identity provider
@@ -435,5 +483,4 @@ mesh can be enabled for internal mTLS if required.
 - [ ] Deploy Kubernetes NetworkPolicies restricting database access to API pods
 - [ ] Use cert-manager or external PKI for the BAMF CA
 - [ ] Configure audit log retention and export to SIEM
-- [ ] Enable rate limiting on the API
 - [ ] Run `govulncheck` and `pip-audit` regularly

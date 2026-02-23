@@ -13,8 +13,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
+)
+
+const (
+	maxRetries      = 3
+	retryMaxDelay   = 10 * time.Second
+	retryBaseDelay  = 1 * time.Second
 )
 
 // Config holds options for creating a Client.
@@ -152,7 +159,8 @@ func (c *Client) Delete(ctx context.Context, path string, response any) error {
 }
 
 // do executes the request, sets common headers, handles errors, and
-// optionally decodes the response body.
+// optionally decodes the response body. Retries up to maxRetries times
+// on 429 (Too Many Requests) responses with backoff.
 func (c *Client) do(req *http.Request, response any) error {
 	// Set common headers
 	if c.userAgent != "" {
@@ -162,28 +170,71 @@ func (c *Client) do(req *http.Request, response any) error {
 		req.Header.Set("X-Bamf-Client-Cert", certHeader)
 	}
 
-	c.logger.Debug("API request",
-		"method", req.Method,
-		"path", req.URL.Path,
-	)
+	for attempt := range maxRetries + 1 {
+		c.logger.Debug("API request",
+			"method", req.Method,
+			"path", req.URL.Path,
+			"attempt", attempt+1,
+		)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("apiclient: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return parseErrorResponse(resp)
-	}
-
-	if response != nil {
-		if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
-			return fmt.Errorf("apiclient: decode response: %w", err)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("apiclient: request failed: %w", err)
 		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			apiErr := parseErrorResponse(resp)
+			resp.Body.Close()
+
+			delay := apiErr.RetryAfter
+			if delay == 0 {
+				delay = retryBaseDelay * (1 << attempt)
+			}
+			if delay > retryMaxDelay {
+				delay = retryMaxDelay
+			}
+
+			c.logger.Warn("rate limited, retrying",
+				"attempt", attempt+1,
+				"delay", delay,
+				"path", req.URL.Path,
+			)
+
+			// Reset body for retry — http.NewRequest with *bytes.Reader
+			// sets GetBody automatically.
+			if req.GetBody != nil {
+				req.Body, err = req.GetBody()
+				if err != nil {
+					return fmt.Errorf("apiclient: reset request body: %w", err)
+				}
+			}
+
+			select {
+			case <-time.After(delay):
+				continue
+			case <-req.Context().Done():
+				return req.Context().Err()
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			return parseErrorResponse(resp)
+		}
+
+		if response != nil {
+			if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+				return fmt.Errorf("apiclient: decode response: %w", err)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	// Unreachable — the last attempt either returns success or falls through
+	// to the error handling above. Included for compiler satisfaction.
+	return fmt.Errorf("apiclient: max retries exceeded")
 }
 
 // APIError represents an error response from the BAMF API server.
@@ -191,6 +242,9 @@ type APIError struct {
 	StatusCode int
 	Status     string
 	Detail     string
+	// RetryAfter is the Retry-After duration from a 429 response.
+	// Zero means no Retry-After header was present.
+	RetryAfter time.Duration
 }
 
 func (e *APIError) Error() string {
@@ -210,12 +264,26 @@ func (e *APIError) IsUnauthorized() bool {
 	return e.StatusCode == http.StatusUnauthorized
 }
 
+// IsRateLimited returns true if the error is a 429.
+func (e *APIError) IsRateLimited() bool {
+	return e.StatusCode == http.StatusTooManyRequests
+}
+
 // parseErrorResponse reads the response body and tries to extract a
 // FastAPI-style {"detail": "..."} message.
 func parseErrorResponse(resp *http.Response) *APIError {
 	apiErr := &APIError{
 		StatusCode: resp.StatusCode,
 		Status:     resp.Status,
+	}
+
+	// Parse Retry-After header for 429 responses.
+	if resp.StatusCode == http.StatusTooManyRequests {
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+				apiErr.RetryAfter = time.Duration(secs) * time.Second
+			}
+		}
 	}
 
 	// Read up to 4KB of error body

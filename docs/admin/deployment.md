@@ -418,6 +418,125 @@ The chart creates:
 - HTTPRoute for web app proxy (`*.tunnel.bamf.example.com`)
 - TLSRoute per bridge pod for tunnel traffic (SNI passthrough)
 
+## TLS Hardening
+
+BAMF enforces TLS 1.3 by default on both the public ingress and internal
+tunnel connections. Two independent configuration layers control this:
+
+### Ingress TLS (browser-facing)
+
+The ingress controller (Traefik or Istio) terminates TLS for the web UI, API,
+and web app proxy. The chart creates a hardened TLS policy that all
+IngressRoutes reference.
+
+**Defaults (TLS 1.3):** No cipher suite configuration needed — TLS 1.3 suites
+are always secure and auto-negotiated.
+
+```yaml
+tls:
+  ingress:
+    minVersion: VersionTLS13
+```
+
+**TLS 1.2 fallback:** If you must support clients older than 2019, set
+`minVersion: VersionTLS12`. The chart then applies a restricted cipher suite
+list (ECDHE + AESGCM/CHACHA20 only — no RSA key exchange, no CBC mode):
+
+```yaml
+tls:
+  ingress:
+    minVersion: VersionTLS12
+    cipherSuites:
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+```
+
+For Traefik, this creates a `TLSOption` CRD. For Istio, an `EnvoyFilter` that
+patches the gateway listener.
+
+### Internal mTLS (CLI ↔ Bridge ↔ Agent)
+
+Tunnel connections use BAMF CA certificates for mutual TLS. Since both
+endpoints are BAMF components, TLS 1.3 is always safe.
+
+```yaml
+tls:
+  internal:
+    minVersion: "1.3"  # "1.2" or "1.3"
+```
+
+The bridge reads `BAMF_TLS_MIN_VERSION` from the environment. CLI and agent
+always use TLS 1.3 for tunnel connections.
+
+### Verifying TLS configuration
+
+```zsh
+# Check ingress TLS version
+openssl s_client -connect bamf.example.com:443 -tls1_3 < /dev/null 2>&1 | grep Protocol
+
+# Check bridge mTLS version (requires BAMF CA cert)
+openssl s_client -connect 0.bridge.tunnel.bamf.example.com:443 \
+  -cert client.crt -key client.key -CAfile ca.crt -tls1_3 < /dev/null 2>&1 | grep Protocol
+```
+
+## Rate Limiting
+
+BAMF applies HTTP rate limiting at the ingress layer to protect public-facing
+endpoints (API, web UI, web app proxy) from brute-force attacks and
+denial-of-service. Rate limiting is enabled by default with generous limits
+unlikely to affect normal operation.
+
+Rate limiting does **not** apply to tunnel traffic (bridge IngressRouteTCP uses
+TLS passthrough, which cannot inspect HTTP headers). Tunnel connections are
+already protected by mTLS — unauthenticated clients cannot complete a TLS
+handshake.
+
+### Configuration
+
+```yaml
+gateway:
+  rateLimit:
+    enabled: true    # Enable/disable rate limiting
+    average: 100     # Requests per period per source IP
+    burst: 200       # Max burst size
+    period: 1s       # Token refill period
+```
+
+**Default limits:** 100 requests/second average, 200 burst. Normal BAMF usage
+is well below this — CLI commands generate < 10 req/s per user, agent
+heartbeats run at 1/60s, web UI navigation is 5-10 req/s during active use.
+
+### Provider behavior
+
+**Traefik:** Creates a `Middleware` CRD with per-source-IP rate limiting
+(`sourceCriterion.ipStrategy`). The `depth: 0` setting uses the direct client
+IP. If BAMF is behind a CDN or additional proxy that sets `X-Forwarded-For`,
+adjust `depth` accordingly.
+
+**Istio:** Creates an `EnvoyFilter` with Envoy's local rate limit filter. This
+is a per-gateway-pod limit (not per-source-IP). With multiple gateway pods, the
+effective cluster-wide limit scales with pod count.
+
+### Disabling
+
+To disable rate limiting:
+
+```yaml
+gateway:
+  rateLimit:
+    enabled: false
+```
+
+### Client behavior
+
+Go clients (CLI, agent) handle 429 responses with automatic retry and
+exponential backoff. The `Retry-After` response header is respected when
+present. Users see a message on stderr when retries occur.
+
 ## Database Migrations
 
 Migrations run automatically as a Helm pre-install/pre-upgrade hook (for

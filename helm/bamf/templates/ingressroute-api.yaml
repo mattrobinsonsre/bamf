@@ -20,6 +20,11 @@ spec:
     # API routes (highest specificity — Traefik auto-prioritizes by rule length)
     - match: Host(`{{ .Values.gateway.hostname }}`) && (PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/ready`))
       kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
       services:
         - name: {{ $fullName }}-api
           port: 8000
@@ -27,10 +32,18 @@ spec:
     # When web UI is not standalone, API serves everything (catch-all)
     - match: Host(`{{ .Values.gateway.hostname }}`)
       kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
       services:
         - name: {{ $fullName }}-api
           port: 8000
     {{- end }}
   tls:
     secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+    options:
+      name: {{ $fullName }}-hardened
+      namespace: {{ .Release.Namespace }}
 {{- end }}

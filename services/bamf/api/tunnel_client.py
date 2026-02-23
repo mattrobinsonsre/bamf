@@ -50,6 +50,7 @@ async def dial_bridge(
         ca_path.chmod(0o600)
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
         ctx.load_cert_chain(str(cert_path), str(key_path))
         ctx.load_verify_locations(str(ca_path))
         # Bridge uses BAMF CA-issued certs — verify against our CA

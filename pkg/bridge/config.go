@@ -39,6 +39,9 @@ type Config struct {
 	IdleTimeout        time.Duration // Idle connection timeout (0 = no timeout)
 	ShutdownTimeout    time.Duration // Graceful shutdown timeout
 
+	// TLS hardening
+	TLSMinVersion string // "1.2" or "1.3" (default "1.3")
+
 	// Tunnel configuration
 	TunnelDomain string // Base domain for SNI routing (e.g., "tunnel.bamf.example.com")
 }
@@ -64,6 +67,8 @@ func LoadConfig() (*Config, error) {
 		ShutdownTimeout:    getDurationEnvOrDefault("BAMF_SHUTDOWN_TIMEOUT", 90*time.Second),
 
 		TunnelDomain: getEnvOrDefault("BAMF_TUNNEL_DOMAIN", ""),
+
+		TLSMinVersion: getEnvOrDefault("BAMF_TLS_MIN_VERSION", "1.3"),
 
 		BootstrapToken: getEnvOrDefault("BAMF_BOOTSTRAP_TOKEN", ""),
 		DataDir:        getEnvOrDefault("BAMF_DATA_DIR", "/var/lib/bamf/bridge"),

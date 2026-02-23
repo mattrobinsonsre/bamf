@@ -21,9 +21,17 @@ spec:
     # (Traefik auto-prioritizes by rule length, but explicit exclusion is clearer)
     - match: Host(`{{ .Values.gateway.hostname }}`) && !PathPrefix(`/api`) && !PathPrefix(`/health`) && !PathPrefix(`/ready`)
       kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
       services:
         - name: {{ $fullName }}-web
           port: 3000
   tls:
     secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
+    options:
+      name: {{ $fullName }}-hardened
+      namespace: {{ .Release.Namespace }}
 {{- end }}

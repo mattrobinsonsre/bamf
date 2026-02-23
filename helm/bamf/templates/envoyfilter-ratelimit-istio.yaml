@@ -1,0 +1,51 @@
+# Istio local rate limit EnvoyFilter — protects HTTP-terminated routes
+# (API, web UI, web app proxy) from brute-force and DoS.
+# Per-gateway-pod rate limit (no external rate limit service needed).
+{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.rateLimit.enabled }}
+{{- $fullName := include "bamf.fullname" . }}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ $fullName }}-rate-limit
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio.io/gateway-name: {{ $fullName }}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: {{ .Values.gateway.ports.https | default 443 }}
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            stat_prefix: bamf_local_rate_limiter
+            token_bucket:
+              max_tokens: {{ .Values.gateway.rateLimit.burst }}
+              tokens_per_fill: {{ .Values.gateway.rateLimit.average }}
+              fill_interval: {{ .Values.gateway.rateLimit.period | default "1s" }}
+            filter_enabled:
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            filter_enforced:
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            response_headers_to_add:
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                header:
+                  key: Retry-After
+                  value: "1"
+{{- end }}

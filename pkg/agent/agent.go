@@ -9,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/mattrobinsonsre/bamf/pkg/tlsutil"
 )
 
 // Agent represents a BAMF agent
@@ -200,11 +202,7 @@ func (a *Agent) loadCertificates(ctx context.Context) error {
 	a.certNotBefore = x509Cert.NotBefore
 	a.certExpiry = x509Cert.NotAfter
 
-	a.tlsConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-		MinVersion:   tls.VersionTLS12,
-	}
+	a.tlsConfig = tlsutil.ClientConfig(cert, caPool, "", tls.VersionTLS13)
 
 	// Set cert on API client for X-Bamf-Client-Cert header auth
 	a.apiClient.Client.SetClientCert(certPEM)

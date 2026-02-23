@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mattrobinsonsre/bamf/pkg/tlsutil"
 	"github.com/mattrobinsonsre/bamf/pkg/tunnel"
 )
 
@@ -224,12 +225,7 @@ func dialBridge(ctx context.Context, session *ConnectResponse) (net.Conn, error)
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
-		ServerName:   session.BridgeHostname,
-		MinVersion:   tls.VersionTLS12,
-	}
+	tlsConfig := tlsutil.ClientConfig(cert, caPool, session.BridgeHostname, tls.VersionTLS13)
 
 	bridgeAddr := net.JoinHostPort(session.BridgeHostname, strconv.Itoa(session.BridgePort))
 
@@ -305,6 +301,7 @@ func loadCredentials() (*tokenResponse, error) {
 
 // requestConnect calls POST /api/v1/connect. If reconnectSessionID is non-empty,
 // it requests reconnection of an existing session through a new bridge.
+// Retries up to 3 times on 429 (rate limited) responses with backoff.
 func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconnectSessionID string) (*ConnectResponse, error) {
 	api := resolveAPIURL()
 	if api == "" {
@@ -325,47 +322,73 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 	}
 	reqData, _ := json.Marshal(reqBody)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(reqData))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.SessionToken)
-	req.Header.Set("Content-Type", "application/json")
+	const maxConnectRetries = 3
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("session expired or revoked. Run 'bamf login' to re-authenticate")
-	}
-	if resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("access denied to resource %s", resource)
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("resource not found: %s", resource)
-	}
-	if resp.StatusCode == http.StatusServiceUnavailable {
-		var detail struct {
-			Detail string `json:"detail"`
+	for attempt := range maxConnectRetries + 1 {
+		req, err := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(reqData))
+		if err != nil {
+			return nil, err
 		}
-		if err := json.Unmarshal(body, &detail); err != nil {
-			return nil, fmt.Errorf("service unavailable: %s", string(body))
+		req.Header.Set("Authorization", "Bearer "+creds.SessionToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("service unavailable: %s", detail.Detail)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxConnectRetries {
+			delay := time.Duration(1<<attempt) * time.Second // 1s, 2s, 4s
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if secs, parseErr := strconv.Atoi(ra); parseErr == nil && secs > 0 {
+					delay = time.Duration(secs) * time.Second
+				}
+			}
+			if delay > 10*time.Second {
+				delay = 10 * time.Second
+			}
+			fmt.Fprintf(os.Stderr, "Rate limited, retrying in %s (%d/%d)...\n",
+				delay, attempt+1, maxConnectRetries)
+			select {
+			case <-time.After(delay):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("session expired or revoked. Run 'bamf login' to re-authenticate")
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("access denied to resource %s", resource)
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("resource not found: %s", resource)
+		}
+		if resp.StatusCode == http.StatusServiceUnavailable {
+			var detail struct {
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(body, &detail); err != nil {
+				return nil, fmt.Errorf("service unavailable: %s", string(body))
+			}
+			return nil, fmt.Errorf("service unavailable: %s", detail.Detail)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+		}
+
+		var session ConnectResponse
+		if err := json.Unmarshal(body, &session); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		return &session, nil
 	}
 
-	var session ConnectResponse
-	if err := json.Unmarshal(body, &session); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return &session, nil
+	return nil, fmt.Errorf("rate limited: max retries exceeded")
 }
