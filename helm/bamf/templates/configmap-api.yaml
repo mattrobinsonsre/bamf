@@ -44,6 +44,20 @@ data:
     target_tunnels_per_pod: {{ .Values.bridge.autoscaling.targetTunnelsPerPod }}
     {{- end }}
 
+    # CORS — explicit origins or auto-derived from gateway hostname
+    {{- if .Values.api.config.cors.allow_origins }}
+    cors:
+      allow_origins: {{ .Values.api.config.cors.allow_origins | toJson }}
+    {{- else if and .Values.gateway.enabled .Values.gateway.hostname }}
+    {{- $port := int (.Values.gateway.ports.https | default 443) }}
+    cors:
+      {{- if eq $port 443 }}
+      allow_origins: [{{ printf "https://%s" .Values.gateway.hostname | quote }}]
+      {{- else }}
+      allow_origins: [{{ printf "https://%s:%d" .Values.gateway.hostname $port | quote }}]
+      {{- end }}
+    {{- end }}
+
     # Authentication
     auth:
       local_enabled: {{ .Values.auth.local.enabled }}

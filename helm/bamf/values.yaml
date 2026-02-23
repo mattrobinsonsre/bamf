@@ -43,6 +43,13 @@ api:
       bridge_ttl_hours: 24
     audit:
       retention_days: 90
+    # CORS — only origins listed here can make cross-origin requests.
+    # Empty list (default) means CORS middleware is disabled (same-origin only).
+    # Set to your BAMF hostname for production.
+    cors:
+      allow_origins: []
+      # allow_origins:
+      #   - https://bamf.example.com
 
   # Pod termination settings for graceful shutdown
   terminationGracePeriodSeconds: 120

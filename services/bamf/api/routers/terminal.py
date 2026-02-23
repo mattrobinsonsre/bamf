@@ -20,13 +20,17 @@ import struct
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from pydantic import Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import get_current_user
 from bamf.api.models.common import BAMFBaseModel
 from bamf.api.tunnel_client import dial_bridge
 from bamf.auth.sessions import Session
+from bamf.db.session import get_db_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis, get_redis_client
+from bamf.services.rbac_service import check_access
+from bamf.services.resource_catalog import get_resource
 
 logger = get_logger(__name__)
 
@@ -57,18 +61,20 @@ class TicketResponse(BAMFBaseModel):
 async def create_ticket(
     request: TicketRequest,
     r: aioredis.Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db_read),
     current_user: Session = Depends(get_current_user),
 ) -> TicketResponse:
     """Issue a one-time ticket for WebSocket authentication.
 
     The ticket is stored in Redis with a 60s TTL and consumed atomically
     via GETDEL when the WebSocket connects. This prevents replay attacks.
+    Re-checks RBAC at ticket time to prevent stale role grants.
     """
+    from fastapi import HTTPException
+
     # Verify the session exists and belongs to this user
     raw = await r.get(f"session:{request.session_id}")
     if not raw:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found or expired",
@@ -76,12 +82,20 @@ async def create_ticket(
 
     session_data = json.loads(raw)
     if session_data.get("user_email") != current_user.email:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Session does not belong to this user",
         )
+
+    # Re-check RBAC — roles may have changed since the session was created
+    resource_name = session_data.get("resource_name")
+    if resource_name:
+        resource = await get_resource(r, resource_name)
+        if resource and not await check_access(db, current_user, resource, current_user.roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access to this resource has been revoked",
+            )
 
     # Generate ticket
     ticket = secrets.token_urlsafe(32)

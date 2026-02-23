@@ -89,14 +89,15 @@ def create_application() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
-    # CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS middleware — configured via settings.cors (Helm values or config.yaml)
+    if settings.cors.allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors.allow_origins,
+            allow_credentials=settings.cors.allow_credentials,
+            allow_methods=settings.cors.allow_methods,
+            allow_headers=settings.cors.allow_headers,
+        )
 
     # HTTP proxy middleware — intercepts *.tunnel_domain requests before API routes
     from bamf.api.proxy.handler import proxy_middleware

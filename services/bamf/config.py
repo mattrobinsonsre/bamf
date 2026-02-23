@@ -133,6 +133,27 @@ class CertificateConfig(BaseSettings):
     bridge_ttl_hours: int = Field(default=24, description="Bridge certificate TTL in hours")
 
 
+class CORSConfig(BaseModel):
+    """CORS (Cross-Origin Resource Sharing) configuration."""
+
+    allow_origins: list[str] = Field(
+        default_factory=list,
+        description="Allowed origins. Empty list means same-origin only. "
+        'Use ["*"] only for development.',
+    )
+    allow_credentials: bool = Field(
+        default=True, description="Allow credentials (cookies, auth headers)"
+    )
+    allow_methods: list[str] = Field(
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        description="Allowed HTTP methods",
+    )
+    allow_headers: list[str] = Field(
+        default=["Content-Type", "Authorization", "X-Request-ID"],
+        description="Allowed request headers",
+    )
+
+
 class AuditConfig(BaseSettings):
     """Audit log configuration."""
 
@@ -190,6 +211,9 @@ class Settings(BaseSettings):
 
     # Audit
     audit: AuditConfig = Field(default_factory=AuditConfig)
+
+    # CORS
+    cors: CORSConfig = Field(default_factory=CORSConfig)
 
     # API
     api_prefix: str = Field(default="/api/v1")

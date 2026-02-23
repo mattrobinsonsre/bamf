@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from bamf.api.dependencies import get_current_session, get_current_user
+from bamf.api.dependencies import get_current_session, require_admin
 from bamf.api.models.certificates import (
     CACertificateResponse,
     ServiceCertificateRequest,
@@ -55,12 +55,12 @@ async def issue_user_certificate(
 @router.post("/service", response_model=ServiceCertificateResponse)
 async def issue_service_certificate(
     request: ServiceCertificateRequest,
-    current_user: Session = Depends(get_current_user),
+    current_user: Session = Depends(require_admin),
 ) -> ServiceCertificateResponse:
     """Issue a service certificate for an agent or bridge.
 
-    Called during agent/bridge registration. The service_type field determines
-    the SAN URI prefix (bamf://agent/{name} or bamf://bridge/{name}).
+    Admin only. Called during agent/bridge registration. The service_type field
+    determines the SAN URI prefix (bamf://agent/{name} or bamf://bridge/{name}).
     """
     ca = get_ca()
 
