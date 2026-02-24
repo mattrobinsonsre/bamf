@@ -15,14 +15,15 @@ import (
 const relayIdleTimeout = 5 * time.Minute
 
 // RelayPool manages relay connections from agents.
-// Each agent maintains a single mTLS connection through the bridge's tunnel
-// listener. The API sends HTTP requests to the bridge's internal endpoint,
-// and the bridge forwards them over the relay connection to the agent.
+// Each agent may have multiple mTLS relay connections through the bridge's
+// tunnel listener, enabling concurrent request handling. The API sends HTTP
+// requests to the bridge's internal endpoint, and the bridge forwards them
+// over an available relay connection to the agent.
 // Idle connections are automatically reaped after relayIdleTimeout.
 type RelayPool struct {
 	logger *slog.Logger
 	mu     sync.RWMutex
-	conns  map[string]*relayConn // agent ID → relay connection
+	conns  map[string][]*relayConn // agent ID → pool of relay connections
 	stopCh chan struct{}
 	done   chan struct{} // closed when reapLoop exits
 }
@@ -40,7 +41,7 @@ type relayConn struct {
 func NewRelayPool(logger *slog.Logger) *RelayPool {
 	p := &RelayPool{
 		logger: logger,
-		conns:  make(map[string]*relayConn),
+		conns:  make(map[string][]*relayConn),
 		stopCh: make(chan struct{}),
 		done:   make(chan struct{}),
 	}
@@ -48,66 +49,123 @@ func NewRelayPool(logger *slog.Logger) *RelayPool {
 	return p
 }
 
-// Add registers a relay connection for an agent. If a previous connection
-// exists for the same agent, it is closed and replaced.
+// Add registers a relay connection for an agent. Multiple connections per
+// agent are supported for concurrent request handling.
 func (p *RelayPool) Add(agentID string, conn net.Conn) {
-	p.mu.Lock()
-	old, exists := p.conns[agentID]
-	p.conns[agentID] = &relayConn{
+	rc := &relayConn{
 		conn:       conn,
 		reader:     bufio.NewReader(conn),
 		lastActive: time.Now(),
 	}
+
+	p.mu.Lock()
+	p.conns[agentID] = append(p.conns[agentID], rc)
+	poolSize := len(p.conns[agentID])
 	p.mu.Unlock()
 
-	if exists {
-		old.conn.Close()
+	p.logger.Info("relay connection added", "agent_id", agentID, "pool_size", poolSize)
+}
+
+// acquire returns an available (unlocked) relay connection for an agent.
+// It tries each connection in the pool with TryLock. If all are busy, it
+// blocks on the first one to avoid dropping the request.
+// Returns (conn, true) on success, (nil, false) if no connections exist.
+func (p *RelayPool) acquire(agentID string) (*relayConn, bool) {
+	p.mu.RLock()
+	pool := p.conns[agentID]
+	if len(pool) == 0 {
+		p.mu.RUnlock()
+		return nil, false
+	}
+	// Copy the slice ref so we can release the read lock before locking a conn.
+	conns := make([]*relayConn, len(pool))
+	copy(conns, pool)
+	p.mu.RUnlock()
+
+	// First pass: try to find an idle connection without blocking.
+	for _, rc := range conns {
+		if rc.mu.TryLock() {
+			return rc, true
+		}
 	}
 
-	p.logger.Info("relay connection added", "agent_id", agentID)
+	// All connections busy — block on the first one.
+	conns[0].mu.Lock()
+	return conns[0], true
 }
 
-// Get returns the relay connection for an agent, or nil if none exists.
-func (p *RelayPool) Get(agentID string) *relayConn {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.conns[agentID]
-}
-
-// Remove closes and removes a relay connection.
-func (p *RelayPool) Remove(agentID string) {
+// removeConn removes a specific connection from the pool and closes it.
+func (p *RelayPool) removeConn(agentID string, rc *relayConn) {
 	p.mu.Lock()
-	rc, ok := p.conns[agentID]
-	if ok {
+	pool := p.conns[agentID]
+	for i, c := range pool {
+		if c == rc {
+			p.conns[agentID] = append(pool[:i], pool[i+1:]...)
+			break
+		}
+	}
+	if len(p.conns[agentID]) == 0 {
 		delete(p.conns, agentID)
 	}
 	p.mu.Unlock()
 
-	if ok {
+	rc.conn.Close()
+}
+
+// detachConn removes a specific connection from the pool WITHOUT closing it.
+func (p *RelayPool) detachConn(agentID string, rc *relayConn) {
+	p.mu.Lock()
+	pool := p.conns[agentID]
+	for i, c := range pool {
+		if c == rc {
+			p.conns[agentID] = append(pool[:i], pool[i+1:]...)
+			break
+		}
+	}
+	if len(p.conns[agentID]) == 0 {
+		delete(p.conns, agentID)
+	}
+	p.mu.Unlock()
+}
+
+// Remove closes and removes all relay connections for an agent.
+func (p *RelayPool) Remove(agentID string) {
+	p.mu.Lock()
+	pool := p.conns[agentID]
+	delete(p.conns, agentID)
+	p.mu.Unlock()
+
+	for _, rc := range pool {
 		rc.conn.Close()
-		p.logger.Info("relay connection removed", "agent_id", agentID)
+	}
+	if len(pool) > 0 {
+		p.logger.Info("relay connections removed", "agent_id", agentID, "count", len(pool))
 	}
 }
 
-// Detach removes a relay connection from the pool WITHOUT closing it.
+// Detach removes one relay connection from the pool WITHOUT closing it.
 // Returns the relayConn so the caller can use it for a byte-splice.
 // The idle reaper will no longer touch the returned connection.
 func (p *RelayPool) Detach(agentID string) *relayConn {
 	p.mu.Lock()
-	rc, ok := p.conns[agentID]
-	if ok {
+	pool := p.conns[agentID]
+	if len(pool) == 0 {
+		p.mu.Unlock()
+		return nil
+	}
+	// Take the first connection from the pool.
+	rc := pool[0]
+	p.conns[agentID] = pool[1:]
+	if len(p.conns[agentID]) == 0 {
 		delete(p.conns, agentID)
 	}
 	p.mu.Unlock()
 
-	if ok {
-		p.logger.Info("relay connection detached for upgrade", "agent_id", agentID)
-		return rc
-	}
-	return nil
+	p.logger.Info("relay connection detached for upgrade", "agent_id", agentID)
+	return rc
 }
 
-// Count returns the number of active relay connections.
+// Count returns the number of agents with active relay connections.
 func (p *RelayPool) Count() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -120,8 +178,10 @@ func (p *RelayPool) CloseAll() {
 	<-p.done // wait for reapLoop goroutine to exit
 
 	p.mu.Lock()
-	for id, rc := range p.conns {
-		rc.conn.Close()
+	for id, pool := range p.conns {
+		for _, rc := range pool {
+			rc.conn.Close()
+		}
 		delete(p.conns, id)
 	}
 	p.mu.Unlock()
@@ -148,23 +208,23 @@ func (p *RelayPool) reapIdle() {
 	now := time.Now()
 
 	p.mu.Lock()
-	var toRemove []string
-	for id, rc := range p.conns {
-		if now.Sub(rc.lastActive) > relayIdleTimeout {
-			toRemove = append(toRemove, id)
+	for id, pool := range p.conns {
+		var keep []*relayConn
+		for _, rc := range pool {
+			if now.Sub(rc.lastActive) > relayIdleTimeout {
+				rc.conn.Close()
+				p.logger.Info("relay connection reaped (idle)", "agent_id", id)
+			} else {
+				keep = append(keep, rc)
+			}
 		}
-	}
-	for _, id := range toRemove {
-		if rc, ok := p.conns[id]; ok {
-			rc.conn.Close()
+		if len(keep) == 0 {
 			delete(p.conns, id)
+		} else {
+			p.conns[id] = keep
 		}
 	}
 	p.mu.Unlock()
-
-	for _, id := range toRemove {
-		p.logger.Info("relay connection reaped (idle)", "agent_id", id)
-	}
 }
 
 // handleRelayRequest handles an HTTP relay request from the API server.
@@ -189,14 +249,11 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rc := p.Get(agentID)
-	if rc == nil {
+	rc, ok := p.acquire(agentID)
+	if !ok {
 		http.Error(w, fmt.Sprintf("no relay connection for agent %s", agentID), http.StatusBadGateway)
 		return
 	}
-
-	// Serialize requests on this connection
-	rc.mu.Lock()
 
 	isUpgrade := r.Header.Get("Upgrade") != ""
 
@@ -226,7 +283,7 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		p.logger.Error("relay write error", "agent_id", agentID, "error", err)
 		rc.mu.Unlock()
 		http.Error(w, "relay connection error", http.StatusBadGateway)
-		p.Remove(agentID)
+		p.removeConn(agentID, rc)
 		return
 	}
 
@@ -236,7 +293,7 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		p.logger.Error("relay read error", "agent_id", agentID, "error", err)
 		rc.mu.Unlock()
 		http.Error(w, "relay connection error", http.StatusBadGateway)
-		p.Remove(agentID)
+		p.removeConn(agentID, rc)
 		return
 	}
 
@@ -280,6 +337,32 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
+
+	// For streaming responses (SSE), flush after each read so the client
+	// receives events immediately rather than waiting for the buffer to fill.
+	// Detach the relay conn from the pool so it doesn't block other requests.
+	// The SSE stream continues on the detached conn until it ends naturally.
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.HasPrefix(ct, "text/event-stream") {
+		p.detachConn(agentID, rc)
+		flusher, ok := w.(http.Flusher)
+		if ok {
+			flusher.Flush() // flush headers immediately
+			buf := make([]byte, 4096)
+			for {
+				n, err := resp.Body.Read(buf)
+				if n > 0 {
+					_, _ = w.Write(buf[:n])
+					flusher.Flush()
+				}
+				if err != nil {
+					break
+				}
+			}
+			return
+		}
+	}
+
 	_, _ = io.Copy(w, resp.Body)
 }
 
@@ -296,8 +379,8 @@ func (p *RelayPool) handleUpgradeResponse(
 	resp.Body.Close()
 
 	// Detach relay conn from pool — the splice will own it.
-	// Use Detach so the idle reaper doesn't close it.
-	p.Detach(agentID)
+	// Use detachConn so the idle reaper doesn't close it.
+	p.detachConn(agentID, rc)
 
 	// Hijack the API→Bridge HTTP connection
 	hijacker, ok := w.(http.Hijacker)

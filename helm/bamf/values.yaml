@@ -17,8 +17,8 @@ api:
 
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1Gi
     limits:
       cpu: "1"
       memory: 1Gi
@@ -77,8 +77,8 @@ bridge:
 
   resources:
     requests:
-      cpu: 250m
-      memory: 256Mi
+      cpu: "1"
+      memory: 1Gi
     limits:
       cpu: "2"
       memory: 1Gi
@@ -148,8 +148,8 @@ web:
 
   resources:
     requests:
-      cpu: 50m
-      memory: 64Mi
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: 200m
       memory: 128Mi
@@ -161,8 +161,8 @@ agent:
   # Set to true to deploy an agent in this cluster
   enabled: false
 
-  # Number of replicas (1-2 for HA; agents are stateless)
-  replicas: 1
+  # Number of replicas — HA by default with multi-replica instance routing
+  replicas: 2
 
   image:
     repository: ghcr.io/mattrobinsonsre/bamf-agent
@@ -171,8 +171,8 @@ agent:
 
   resources:
     requests:
-      cpu: 50m
-      memory: 64Mi
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: 200m
       memory: 128Mi
@@ -220,6 +220,28 @@ agent:
 
   # Data directory for local certificate cache (emptyDir, certs persisted in K8s Secret)
   dataDir: /var/lib/bamf-agent
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    # Target tunnel count per pod — primary scaling signal via prometheus-adapter.
+    # When set (>0), HPA scales on bamf_agent_active_tunnels custom metric.
+    # Requires prometheus-adapter in the cluster to expose custom metrics API.
+    targetTunnelsPerPod: 50
+
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+
+  # Extended to 1800s (30 min) for long SSH sessions and tunnel drain.
+  # After the agent is marked as draining, it waits for active tunnels
+  # to finish naturally. 30 min covers most interactive sessions.
+  terminationGracePeriodSeconds: 1800
+
+  # Pre-stop sleep to allow in-flight heartbeats to complete
+  preStopSleepSeconds: 5
 
   nodeSelector: {}
   tolerations: []
@@ -279,8 +301,8 @@ postgresql:
       password: ""  # Required when bundled
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi
+        cpu: 250m
+        memory: 512Mi
       limits:
         cpu: 500m
         memory: 512Mi
@@ -344,8 +366,8 @@ redis:
       enabled: false
     resources:
       requests:
-        cpu: 50m
-        memory: 64Mi
+        cpu: 100m
+        memory: 128Mi
       limits:
         cpu: 200m
         memory: 128Mi
@@ -462,6 +484,12 @@ kubamf:
   enabled: false
   bamf:
     enabled: true  # Always BAMF mode when deployed via BAMF chart
+    # apiUrl defaults to http://{release-name}-api:8000 in the kubamf chart
+    apiUrl: ""
+    # Name of the 'kubernetes' type resource in agent config.
+    # kubamf routes K8s API calls through the BAMF kube proxy using this name.
+    # Must match a resource in agent.config.resources with type: kubernetes.
+    kubeResourceName: ""
   image:
     repository: ghcr.io/mattrobinsonsre/kubamf
     tag: latest

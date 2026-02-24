@@ -23,12 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket
 
 from bamf.api.bridge_relay import (
-    RELAY_CONNECT_WAIT_SECONDS,
     assign_relay_bridge,
     build_bridge_relay_url,
     dial_bridge_relay,
+    ensure_relay_connected,
     forward_to_bridge,
-    send_relay_connect,
 )
 from bamf.api.dependencies import get_current_user
 from bamf.api.proxy.websocket import ws_handshake, ws_relay
@@ -114,7 +113,12 @@ async def kube_proxy(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="No bridges available",
             )
-        await send_relay_connect(r, agent_id, relay_bridge)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        if not ready:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Relay connection timed out — please retry",
+            )
 
     # Resolve agent name for relay URL
     agent_name = await r.get(f"agent:{agent_id}:name")
@@ -145,18 +149,14 @@ async def kube_proxy(
     # Read request body
     body = await request.body()
 
-    # Forward to bridge
+    # Forward to bridge (with retry on 502)
     resp = await forward_to_bridge(request.method, bridge_url, headers, body)
 
-    # If 502 and we didn't just send relay_connect, try reconnect
-    if resp is not None and resp.status_code == 502 and not needs_relay_connect:
-        await send_relay_connect(r, agent_id, relay_bridge)
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await forward_to_bridge(request.method, bridge_url, headers, body)
-
-    # If we just triggered relay_connect and first attempt failed, wait and retry
-    if resp is not None and resp.status_code == 502 and needs_relay_connect:
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
+    # Retry up to 2 times on 502 (relay dropped or stale assignment)
+    for _attempt in range(2):
+        if resp is None or resp.status_code != 502:
+            break
+        await ensure_relay_connected(r, agent_id, relay_bridge)
         resp = await forward_to_bridge(request.method, bridge_url, headers, body)
 
     if resp is None:
@@ -168,7 +168,7 @@ async def kube_proxy(
     if resp.status_code == 502:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Relay connection not available — try again shortly",
+            detail="Relay connection not available — please retry",
         )
 
     # Return K8s API response as-is (no header rewriting needed)
@@ -242,8 +242,10 @@ async def kube_proxy_ws(
         if relay_bridge is None:
             await websocket.close(code=1011, reason="No bridges available")
             return
-        await send_relay_connect(r, agent_id, relay_bridge)
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        if not ready:
+            await websocket.close(code=1011, reason="Relay connection timed out")
+            return
 
     # Resolve agent name
     agent_name = await r.get(f"agent:{agent_id}:name")
@@ -282,7 +284,7 @@ async def kube_proxy_ws(
         subprotocols = [p.strip() for p in websocket.headers["sec-websocket-protocol"].split(",")]
 
     try:
-        negotiated = await ws_handshake(
+        ws_conn, negotiated = await ws_handshake(
             reader,
             writer,
             relay_path,
@@ -326,7 +328,7 @@ async def kube_proxy_ws(
 
     # Relay frames
     try:
-        await ws_relay(websocket, reader, writer)
+        await ws_relay(websocket, reader, writer, ws_conn)
     except Exception:
         logger.debug("Kube WebSocket relay ended", resource=resource_name)
     finally:

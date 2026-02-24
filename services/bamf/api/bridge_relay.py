@@ -3,6 +3,12 @@
 Provides common functions for forwarding requests through bridge relay
 connections to agents: bridge selection, relay_connect SSE signaling,
 and HTTP forwarding.
+
+Relay connection lifecycle:
+- The first proxy request for an agent triggers relay_connect via SSE.
+- ``ensure_relay_connected()`` uses a Redis lock to prevent duplicate
+  relay_connect commands when many browser requests arrive at once.
+- Subsequent requests reuse the existing relay until it goes idle.
 """
 
 from __future__ import annotations
@@ -21,8 +27,15 @@ logger = get_logger(__name__)
 # Bridge internal health/relay port
 BRIDGE_INTERNAL_PORT = 8080
 
-# How long to wait for a relay connection to establish after sending relay_connect
-RELAY_CONNECT_WAIT_SECONDS = 5
+# How long to wait for a relay connection to establish after sending relay_connect.
+# The agent typically connects in <100ms; 1 second is generous.
+RELAY_CONNECT_WAIT_SECONDS = 1
+
+# How long to poll for relay readiness (total wall-clock budget)
+RELAY_READY_TIMEOUT_SECONDS = 10
+
+# Polling interval when waiting for relay readiness
+RELAY_POLL_INTERVAL_SECONDS = 0.5
 
 
 async def forward_to_bridge(
@@ -68,7 +81,18 @@ async def assign_relay_bridge(r, agent_id: str) -> str | None:
 
 
 async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
-    """Send a relay_connect SSE event to the agent via Redis pub/sub."""
+    """Send a relay_connect SSE event to a specific agent instance via Redis pub/sub.
+
+    Selects the best instance (preferring one without an active relay) and
+    routes the command to its instance-specific channel.
+    """
+    from bamf.services.agent_instances import select_agent_instance, set_instance_has_relay
+
+    instance_id = await select_agent_instance(r, agent_id, prefer_no_relay=True)
+    if not instance_id:
+        logger.warning("No live agent instances for relay_connect", agent_id=agent_id)
+        return
+
     agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
     bridge_info = await r.hgetall(f"bridge:{bridge_id}")
     bridge_hostname = bridge_info.get("hostname", bridge_id)
@@ -84,8 +108,10 @@ async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
     # The agent may have joined with a previous CA — always send the current one.
     ca = get_ca()
 
+    # Route to the selected instance's channel
+    channel = f"agent:{agent_id}:instance:{instance_id}:commands"
     await r.publish(
-        f"agent:{agent_id}:commands",
+        channel,
         json.dumps(
             {
                 "command": "relay_connect",
@@ -96,12 +122,59 @@ async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
         ),
     )
 
+    # Mark this instance as having a relay connection
+    await set_instance_has_relay(r, agent_id, instance_id, True)
+
     logger.info(
-        "Sent relay_connect to agent",
+        "Sent relay_connect to agent instance",
         agent_id=agent_id,
+        instance_id=instance_id,
         bridge_host=bridge_host,
         bridge_port=bridge_port,
     )
+
+
+async def ensure_relay_connected(
+    r,
+    agent_id: str,
+    relay_bridge: str,
+) -> bool:
+    """Ensure the agent has an active relay connection to the bridge.
+
+    Uses a Redis lock to prevent duplicate relay_connect commands when
+    many concurrent requests arrive for an unconnected agent (e.g. a
+    browser loading HTML + CSS + JS + favicon simultaneously).
+
+    Returns True if the relay is believed ready, False on timeout.
+    """
+    lock_key = f"agent:{agent_id}:relay_connecting"
+
+    # Try to acquire the lock (NX = set-if-not-exists, EX = auto-expire)
+    acquired = await r.set(lock_key, "1", nx=True, ex=RELAY_READY_TIMEOUT_SECONDS + 5)
+
+    if acquired:
+        # We won the race — send relay_connect and wait for it to establish.
+        await send_relay_connect(r, agent_id, relay_bridge)
+        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
+        # Clean up the lock so the next cold-start can send relay_connect.
+        await r.delete(lock_key)
+        return True
+
+    # Another request already triggered relay_connect — wait for it.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + RELAY_READY_TIMEOUT_SECONDS
+    while loop.time() < deadline:
+        # If the lock is gone, the winner finished and relay should be up.
+        if not await r.exists(lock_key):
+            return True
+        await asyncio.sleep(RELAY_POLL_INTERVAL_SECONDS)
+
+    logger.warning(
+        "Timed out waiting for relay connection",
+        agent_id=agent_id,
+        relay_bridge=relay_bridge,
+    )
+    return False
 
 
 def build_bridge_relay_url(

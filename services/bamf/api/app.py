@@ -162,9 +162,27 @@ def create_application() -> FastAPI:
     # Internal routes (called by Go bridge/agent, not end users)
     app.include_router(internal_bridges_router, prefix=settings.api_prefix)
 
+    # Explicit WebSocket routes — registered directly on the app because
+    # Starlette's catch-all /{path:path} pattern shadows WebSocket routes
+    # from included routers. These must come BEFORE the catch-all.
+    from bamf.api.routers.kube import kube_proxy_ws
+    from bamf.api.routers.terminal import terminal_db, terminal_ssh
+
+    app.add_api_websocket_route(
+        f"{settings.api_prefix}/kube/{{resource_name}}/{{path:path}}",
+        kube_proxy_ws,
+    )
+    app.add_api_websocket_route(
+        f"{settings.api_prefix}/terminal/ssh/{{session_id}}",
+        terminal_ssh,
+    )
+    app.add_api_websocket_route(
+        f"{settings.api_prefix}/terminal/db/{{session_id}}",
+        terminal_db,
+    )
+
     # Catch-all WebSocket route for proxy requests (*.tunnel.domain).
-    # Must come AFTER all other routers so it doesn't shadow specific
-    # WebSocket endpoints (terminal, kube).
+    # Must come AFTER all specific WebSocket routes above.
     from bamf.api.proxy.handler import handle_proxy_websocket
 
     @app.websocket("/{path:path}")

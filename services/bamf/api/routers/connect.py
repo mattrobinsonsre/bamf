@@ -11,9 +11,10 @@ Consumers:
         POST /api/v1/connect — initiates web app proxy session
 
 Downstream effects:
-    This endpoint publishes a JSON command to Redis pub/sub channel
-    agent:{agent_id}:commands. The SSE endpoint in agents.py delivers
-    this to the Go agent (pkg/agent/sse.go → pkg/agent/agent.go:handleTunnelRequest).
+    This endpoint publishes a JSON command to a Redis pub/sub channel
+    agent:{agent_id}:instance:{instance_id}:commands (selected by
+    select_agent_instance). The SSE endpoint in agents.py delivers
+    this to the specific Go agent instance.
 
     Pub/sub payload shape (new connection):
         {"command": "dial", "session_id": "...", "bridge_host": "...",
@@ -407,12 +408,25 @@ async def _issue_session(
 
     expires_at = client_cert.not_valid_after_utc
 
+    # ── Select agent instance for targeted command routing ───────────
+    from bamf.services.agent_instances import increment_instance_tunnels, select_agent_instance
+
+    instance_id = await select_agent_instance(r, agent_id)
+    if not instance_id:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No live agent instances available",
+        )
+
     # ── Store session in Redis ────────────────────────────────────────
+    # instance_id is included in the session JSON so tunnel_closed can
+    # decrement the correct instance's tunnel count on cleanup.
     session_info: dict = {
         "user_email": current_user.email,
         "resource_name": resource_name,
         "agent_id": agent_id,
         "bridge_id": bridge_id,
+        "instance_id": instance_id,
         "protocol": resource_type,
         "status": "pending",
         "created_at": datetime.now(UTC).isoformat(),
@@ -464,8 +478,10 @@ async def _issue_session(
         agent_bridge_host = bridge_hostname
         agent_bridge_port = bridge_port
 
+    # Route command to the selected instance's channel
+    channel = f"agent:{agent_id}:instance:{instance_id}:commands"
     await r.publish(
-        f"agent:{agent_id}:commands",
+        channel,
         json.dumps(
             {
                 "command": command,
@@ -480,6 +496,9 @@ async def _issue_session(
             }
         ),
     )
+
+    # Increment instance tunnel count for load-balancing selection
+    await increment_instance_tunnels(r, agent_id, instance_id)
 
     logger.info(
         "Connection initiated",

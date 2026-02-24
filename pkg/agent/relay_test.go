@@ -72,22 +72,22 @@ func TestIsStreamingResponse(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "chunked with no content-length",
+			name: "chunked with no content-length is not streaming",
 			resp: &http.Response{
 				Header:           http.Header{},
 				ContentLength:    -1,
 				TransferEncoding: []string{"chunked"},
 			},
-			expected: true,
+			expected: false, // Only SSE triggers detach; chunked JSON is finite
 		},
 		{
-			name: "chunked with known content-length is not streaming",
+			name: "chunked SSE is streaming",
 			resp: &http.Response{
-				Header:           http.Header{},
-				ContentLength:    1024,
+				Header:           http.Header{"Content-Type": {"text/event-stream"}},
+				ContentLength:    -1,
 				TransferEncoding: []string{"chunked"},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			name: "regular JSON response",

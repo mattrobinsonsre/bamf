@@ -2,12 +2,15 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mattrobinsonsre/bamf/pkg/tlsutil"
@@ -21,6 +24,7 @@ type Agent struct {
 	// State
 	registered    bool
 	agentID       string
+	instanceID    string // UUID v4, unique per pod, generated on startup
 	certNotBefore time.Time
 	certExpiry    time.Time
 
@@ -39,9 +43,23 @@ type Agent struct {
 	// HTTP relay
 	relay *RelayManager
 
+	// Metrics
+	sseConnected atomic.Bool // true when SSE connection is active
+
 	// Shutdown
 	shutdownOnce sync.Once
 	shutdownCh   chan struct{}
+}
+
+// New creates a new agent
+// generateInstanceID creates a UUID v4 using crypto/rand.
+func generateInstanceID() string {
+	var uuid [16]byte
+	_, _ = rand.Read(uuid[:])
+	// Set version 4 and variant bits per RFC 4122
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
 }
 
 // New creates a new agent
@@ -49,6 +67,7 @@ func New(cfg *Config, logger *slog.Logger) (*Agent, error) {
 	a := &Agent{
 		cfg:        cfg,
 		logger:     logger,
+		instanceID: generateInstanceID(),
 		tunnels:    make(map[string]*TunnelHandler),
 		shutdownCh: make(chan struct{}),
 	}
@@ -113,6 +132,11 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	a.registered = true
 
+	a.logger.Info("agent instance started",
+		"instance_id", a.instanceID,
+		"agent_id", a.agentID,
+	)
+
 	// Send initial heartbeat to register resources immediately
 	if err := a.sendHeartbeat(ctx); err != nil {
 		a.logger.Warn("initial heartbeat failed", "error", err)
@@ -128,27 +152,86 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 		close(a.shutdownCh)
 	})
 
-	a.logger.Info("shutting down agent")
+	a.tunnelsMu.RLock()
+	tunnelCount := len(a.tunnels)
+	a.tunnelsMu.RUnlock()
 
-	// Close relay connection
+	a.logger.Info("shutting down agent",
+		"instance_id", a.instanceID,
+		"active_tunnels", tunnelCount,
+	)
+
+	// Notify API this instance is draining — new commands will go to other instances
+	if a.registered {
+		_ = a.apiClient.DrainInstance(ctx, a.agentID, a.instanceID)
+	}
+
+	// Close relay connection (new relay requests will go to another instance)
 	if a.relay != nil {
 		a.relay.Close()
 	}
 
-	// Close all tunnels
-	a.tunnelsMu.Lock()
-	for id, t := range a.tunnels {
-		t.Close()
-		delete(a.tunnels, id)
-	}
-	a.tunnelsMu.Unlock()
+	// Wait for active tunnels to finish naturally
+	a.waitForTunnels(ctx)
 
-	// Notify API server
+	// Notify API this instance is offline
 	if a.registered {
-		_ = a.apiClient.UpdateStatus(ctx, a.agentID, "offline")
+		_ = a.apiClient.RemoveInstance(ctx, a.agentID, a.instanceID)
 	}
 
 	return nil
+}
+
+// waitForTunnels waits for all active tunnels to close or the context to expire.
+func (a *Agent) waitForTunnels(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		a.tunnelsMu.RLock()
+		remaining := len(a.tunnels)
+		a.tunnelsMu.RUnlock()
+
+		if remaining == 0 {
+			a.logger.Info("all tunnels closed")
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			a.logger.Warn("shutdown deadline reached, closing remaining tunnels",
+				"remaining", remaining,
+			)
+			a.tunnelsMu.Lock()
+			for id, t := range a.tunnels {
+				t.Close()
+				delete(a.tunnels, id)
+			}
+			a.tunnelsMu.Unlock()
+			return
+		case <-ticker.C:
+			a.logger.Info("waiting for tunnels to close",
+				"remaining", remaining,
+			)
+		}
+	}
+}
+
+// InstanceID returns the agent's unique instance identifier.
+func (a *Agent) InstanceID() string {
+	return a.instanceID
+}
+
+// ActiveTunnelCount returns the number of active tunnels.
+func (a *Agent) ActiveTunnelCount() int {
+	a.tunnelsMu.RLock()
+	defer a.tunnelsMu.RUnlock()
+	return len(a.tunnels)
+}
+
+// HasActiveRelay returns whether this instance has an active relay connection.
+func (a *Agent) HasActiveRelay() bool {
+	return a.relay != nil && a.relay.IsConnected()
 }
 
 func (a *Agent) hasCertificates(ctx context.Context) bool {
@@ -215,9 +298,10 @@ func (a *Agent) loadCertificates(ctx context.Context) error {
 	return nil
 }
 
-// sendHeartbeat sends a single heartbeat with current resources and labels.
+// sendHeartbeat sends a single heartbeat with current resources, labels, and
+// active tunnel count (for self-correcting Redis tunnel counts on drift).
 func (a *Agent) sendHeartbeat(ctx context.Context) error {
-	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal)
+	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.instanceID, a.ActiveTunnelCount())
 }
 
 // checkAndRenewCertificate checks if the certificate is past its halfway point and renews it.
@@ -284,6 +368,9 @@ func (a *Agent) mainLoop(ctx context.Context) error {
 	// Start heartbeat ticker
 	go a.heartbeatLoop(ctx)
 
+	// Start metrics/health server
+	go a.serveMetrics(ctx)
+
 	// Connect to API via SSE for tunnel requests.
 	// The SSE client handles reconnection internally.
 	for {
@@ -314,14 +401,16 @@ func (a *Agent) mainLoop(ctx context.Context) error {
 }
 
 func (a *Agent) connectSSE(ctx context.Context) error {
-	a.logger.Debug("connecting to API via SSE")
+	a.logger.Debug("connecting to API via SSE", "instance_id", a.instanceID)
 
-	a.sseClient = NewSSEClient(a.apiClient.Client, a.agentID, a.logger)
+	a.sseClient = NewSSEClient(a.apiClient.Client, a.agentID, a.instanceID, a.logger)
 
 	eventCh, err := a.sseClient.Connect(ctx)
 	if err != nil {
+		a.sseConnected.Store(false)
 		return err
 	}
+	a.sseConnected.Store(true)
 
 	for {
 		select {
@@ -396,6 +485,14 @@ func (a *Agent) handleRelayConnect(data map[string]interface{}) {
 	} else {
 		a.relay.UpdateResources(a.cfg.Resources)
 		a.relay.UpdateTLSConfig(tlsCfg)
+	}
+
+	// Skip if a relay connection is already active. This prevents a race
+	// where auto-reconnect (after SSE detach) and an API relay_connect
+	// command both try to establish a connection simultaneously.
+	if a.relay.IsConnected() {
+		a.logger.Info("relay already connected, skipping relay_connect")
+		return
 	}
 
 	if err := a.relay.Connect(bridgeHost, int(bridgePort)); err != nil {
@@ -580,4 +677,63 @@ func (a *Agent) calculateBackoff() time.Duration {
 	}
 
 	return delay
+}
+
+// serveMetrics starts an HTTP server for health probes and Prometheus metrics.
+func (a *Agent) serveMetrics(ctx context.Context) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", a.handleMetrics)
+	mux.HandleFunc("/health", a.handleHealth)
+	mux.HandleFunc("/ready", a.handleReady)
+
+	srv := &http.Server{
+		Addr:    ":8081",
+		Handler: mux,
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	a.logger.Info("starting metrics/health server", "addr", ":8081")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		a.logger.Error("metrics server error", "error", err)
+	}
+}
+
+// handleMetrics returns Prometheus-format metrics.
+func (a *Agent) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	tunnels := a.ActiveTunnelCount()
+	var relayActive int
+	if a.HasActiveRelay() {
+		relayActive = 1
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP bamf_agent_active_tunnels Number of active tunnels on this agent instance\n")
+	fmt.Fprintf(w, "# TYPE bamf_agent_active_tunnels gauge\n")
+	fmt.Fprintf(w, "bamf_agent_active_tunnels %d\n", tunnels)
+	fmt.Fprintf(w, "# HELP bamf_agent_active_relay Whether this instance has an active relay connection\n")
+	fmt.Fprintf(w, "# TYPE bamf_agent_active_relay gauge\n")
+	fmt.Fprintf(w, "bamf_agent_active_relay %d\n", relayActive)
+}
+
+// handleHealth is the liveness probe — always returns 200 if the process is running.
+func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "ok")
+}
+
+// handleReady is the readiness probe — returns 200 only when registered and SSE-connected.
+func (a *Agent) handleReady(w http.ResponseWriter, r *http.Request) {
+	if !a.registered || !a.sseConnected.Load() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, "not ready")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, "ready")
 }

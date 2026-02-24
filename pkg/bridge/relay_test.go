@@ -53,7 +53,7 @@ func TestRelayPool_Detach_NonexistentAgent(t *testing.T) {
 	require.Nil(t, detached, "Detach should return nil for unknown agent")
 }
 
-func TestRelayPool_Detach_AgentNotInGet(t *testing.T) {
+func TestRelayPool_Detach_AgentNotInAcquire(t *testing.T) {
 	pool := NewRelayPool(slog.Default())
 	defer pool.CloseAll()
 
@@ -62,9 +62,10 @@ func TestRelayPool_Detach_AgentNotInGet(t *testing.T) {
 	pool.Add("agent-1", client)
 	pool.Detach("agent-1")
 
-	// After Detach, Get should return nil
-	rc := pool.Get("agent-1")
-	require.Nil(t, rc, "Get should return nil after Detach")
+	// After Detach, acquire should return (nil, false)
+	rc, ok := pool.acquire("agent-1")
+	require.False(t, ok, "acquire should return false after Detach")
+	require.Nil(t, rc, "acquire should return nil after Detach")
 }
 
 func TestRelayPool_Detach_DoesNotAffectOtherAgents(t *testing.T) {
@@ -81,8 +82,10 @@ func TestRelayPool_Detach_DoesNotAffectOtherAgents(t *testing.T) {
 	pool.Detach("agent-1")
 	require.Equal(t, 1, pool.Count(), "only agent-1 should be removed")
 
-	rc2 := pool.Get("agent-2")
+	rc2, ok := pool.acquire("agent-2")
+	require.True(t, ok, "agent-2 should still be in the pool")
 	require.NotNil(t, rc2, "agent-2 should still be in the pool")
+	rc2.mu.Unlock()
 }
 
 func TestRelayPool_Remove_ClosesConnection(t *testing.T) {

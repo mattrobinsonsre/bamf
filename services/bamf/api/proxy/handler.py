@@ -39,11 +39,10 @@ from starlette.responses import Response as StarletteResponse
 from starlette.websockets import WebSocket
 
 from bamf.api.bridge_relay import (
-    RELAY_CONNECT_WAIT_SECONDS,
     assign_relay_bridge,
     build_bridge_relay_url,
     dial_bridge_relay,
-    send_relay_connect,
+    ensure_relay_connected,
 )
 from bamf.auth.sessions import Session, get_session
 from bamf.config import settings
@@ -99,6 +98,12 @@ async def proxy_middleware(request: Request, call_next):
     if not hostname.endswith(f".{tunnel_domain}"):
         return await call_next(request)
 
+    # WebSocket upgrades must pass through to route matching so the
+    # @app.websocket catch-all invokes handle_proxy_websocket() instead.
+    # Starlette's HTTP middleware cannot return a WebSocket response.
+    if request.headers.get("upgrade", "").lower() == "websocket":
+        return await call_next(request)
+
     # This is a proxy request
     return await handle_proxy_request(request)
 
@@ -122,7 +127,7 @@ async def handle_proxy_request(request: Request) -> Response:
 
     # Authenticate: try Bearer token first, then session cookie.
     # Browser requests get a redirect to login on failure; API clients get 401.
-    session = await _authenticate(request)
+    session, session_token = await _authenticate(request)
     if session is None:
         return _auth_error_response(request)
 
@@ -160,7 +165,13 @@ async def handle_proxy_request(request: Request) -> Response:
         relay_bridge = await assign_relay_bridge(r, agent_id)
         if relay_bridge is None:
             return StarletteResponse(content="No bridges available", status_code=503)
-        await send_relay_connect(r, agent_id, relay_bridge)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        if not ready:
+            return StarletteResponse(
+                content="Relay connection timed out — please retry",
+                status_code=503,
+                headers={"Retry-After": "2"},
+            )
 
     # Resolve agent name for relay URL — the bridge relay pool is keyed by
     # agent name (cert CN), not UUID.
@@ -191,6 +202,7 @@ async def handle_proxy_request(request: Request) -> Response:
         user_roles=session.roles,
         client_ip=client_ip,
         kubernetes_groups=session.kubernetes_groups,
+        session_token=session_token,
     )
 
     # Read request body
@@ -302,6 +314,12 @@ async def _forward_with_retry(
 
     Uses httpx stream mode so the caller can choose to iterate the body
     (for SSE/chunked) or read it all at once (for buffered responses).
+
+    Retry strategy:
+    - On 502 (relay not found on bridge), re-send relay_connect and retry
+      up to 2 times with a short backoff. This handles both stale relay
+      assignments and races where the relay just dropped.
+    - On connect error or timeout, return None (caller maps to 502).
     """
     client = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0))
 
@@ -321,17 +339,13 @@ async def _forward_with_retry(
 
     resp = await _do_stream()
 
-    # If 502 and we didn't just send relay_connect, try once more
-    if resp is not None and resp.status_code == 502 and not needs_relay_connect:
+    # Retry up to 2 times on 502 (relay not available on bridge).
+    for _attempt in range(2):
+        if resp is None or resp.status_code != 502:
+            break
         await resp.aclose()
-        await send_relay_connect(r, agent_id, relay_bridge)
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
-        resp = await _do_stream()
-
-    # If we just triggered relay_connect and first attempt failed, wait and retry
-    if resp is not None and resp.status_code == 502 and needs_relay_connect:
-        await resp.aclose()
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
+        # Re-trigger relay_connect (idempotent via ensure_relay_connected)
+        await ensure_relay_connected(r, agent_id, relay_bridge)
         resp = await _do_stream()
 
     return resp
@@ -351,7 +365,17 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
     host = websocket.headers.get("host", "")
     hostname = host.split(":")[0]
 
+    logger.info(
+        "WebSocket proxy request",
+        host=host,
+        hostname=hostname,
+        tunnel_domain=tunnel_domain,
+        path=str(websocket.url.path),
+        has_cookie=SESSION_COOKIE_NAME in websocket.cookies,
+    )
+
     if not tunnel_domain or not hostname.endswith(f".{tunnel_domain}"):
+        logger.warning("WebSocket: host mismatch", hostname=hostname, tunnel_domain=tunnel_domain)
         await websocket.close(code=1008, reason="Not a proxy request")
         return
 
@@ -360,12 +384,14 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
     # Look up resource
     resource = await get_resource_by_tunnel_hostname(r, tunnel_hostname)
     if not resource:
+        logger.warning("WebSocket: resource not found", tunnel_hostname=tunnel_hostname)
         await websocket.close(code=1008, reason=f"No resource for '{tunnel_hostname}'")
         return
 
     # Authenticate: try Bearer token from query param, then session cookie
-    session = await _authenticate_websocket(websocket)
+    session, session_token = await _authenticate_websocket(websocket)
     if session is None:
+        logger.warning("WebSocket: authentication failed", tunnel_hostname=tunnel_hostname)
         await websocket.close(code=1008, reason="Authentication required")
         return
 
@@ -394,8 +420,10 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
         if relay_bridge is None:
             await websocket.close(code=1011, reason="No bridges available")
             return
-        await send_relay_connect(r, agent_id, relay_bridge)
-        await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        if not ready:
+            await websocket.close(code=1011, reason="Relay connection timed out")
+            return
 
     # Resolve agent name
     agent_name = await r.get(f"agent:{agent_id}:name")
@@ -440,6 +468,8 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
     ws_headers["X-Forwarded-Roles"] = ",".join(session.roles)
     if session.kubernetes_groups:
         ws_headers["X-Forwarded-Groups"] = ",".join(session.kubernetes_groups)
+    if session_token:
+        ws_headers["X-Bamf-Session-Token"] = session_token
 
     # Forward Sec-WebSocket-Protocol from browser if present
     subprotocols = []
@@ -447,7 +477,7 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
         subprotocols = [p.strip() for p in websocket.headers["sec-websocket-protocol"].split(",")]
 
     try:
-        negotiated = await ws_handshake(
+        ws_conn, negotiated = await ws_handshake(
             reader,
             writer,
             relay_path,
@@ -492,7 +522,7 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
 
     # Relay frames
     try:
-        await ws_relay(websocket, reader, writer)
+        await ws_relay(websocket, reader, writer, ws_conn)
     except Exception:
         logger.debug("WebSocket relay ended", tunnel_hostname=tunnel_hostname)
     finally:
@@ -509,47 +539,56 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
         )
 
 
-async def _authenticate_websocket(websocket: WebSocket) -> Session | None:
+async def _authenticate_websocket(
+    websocket: WebSocket,
+) -> tuple[Session | None, str | None]:
     """Authenticate a WebSocket proxy request.
 
     Tries: Bearer token from query param, then session cookie.
+    Returns (Session, raw_token) or (None, None).
     """
     # 1. Try token from query parameter (kubectl, programmatic clients)
     token = websocket.query_params.get("token")
     if token:
-        return await get_session(token)
+        session = await get_session(token)
+        return (session, token) if session else (None, None)
 
     # 2. Try Bearer token from Authorization header
     auth_header = websocket.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        return await get_session(auth_header[7:])
+        token = auth_header[7:]
+        session = await get_session(token)
+        return (session, token) if session else (None, None)
 
     # 3. Try session cookie
     cookie_token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if cookie_token:
-        return await get_session(cookie_token)
+        session = await get_session(cookie_token)
+        return (session, cookie_token) if session else (None, None)
 
-    return None
+    return None, None
 
 
-async def _authenticate(request: Request) -> Session | None:
+async def _authenticate(request: Request) -> tuple[Session | None, str | None]:
     """Authenticate a proxy request via Bearer token or session cookie.
 
-    Returns the Session if valid, None otherwise.
+    Returns (Session, raw_token) or (None, None).
     Priority: Bearer token > session cookie.
     """
     # 1. Try Bearer token (kubectl, CLI, programmatic clients)
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
-        return await get_session(token)
+        session = await get_session(token)
+        return (session, token) if session else (None, None)
 
     # 2. Try session cookie (browsers)
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
-        return await get_session(token)
+        session = await get_session(token)
+        return (session, token) if session else (None, None)
 
-    return None
+    return None, None
 
 
 def _is_browser_request(request: Request) -> bool:

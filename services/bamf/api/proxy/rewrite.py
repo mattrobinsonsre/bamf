@@ -45,6 +45,7 @@ def rewrite_request_headers(
     user_roles: list[str],
     client_ip: str | None,
     kubernetes_groups: list[str] | None = None,
+    session_token: str | None = None,
 ) -> dict[str, str]:
     """Rewrite HTTP request headers for proxying to the target.
 
@@ -106,6 +107,11 @@ def rewrite_request_headers(
     # BAMF internal headers (agent reads X-Bamf-Target to determine target)
     out["X-Bamf-Target"] = target_origin
     out["X-Bamf-Resource"] = tunnel_hostname
+
+    # Forward session token so downstream apps (e.g., kubamf) can make
+    # authenticated calls back to the BAMF API (kube proxy, etc.)
+    if session_token:
+        out["X-Bamf-Session-Token"] = session_token
 
     return out
 

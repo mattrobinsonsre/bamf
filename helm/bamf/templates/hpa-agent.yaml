@@ -1,0 +1,36 @@
+{{- if and .Values.agent.enabled .Values.agent.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "bamf.fullname" . }}-agent
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "bamf.fullname" . }}-agent
+  minReplicas: {{ .Values.agent.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.agent.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.agent.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.agent.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.agent.autoscaling.targetTunnelsPerPod }}
+    # Primary scaling signal: tunnel count per pod (requires prometheus-adapter).
+    # CPU metric above is kept as a safety net.
+    - type: Pods
+      pods:
+        metric:
+          name: bamf_agent_active_tunnels
+        target:
+          type: AverageValue
+          averageValue: "{{ .Values.agent.autoscaling.targetTunnelsPerPod }}"
+    {{- end }}
+{{- end }}

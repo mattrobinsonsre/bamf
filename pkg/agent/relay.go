@@ -17,11 +17,21 @@ import (
 	"time"
 )
 
-// RelayManager maintains an mTLS connection to a bridge for relaying HTTP
-// requests. The connection is established on-demand when the API sends a
-// relay_connect SSE event, and closes naturally when the bridge reaps it
-// after an idle timeout. No auto-reconnect — the API sends a new
-// relay_connect when the next browser request needs it.
+// relayPoolSize is the number of concurrent relay connections the agent
+// opens to the bridge. Multiple connections allow the bridge to dispatch
+// concurrent requests to the agent without head-of-line blocking.
+// This prevents deadlocks when a target (e.g. kubamf) calls back through
+// the same agent's relay while the original request is still in flight.
+// Size accounts for: SSE streams that detach connections (typically 2-3)
+// plus concurrent request/response pairs (each re-entrant call needs 2).
+const relayPoolSize = 8
+
+// RelayManager maintains mTLS connections to a bridge for relaying HTTP
+// requests. Multiple connections are opened for concurrent request handling.
+// Connections are established on-demand when the API sends a relay_connect
+// SSE event, and close naturally when the bridge reaps them after an idle
+// timeout. No auto-reconnect — the API sends a new relay_connect when
+// the next browser request needs it.
 type RelayManager struct {
 	agentID   string
 	resources []ResourceConfig
@@ -29,14 +39,18 @@ type RelayManager struct {
 	logger    *slog.Logger
 
 	mu      sync.Mutex
-	conn    net.Conn
-	running bool
-	stopCh  chan struct{}
-	stopped chan struct{}
+	workers []*relayWorker
+	stopCh  chan struct{} // closed to signal all workers to stop
 
-	// Cached bridge address for auto-reconnect after upgrade consumes a conn
+	// Cached bridge address for auto-reconnect after SSE/upgrade detach
 	lastBridgeHost string
 	lastBridgePort int
+}
+
+// relayWorker represents a single relay connection with its own serve loop.
+type relayWorker struct {
+	conn    net.Conn
+	stopped chan struct{} // closed when the serve goroutine exits
 }
 
 // NewRelayManager creates a new relay manager.
@@ -49,43 +63,101 @@ func NewRelayManager(agentID string, resources []ResourceConfig, tlsConfig *tls.
 	}
 }
 
-// Connect establishes a relay connection to the bridge. If a previous
-// connection exists, it is closed first. The relay serves HTTP requests
-// until the connection drops (bridge idle timeout, network error, etc.),
-// then goes dormant until the next Connect() call.
+// Connect establishes relay connections to the bridge. If previous
+// connections exist, they are closed first. Opens relayPoolSize connections
+// for concurrent request handling. Each connection runs its own serve loop.
 func (rm *RelayManager) Connect(bridgeHost string, bridgePort int) error {
-	rm.mu.Lock()
-	if rm.running {
-		// Close old connection and wait for serve goroutine to finish
-		if rm.conn != nil {
-			rm.conn.Close()
-		}
-		close(rm.stopCh)
-		rm.mu.Unlock()
-		<-rm.stopped
-		rm.mu.Lock()
-	}
-	rm.mu.Unlock()
-
-	conn, err := rm.dial(bridgeHost, bridgePort)
-	if err != nil {
-		return err
-	}
+	rm.closeAll()
 
 	rm.mu.Lock()
-	rm.conn = conn
-	rm.running = true
-	rm.stopCh = make(chan struct{})
-	rm.stopped = make(chan struct{})
 	rm.lastBridgeHost = bridgeHost
 	rm.lastBridgePort = bridgePort
-	go rm.serve()
+	rm.stopCh = make(chan struct{})
 	rm.mu.Unlock()
 
-	rm.logger.Info("relay connection established",
+	for i := 0; i < relayPoolSize; i++ {
+		conn, err := rm.dial(bridgeHost, bridgePort)
+		if err != nil {
+			if i == 0 {
+				// First connection must succeed
+				return err
+			}
+			rm.logger.Warn("relay pool: additional connection failed",
+				"index", i, "error", err)
+			break
+		}
+		rm.addWorker(conn)
+	}
+
+	rm.logger.Info("relay connections established",
 		"bridge", fmt.Sprintf("%s:%d", bridgeHost, bridgePort),
+		"pool_size", rm.workerCount(),
 	)
 	return nil
+}
+
+// closeAll stops all workers and waits for them to exit.
+func (rm *RelayManager) closeAll() {
+	rm.mu.Lock()
+	workers := rm.workers
+	rm.workers = nil
+	stopCh := rm.stopCh
+	rm.mu.Unlock()
+
+	if len(workers) == 0 {
+		return
+	}
+
+	// Signal all workers to stop
+	if stopCh != nil {
+		select {
+		case <-stopCh:
+			// Already closed
+		default:
+			close(stopCh)
+		}
+	}
+
+	// Close all connections and wait for goroutines to exit
+	for _, w := range workers {
+		w.conn.Close()
+	}
+	for _, w := range workers {
+		<-w.stopped
+	}
+}
+
+// addWorker creates a new worker for a connection and starts its serve loop.
+func (rm *RelayManager) addWorker(conn net.Conn) {
+	w := &relayWorker{
+		conn:    conn,
+		stopped: make(chan struct{}),
+	}
+
+	rm.mu.Lock()
+	rm.workers = append(rm.workers, w)
+	rm.mu.Unlock()
+
+	go rm.serve(w)
+}
+
+// removeWorker removes a worker from the list (does NOT close the connection).
+func (rm *RelayManager) removeWorker(w *relayWorker) {
+	rm.mu.Lock()
+	for i, wk := range rm.workers {
+		if wk == w {
+			rm.workers = append(rm.workers[:i], rm.workers[i+1:]...)
+			break
+		}
+	}
+	rm.mu.Unlock()
+}
+
+// workerCount returns the number of active workers.
+func (rm *RelayManager) workerCount() int {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	return len(rm.workers)
 }
 
 // dial connects to the bridge and sends the relay protocol header.
@@ -109,30 +181,53 @@ func (rm *RelayManager) dial(bridgeHost string, bridgePort int) (net.Conn, error
 	return conn, nil
 }
 
-// serve reads HTTP requests from the relay connection and forwards them
-// to target resources. When the connection drops, it logs and returns.
-// No auto-reconnect — the API sends a new relay_connect when needed.
-func (rm *RelayManager) serve() {
-	defer func() {
-		rm.mu.Lock()
-		rm.running = false
-		if rm.conn != nil {
-			rm.conn.Close()
-			rm.conn = nil
-		}
-		rm.mu.Unlock()
-		close(rm.stopped)
-	}()
+// serve reads HTTP requests from a worker's relay connection and forwards
+// them to target resources. When the connection drops, the worker exits.
+func (rm *RelayManager) serve(w *relayWorker) {
+	defer close(w.stopped)
 
 	rm.mu.Lock()
-	conn := rm.conn
+	stopCh := rm.stopCh
 	rm.mu.Unlock()
 
+	conn := w.conn
 	reader := bufio.NewReader(conn)
+
+	// detached is set to true when the connection is handed off to a
+	// background goroutine (streaming, upgrade). When true, the defer
+	// must NOT close the connection — the goroutine owns it.
+	detached := false
+
+	defer func() {
+		if !detached {
+			rm.removeWorker(w)
+			conn.Close()
+		}
+
+		// Replenish pool if below target and not shutting down
+		select {
+		case <-stopCh:
+			// Manager is shutting down, don't reconnect
+		default:
+			count := rm.workerCount()
+			if count == 0 {
+				// All connections gone — delayed reconnect gives
+				// API's relay_connect SSE priority
+				rm.mu.Lock()
+				host := rm.lastBridgeHost
+				port := rm.lastBridgePort
+				rm.mu.Unlock()
+				go rm.reconnectIfNeeded(host, port)
+			} else if count < relayPoolSize {
+				// Pool degraded but not empty — replenish immediately
+				go rm.replenishPool()
+			}
+		}
+	}()
 
 	for {
 		select {
-		case <-rm.stopCh:
+		case <-stopCh:
 			return
 		default:
 		}
@@ -140,31 +235,23 @@ func (rm *RelayManager) serve() {
 		req, err := http.ReadRequest(reader)
 		if err != nil {
 			// Connection closed by bridge (idle timeout) or network error.
-			// This is expected — just log and stop.
 			rm.logger.Info("relay connection closed", "error", err)
 			return
 		}
 
 		// Upgrade requests (WebSocket) — consume the relay conn for
 		// bidirectional byte-splice. After the upgrade finishes, the
-		// relay conn is dead and serve() returns.
+		// relay conn is dead and the worker exits.
 		if isUpgradeRequest(req) {
 			rm.logger.Info("relay handling upgrade request",
 				"path", req.URL.Path,
 				"upgrade", req.Header.Get("Upgrade"),
 			)
-			// Detach conn from the manager so Close()/Connect() won't
+			// Detach this worker's conn so Close()/Connect() won't
 			// interfere while the splice is running.
-			rm.mu.Lock()
-			rm.conn = nil
-			rm.mu.Unlock()
-
-			// Proactively open a new relay conn for subsequent HTTP traffic
-			rm.mu.Lock()
-			bridgeHost := rm.lastBridgeHost
-			bridgePort := rm.lastBridgePort
-			rm.mu.Unlock()
-			go rm.reconnect(bridgeHost, bridgePort)
+			rm.removeWorker(w)
+			detached = true
+			go rm.replenishPool()
 
 			// handleUpgrade blocks until the splice ends, then closes conn
 			rm.handleUpgrade(req, conn)
@@ -175,23 +262,32 @@ func (rm *RelayManager) serve() {
 		resp := rm.forwardRequest(req)
 
 		if isStreamingResponse(resp) {
-			// Streaming response (SSE, chunked without Content-Length).
-			// Write the response using Go's http.Response.Write which
-			// handles chunked transfer encoding automatically.
-			resp.TransferEncoding = []string{"chunked"}
-			resp.ContentLength = -1
-			resp.Close = false
-			resp.Proto = "HTTP/1.1"
-			resp.ProtoMajor = 1
-			resp.ProtoMinor = 1
+			// Streaming response (SSE). Detach this worker and let
+			// the stream run in a background goroutine.
+			rm.logger.Info("relay handling streaming response",
+				"path", req.URL.Path,
+				"content_type", resp.Header.Get("Content-Type"),
+			)
 
-			if err := resp.Write(conn); err != nil {
-				rm.logger.Info("relay streaming write error", "error", err)
+			rm.removeWorker(w)
+			detached = true
+			go rm.replenishPool()
+
+			go func() {
+				resp.TransferEncoding = []string{"chunked"}
+				resp.ContentLength = -1
+				resp.Close = false
+				resp.Proto = "HTTP/1.1"
+				resp.ProtoMajor = 1
+				resp.ProtoMinor = 1
+
+				if err := resp.Write(conn); err != nil {
+					rm.logger.Info("relay streaming write ended", "error", err)
+				}
 				resp.Body.Close()
-				return
-			}
-			resp.Body.Close()
-			continue
+				conn.Close()
+			}()
+			return
 		}
 
 		// Buffered response — read the full body so we can set
@@ -222,23 +318,13 @@ func isUpgradeRequest(req *http.Request) bool {
 	return req.Header.Get("Upgrade") != ""
 }
 
-// isStreamingResponse returns true if the response should be streamed
-// rather than fully buffered. Detected by Content-Type text/event-stream
-// or chunked Transfer-Encoding with no Content-Length.
+// isStreamingResponse returns true if the response is an unbounded stream
+// (Server-Sent Events) that should trigger relay connection detach.
+// Only SSE qualifies — regular chunked responses (HTML, JS, JSON) have
+// finite bodies and complete naturally without blocking the relay.
 func isStreamingResponse(resp *http.Response) bool {
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
-	if strings.HasPrefix(ct, "text/event-stream") {
-		return true
-	}
-	// Chunked with no known Content-Length — stream it
-	if resp.ContentLength < 0 {
-		for _, te := range resp.TransferEncoding {
-			if strings.EqualFold(te, "chunked") {
-				return true
-			}
-		}
-	}
-	return false
+	return strings.HasPrefix(ct, "text/event-stream")
 }
 
 // handleUpgrade forwards an HTTP upgrade request (WebSocket) to the target
@@ -425,14 +511,58 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 	rm.logger.Info("upgrade: splice ended", "path", outURL.Path)
 }
 
-// reconnect opens a new relay connection in the background. Used after
-// an upgrade request consumes the current relay conn.
-func (rm *RelayManager) reconnect(bridgeHost string, bridgePort int) {
+// replenishPool opens new relay connections to bring the pool back up to
+// relayPoolSize. Unlike Connect(), this does NOT close existing connections —
+// it only adds new ones. Called when connections are detached for streaming or
+// upgrade to maintain concurrency capacity.
+// Each connection is dialed one at a time, re-checking the count after each
+// add to avoid over-allocation from concurrent replenishPool calls.
+func (rm *RelayManager) replenishPool() {
+	for {
+		rm.mu.Lock()
+		host := rm.lastBridgeHost
+		port := rm.lastBridgePort
+		current := len(rm.workers)
+		stopCh := rm.stopCh
+		rm.mu.Unlock()
+
+		if host == "" || current >= relayPoolSize {
+			return
+		}
+		select {
+		case <-stopCh:
+			return
+		default:
+		}
+
+		conn, err := rm.dial(host, port)
+		if err != nil {
+			rm.logger.Warn("relay pool replenish failed", "error", err)
+			return
+		}
+		rm.addWorker(conn)
+		rm.logger.Info("relay pool replenished",
+			"pool_size", rm.workerCount())
+	}
+}
+
+// reconnectIfNeeded opens new relay connections unless some were already
+// established (e.g. by the API's relay_connect). This prevents the race
+// between agent-initiated reconnect and API-initiated relay_connect — whichever
+// arrives second finds IsConnected()=true and skips.
+func (rm *RelayManager) reconnectIfNeeded(bridgeHost string, bridgePort int) {
 	if bridgeHost == "" {
 		return
 	}
-	// Brief delay to avoid racing with the bridge detaching the old conn
+	// Wait long enough for the API's relay_connect to arrive and complete.
+	// The API detects the 502 → sends relay_connect → agent handles it in
+	// ~200-400ms total. 500ms gives relay_connect priority; if it hasn't
+	// arrived by then, we self-heal.
 	time.Sleep(500 * time.Millisecond)
+
+	if rm.IsConnected() {
+		return // relay_connect already handled it
+	}
 
 	if err := rm.Connect(bridgeHost, bridgePort); err != nil {
 		rm.logger.Warn("relay auto-reconnect failed",
@@ -497,7 +627,21 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 	}
 
 	// For K8s requests: strip forwarded headers, add impersonation + SA token
-	client := &http.Client{Timeout: 30 * time.Second}
+	//
+	// Use transport-level timeouts instead of http.Client.Timeout.
+	// Client.Timeout covers the entire request lifecycle including reading
+	// the response body, which kills long-lived streaming responses (SSE)
+	// after the timeout. Transport timeouts only cover connection setup and
+	// waiting for response headers — the body can stream indefinitely.
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: 10 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		},
+	}
 	if isK8sRequest {
 		// Strip X-Forwarded-* headers — consumed for impersonation, not passed to K8s API
 		outReq.Header.Del("X-Forwarded-K8s-Groups")
@@ -554,7 +698,7 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 
 // K8s ServiceAccount paths
 const (
-	saTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	saTokenPath  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saCACertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 )
 
@@ -582,8 +726,12 @@ func (rm *RelayManager) getK8sClient() (*http.Client, error) {
 	}
 
 	return &http.Client{
-		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: 10 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
 			TLSClientConfig: &tls.Config{
 				RootCAs: caCertPool,
 			},
@@ -607,20 +755,9 @@ func errorResponse(req *http.Request, status int, msg string) *http.Response {
 	}
 }
 
-// Close shuts down the relay manager and closes the connection.
+// Close shuts down the relay manager and closes all connections.
 func (rm *RelayManager) Close() {
-	rm.mu.Lock()
-	if !rm.running {
-		rm.mu.Unlock()
-		return
-	}
-	close(rm.stopCh)
-	if rm.conn != nil {
-		rm.conn.Close()
-	}
-	rm.mu.Unlock()
-
-	<-rm.stopped
+	rm.closeAll()
 	rm.logger.Info("relay manager stopped")
 }
 
@@ -638,3 +775,9 @@ func (rm *RelayManager) UpdateTLSConfig(cfg *tls.Config) {
 	rm.tlsConfig = cfg
 }
 
+// IsConnected returns true if the relay has any active connections.
+func (rm *RelayManager) IsConnected() bool {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	return len(rm.workers) > 0
+}

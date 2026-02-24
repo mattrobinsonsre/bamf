@@ -74,12 +74,15 @@ type heartbeatRequest struct {
 	Resources       []heartbeatResource `json:"resources"`
 	Labels          map[string]string   `json:"labels"`
 	ClusterInternal bool                `json:"cluster_internal"`
+	InstanceID      string              `json:"instance_id,omitempty"`
+	ActiveTunnels   int                 `json:"active_tunnels"`
 }
 
 // Heartbeat sends a heartbeat to the API with the agent's current
-// resources, labels, and cluster_internal flag.
+// resources, labels, cluster_internal flag, instance identifier, and
+// active tunnel count (for self-correcting Redis tunnel counts).
 // Calls: POST /api/v1/agents/{id}/heartbeat
-func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool) error {
+func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, instanceID string, activeTunnels int) error {
 	hbResources := make([]heartbeatResource, len(resources))
 	for i, r := range resources {
 		hbResources[i] = heartbeatResource{
@@ -96,6 +99,8 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 		Resources:       hbResources,
 		Labels:          labels,
 		ClusterInternal: clusterInternal,
+		InstanceID:      instanceID,
+		ActiveTunnels:   activeTunnels,
 	}
 
 	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID), body, nil)
@@ -109,6 +114,23 @@ func (c *APIClient) UpdateStatus(ctx context.Context, agentID, status string) er
 	}
 
 	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/status", agentID), body, nil)
+}
+
+// DrainInstance notifies the API that this instance is draining (shutting down).
+// The API stops routing new commands to it.
+// Calls: POST /api/v1/agents/{id}/drain
+func (c *APIClient) DrainInstance(ctx context.Context, agentID, instanceID string) error {
+	body := map[string]any{
+		"instance_id": instanceID,
+	}
+	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/drain", agentID), body, nil)
+}
+
+// RemoveInstance removes this instance from the agent's instances hash.
+// Called after tunnels have drained and the instance is fully offline.
+// Calls: POST /api/v1/agents/{id}/instance/{iid}/offline
+func (c *APIClient) RemoveInstance(ctx context.Context, agentID, instanceID string) error {
+	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/instance/%s/offline", agentID, instanceID), nil, nil)
 }
 
 // RenewCertificate renews the agent's certificate before it expires.

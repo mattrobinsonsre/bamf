@@ -13,8 +13,6 @@ raw bytes.
 from __future__ import annotations
 
 import asyncio
-import base64
-import os
 from typing import TYPE_CHECKING
 
 import wsproto
@@ -35,79 +33,85 @@ async def ws_handshake(
     path: str,
     headers: dict[str, str],
     subprotocols: list[str] | None = None,
-) -> str | None:
-    """Send an HTTP/1.1 WebSocket upgrade request and verify the 101 response.
+) -> tuple[wsproto.WSConnection, str | None]:
+    """Send a WebSocket upgrade request via wsproto and verify the 101 response.
 
-    Returns the negotiated subprotocol (or None).  Raises ``RuntimeError``
-    on non-101 response.
+    Returns (WSConnection in OPEN state, negotiated subprotocol or None).
+    Raises ``RuntimeError`` on non-101 response or handshake failure.
+
+    Uses wsproto's state machine for the entire handshake so the returned
+    connection is ready for sending/receiving data frames immediately.
     """
-    # Generate Sec-WebSocket-Key
-    ws_key = base64.b64encode(os.urandom(16)).decode()
+    ws_conn = wsproto.WSConnection(wsproto.ConnectionType.CLIENT)
 
-    # Build raw HTTP upgrade request
-    lines = [
-        f"GET {path} HTTP/1.1",
+    # Extract Host for wsproto's host parameter
+    host = headers.get("Host", "localhost")
+
+    # Build extra headers, excluding Host (passed separately) and standard
+    # WebSocket headers that wsproto generates itself.
+    ws_managed = {
+        "host",
+        "upgrade",
+        "connection",
+        "sec-websocket-key",
+        "sec-websocket-version",
+        "sec-websocket-protocol",
+    }
+    extra_headers = [
+        (k.encode(), v.encode()) for k, v in headers.items() if k.lower() not in ws_managed
     ]
-    # Set required WebSocket headers
-    headers["Upgrade"] = "websocket"
-    headers["Connection"] = "Upgrade"
-    headers["Sec-WebSocket-Key"] = ws_key
-    headers["Sec-WebSocket-Version"] = "13"
-    if subprotocols:
-        headers["Sec-WebSocket-Protocol"] = ", ".join(subprotocols)
 
-    for k, v in headers.items():
-        lines.append(f"{k}: {v}")
-    lines.append("")
-    lines.append("")
-
-    raw = "\r\n".join(lines).encode()
-    writer.write(raw)
+    # Generate upgrade request via wsproto (handles Key, Version, etc.)
+    request_bytes = ws_conn.send(
+        wsproto.events.Request(
+            host=host,
+            target=path,
+            extra_headers=extra_headers,
+            subprotocols=subprotocols or [],
+        )
+    )
+    writer.write(request_bytes)
     await writer.drain()
 
-    # Read HTTP response (status line + headers)
-    status_line = await reader.readline()
-    if not status_line:
-        raise RuntimeError("bridge closed connection during WebSocket handshake")
-
-    status_text = status_line.decode(errors="replace").strip()
-    parts = status_text.split(" ", 2)
-    if len(parts) < 2:
-        raise RuntimeError(f"invalid HTTP response: {status_text}")
-
-    status_code = int(parts[1])
-
-    # Read headers
-    resp_headers: dict[str, str] = {}
+    # Read the full HTTP response (status line + headers + blank line)
+    # and feed it to wsproto so it can transition to OPEN state.
+    response_bytes = b""
     while True:
         line = await reader.readline()
-        stripped = line.decode(errors="replace").strip()
-        if not stripped:
+        if not line:
+            raise RuntimeError("bridge closed connection during WebSocket handshake")
+        response_bytes += line
+        if line == b"\r\n" or line == b"\n":
             break
-        if ":" in stripped:
-            k, v = stripped.split(":", 1)
-            resp_headers[k.strip().lower()] = v.strip()
 
-    if status_code != 101:
-        raise RuntimeError(f"WebSocket upgrade failed: HTTP {status_code} {status_text}")
+    ws_conn.receive_data(response_bytes)
 
-    negotiated = resp_headers.get("sec-websocket-protocol")
-    return negotiated
+    negotiated = None
+    for event in ws_conn.events():
+        if isinstance(event, wsproto.events.AcceptConnection):
+            negotiated = event.subprotocol
+        elif isinstance(event, wsproto.events.RejectConnection):
+            raise RuntimeError(f"WebSocket upgrade failed: HTTP {event.status_code}")
+        elif isinstance(event, wsproto.events.RejectData):
+            raise RuntimeError("WebSocket upgrade rejected")
+
+    return ws_conn, negotiated
 
 
 async def ws_relay(
     websocket: WebSocket,
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
+    ws_conn: wsproto.WSConnection,
 ) -> None:
     """Bidirectional WebSocket relay between ASGI and raw TCP.
 
     - Browser → ASGI WebSocket → wsproto encode → TCP to bridge
     - TCP from bridge → wsproto decode → ASGI WebSocket → browser
 
+    ``ws_conn`` must already be in OPEN state (from ``ws_handshake``).
     Runs until either side closes.
     """
-    ws_conn = wsproto.WSConnection(wsproto.ConnectionType.CLIENT)
 
     async def browser_to_bridge() -> None:
         """Read from ASGI WebSocket, encode as wsproto frames, write to TCP."""
@@ -115,7 +119,6 @@ async def ws_relay(
             while True:
                 msg = await websocket.receive()
                 if msg.get("type") == "websocket.disconnect":
-                    # Send close frame to bridge
                     data = ws_conn.send(wsproto.events.CloseConnection(code=1000))
                     writer.write(data)
                     await writer.drain()
@@ -144,7 +147,6 @@ async def ws_relay(
             while True:
                 raw = await reader.read(65536)
                 if not raw:
-                    # Bridge closed
                     return
 
                 ws_conn.receive_data(raw)
@@ -159,8 +161,8 @@ async def ws_relay(
                         pong = ws_conn.send(wsproto.events.Pong(payload=event.payload))
                         writer.write(pong)
                         await writer.drain()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("ws_relay: bridge→browser exception: %s", exc)
 
     b2b = asyncio.create_task(browser_to_bridge())
     br2b = asyncio.create_task(bridge_to_browser())

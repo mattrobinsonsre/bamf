@@ -160,11 +160,24 @@ async def terminate_tunnel(
     resource_name = session_data.get("resource_name")
     protocol = session_data.get("protocol")
     bridge_id = session_data.get("bridge_id")
+    agent_id = session_data.get("agent_id")
+    instance_id = session_data.get("instance_id")
 
     # Clean up Redis state
     await r.delete(session_key)
     await r.srem("sessions:active", session_id)
     await r.delete(f"session:{session_id}:client_creds")
+
+    # Decrement instance tunnel count
+    if agent_id and instance_id:
+        from bamf.services.agent_instances import decrement_instance_tunnels
+
+        await decrement_instance_tunnels(r, agent_id, instance_id)
+
+    # Decrement bridge tunnel count
+    if bridge_id:
+        await r.zincrby("bridges:available", -1, bridge_id)
+        await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
 
     # Audit log
     await log_audit_event(

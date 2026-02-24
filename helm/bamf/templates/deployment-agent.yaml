@@ -8,7 +8,9 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: agent
 spec:
+  {{- if not .Values.agent.autoscaling.enabled }}
   replicas: {{ .Values.agent.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "bamf.agent.selectorLabels" . | nindent 6 }}
@@ -16,6 +18,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap-agent.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
       labels:
         {{- include "bamf.agent.selectorLabels" . | nindent 8 }}
     spec:
@@ -24,6 +29,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "bamf.fullname" . }}-agent
+      terminationGracePeriodSeconds: {{ .Values.agent.terminationGracePeriodSeconds | default 1800 }}
       containers:
         - name: agent
           image: {{ include "bamf.agent.image" . }}
@@ -46,6 +52,28 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          {{- if .Values.agent.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.agent.preStopSleepSeconds }}"]
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/bamf-agent
@@ -66,9 +94,19 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.agent.affinity }}
+      {{- if .Values.agent.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.agent.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "bamf.agent.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
       {{- end }}
       {{- with .Values.agent.tolerations }}
       tolerations:

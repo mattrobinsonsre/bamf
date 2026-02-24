@@ -480,7 +480,11 @@ async def tunnel_closed(
     protocol = None
     duration_seconds = None
 
-    # Look up session info for audit
+    # Look up session info for audit and cleanup
+    agent_id = None
+    instance_id = None
+    bridge_id = None
+
     if request.session_token:
         session_key = f"session:{request.session_token}"
         session_data = await r.get(session_key)
@@ -489,6 +493,9 @@ async def tunnel_closed(
             user_email = session.get("user_email")
             resource_name = session.get("resource_name")
             protocol = session.get("protocol")
+            agent_id = session.get("agent_id")
+            instance_id = session.get("instance_id")
+            bridge_id = session.get("bridge_id")
             established_at = session.get("established_at")
             if established_at:
                 duration_seconds = round(time.time() - float(established_at), 1)
@@ -502,6 +509,17 @@ async def tunnel_closed(
         # Clean up client credentials (used for web terminal reconnection)
         if request.session_token:
             await r.delete(f"session:{request.session_token}:client_creds")
+
+    # Decrement instance tunnel count so select_agent_instance stays accurate
+    if agent_id and instance_id:
+        from bamf.services.agent_instances import decrement_instance_tunnels
+
+        await decrement_instance_tunnels(r, agent_id, instance_id)
+
+    # Decrement bridge tunnel count for load-balancing
+    if bridge_id:
+        await r.zincrby("bridges:available", -1, bridge_id)
+        await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
 
     # Audit: record that a connection ended
     details: dict = {

@@ -49,10 +49,11 @@ func DefaultSSEConfig() SSEConfig {
 // SSEClient handles Server-Sent Events connection to the BAMF API.
 // It uses the shared apiclient.Client for auth headers and TLS config.
 type SSEClient struct {
-	client  *apiclient.Client
-	agentID string
-	logger  *slog.Logger
-	cfg     SSEConfig
+	client     *apiclient.Client
+	agentID    string
+	instanceID string
+	logger     *slog.Logger
+	cfg        SSEConfig
 
 	// httpClient is a dedicated HTTP client for SSE with no timeout
 	// (SSE connections are long-lived).
@@ -66,7 +67,7 @@ type SSEClient struct {
 //   - UserAgentString() — User-Agent header
 //   - CertHeader() — X-Bamf-Client-Cert header for auth
 //   - HTTPClient().Transport — TLS configuration (reused without timeout)
-func NewSSEClient(client *apiclient.Client, agentID string, logger *slog.Logger) *SSEClient {
+func NewSSEClient(client *apiclient.Client, agentID, instanceID string, logger *slog.Logger) *SSEClient {
 	// Create a dedicated HTTP client for SSE: same TLS transport, no timeout.
 	var transport http.RoundTripper
 	if t := client.HTTPClient().Transport; t != nil {
@@ -76,10 +77,11 @@ func NewSSEClient(client *apiclient.Client, agentID string, logger *slog.Logger)
 	}
 
 	return &SSEClient{
-		client:  client,
-		agentID: agentID,
-		logger:  logger,
-		cfg:     DefaultSSEConfig(),
+		client:     client,
+		agentID:    agentID,
+		instanceID: instanceID,
+		logger:     logger,
+		cfg:        DefaultSSEConfig(),
 		httpClient: &http.Client{
 			Transport: transport,
 			// No Timeout — SSE connections are long-lived.
@@ -91,7 +93,8 @@ func NewSSEClient(client *apiclient.Client, agentID string, logger *slog.Logger)
 // The channel is closed when the connection drops or the context is cancelled.
 // Callers should use ConnectWithReconnect for automatic reconnection.
 func (c *SSEClient) Connect(ctx context.Context) (<-chan SSEEvent, error) {
-	url := fmt.Sprintf("%s/api/v1/agents/%s/events", c.client.BaseURL(), c.agentID)
+	url := fmt.Sprintf("%s/api/v1/agents/%s/events?instance_id=%s",
+		c.client.BaseURL(), c.agentID, c.instanceID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

@@ -182,6 +182,7 @@ k8s_yaml(helm(
         'agent.image.pullPolicy=Never',
         # Kubamf (Kubernetes GUI)
         'kubamf.enabled=true',
+        'kubamf.bamf.kubeResourceName=local-k8s',
         'kubamf.image.repository=kubamf',
         'kubamf.image.tag=latest',
         'kubamf.image.pullPolicy=Never',

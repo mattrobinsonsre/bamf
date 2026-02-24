@@ -135,6 +135,17 @@ class AgentHeartbeatRequest(BAMFBaseModel):
     resources: list[HeartbeatResource] = Field(default_factory=list)
     labels: dict[str, str] = Field(default_factory=dict)
     cluster_internal: bool = False
+    instance_id: str | None = None
+    active_tunnels: int = 0
+
+
+class AgentDrainRequest(BAMFBaseModel):
+    """Request to mark an agent instance as draining.
+
+    Go contract: maps to DrainInstance() in pkg/agent/api_client.go.
+    """
+
+    instance_id: str
 
 
 # ── Agent Join (Registration) ────────────────────────────────────────────
@@ -270,6 +281,12 @@ async def agent_heartbeat(
     The agent_id can be either a UUID or the agent name (for Go agent compatibility
     when loading cached certificates where the CN contains the name).
     """
+    from bamf.services.agent_instances import (
+        cleanup_stale_instances,
+        register_instance,
+        update_instance_tunnel_count,
+    )
+
     resolved_id, agent = await resolve_agent_id(agent_id, db)
     agent_id_str = str(resolved_id)
     agent_key = f"agent:{agent_id_str}:status"
@@ -282,6 +299,15 @@ async def agent_heartbeat(
 
     # Update last heartbeat timestamp
     await r.set(f"agent:{agent_id_str}:last_heartbeat", str(time.time()))
+
+    # Register instance if instance_id is provided (multi-replica support)
+    if body and body.instance_id:
+        await register_instance(r, agent_id_str, body.instance_id, AGENT_TTL_SECONDS)
+        # Self-correct tunnel count from agent-reported value. This fixes
+        # drift caused by missed tunnel_closed events or Redis key expiry.
+        await update_instance_tunnel_count(r, agent_id_str, body.instance_id, body.active_tunnels)
+        # Clean up stale instances on each heartbeat (cheap — small hash)
+        await cleanup_stale_instances(r, agent_id_str)
 
     # Update labels, resources, and cluster_internal if provided
     if body:
@@ -535,12 +561,15 @@ async def delete_agent(
     agent_id_str = str(resolved_id)
     agent_name = agent.name
 
-    # Send revoke event to kick the agent off its SSE connection
-    # The agent will receive this and should disconnect
-    await r.publish(
-        f"agent:{agent_id_str}:commands",
-        json.dumps({"command": "revoke", "reason": "Agent deleted by administrator"}),
-    )
+    # Send revoke event to all instances via their instance-specific channels
+    revoke_payload = json.dumps({"command": "revoke", "reason": "Agent deleted by administrator"})
+    instances = await r.hgetall(f"agent:{agent_id_str}:instances")
+    if instances:
+        for iid in instances:
+            await r.publish(
+                f"agent:{agent_id_str}:instance:{iid}:commands",
+                revoke_payload,
+            )
 
     # Clear all Redis state for this agent
     keys_to_delete = [
@@ -549,6 +578,10 @@ async def delete_agent(
         f"agent:{agent_id_str}:bridge",
         f"agent:{agent_id_str}:labels",
         f"agent:{agent_id_str}:resources",
+        f"agent:{agent_id_str}:instances",
+        f"agent:{agent_id_str}:name",
+        f"agent:{agent_id_str}:cluster_internal",
+        f"agent:{agent_id_str}:relay_bridge",
     ]
     for key in keys_to_delete:
         await r.delete(key)
@@ -584,13 +617,18 @@ async def delete_agent(
 @router.get("/{agent_id}/events")
 async def agent_events(
     agent_id: str,
+    instance_id: str = Query(..., description="Unique instance identifier for this agent pod"),
     db: AsyncSession = Depends(get_db_read),
     r: aioredis.Redis = Depends(get_redis),
 ) -> StreamingResponse:
     """SSE stream for delivering tunnel commands to agents.
 
     Go contract: pkg/agent/sse.go SSEClient.Connect() maintains a persistent
-    connection to this endpoint. The agent reads SSE events with:
+    connection to this endpoint with ``?instance_id=<uuid>`` query param.
+    Each agent instance subscribes to its own Redis channel for targeted
+    command routing (multi-replica support).
+
+    The agent reads SSE events with:
         event: tunnel_request
         data: {"command":"dial","session_id":"...","bridge_host":"...","bridge_port":3022,
                "resource_name":"...","resource_type":"ssh",
@@ -603,7 +641,7 @@ async def agent_events(
     encoding session_id, resource_name, and bridge_id for authorization.
 
     The data payload matches what connect.py publishes to Redis pub/sub channel
-    agent:{agent_id}:commands. See services/bamf/api/routers/connect.py:178-198.
+    agent:{agent_id}:instance:{instance_id}:commands.
 
     Keepalive heartbeats are sent every 30s:
         event: heartbeat
@@ -619,13 +657,15 @@ async def agent_events(
     """
     resolved_id, _ = await resolve_agent_id(agent_id, db)
     agent_id_str = str(resolved_id)
+    # Instance-specific channel for targeted command routing
+    channel = f"agent:{agent_id_str}:instance:{instance_id}:commands"
 
     async def event_generator() -> AsyncGenerator[str]:
         from bamf.api.app import shutdown_event
 
-        # Subscribe to the agent's command channel
+        # Subscribe to the instance-specific command channel
         pubsub = r.pubsub()
-        await pubsub.subscribe(f"agent:{agent_id_str}:commands")
+        await pubsub.subscribe(channel)
 
         try:
             keepalive_counter = 0
@@ -659,7 +699,7 @@ async def agent_events(
                         yield "event: heartbeat\ndata: {}\n\n"
                         keepalive_counter = 0
         finally:
-            await pubsub.unsubscribe(f"agent:{agent_id_str}:commands")
+            await pubsub.unsubscribe(channel)
             await pubsub.close()
 
     return StreamingResponse(
@@ -671,3 +711,51 @@ async def agent_events(
             "X-Accel-Buffering": "no",  # Disable nginx/traefik buffering
         },
     )
+
+
+# ── Instance Drain & Offline ──────────────────────────────────────────
+
+
+@router.post("/{agent_id}/drain", response_model=SuccessResponse)
+async def drain_agent_instance(
+    agent_id: str,
+    body: AgentDrainRequest,
+    db: AsyncSession = Depends(get_db_read),
+    r: aioredis.Redis = Depends(get_redis),
+) -> SuccessResponse:
+    """Mark an agent instance as draining (shutting down).
+
+    Go contract: pkg/agent/api_client.go:DrainInstance() calls this endpoint
+    during graceful shutdown. The API stops routing new commands to draining
+    instances via select_agent_instance().
+    """
+    from bamf.services.agent_instances import drain_instance
+
+    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    agent_id_str = str(resolved_id)
+
+    await drain_instance(r, agent_id_str, body.instance_id)
+
+    return SuccessResponse(message="Instance marked as draining")
+
+
+@router.post("/{agent_id}/instance/{instance_id}/offline", response_model=SuccessResponse)
+async def remove_agent_instance(
+    agent_id: str,
+    instance_id: str,
+    db: AsyncSession = Depends(get_db_read),
+    r: aioredis.Redis = Depends(get_redis),
+) -> SuccessResponse:
+    """Remove an agent instance that has fully shut down.
+
+    Go contract: pkg/agent/api_client.go:RemoveInstance() calls this endpoint
+    after all tunnels have drained and the instance is fully offline.
+    """
+    from bamf.services.agent_instances import remove_instance
+
+    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    agent_id_str = str(resolved_id)
+
+    await remove_instance(r, agent_id_str, instance_id)
+
+    return SuccessResponse(message="Instance removed")

@@ -24,7 +24,7 @@ func newTestSSEClient(t *testing.T, handler http.HandlerFunc) (*SSEClient, *http
 		UserAgent: "bamf-agent/test",
 	})
 
-	sseClient := NewSSEClient(client, "test-agent-id", slog.Default())
+	sseClient := NewSSEClient(client, "test-agent-id", "test-instance-id", slog.Default())
 	return sseClient, srv
 }
 
@@ -33,6 +33,7 @@ func TestSSEConnect_TunnelRequestEvent(t *testing.T) {
 		require.Equal(t, "text/event-stream", r.Header.Get("Accept"))
 		require.Equal(t, "bamf-agent/test", r.Header.Get("User-Agent"))
 		require.Contains(t, r.URL.Path, "/api/v1/agents/test-agent-id/events")
+		require.Equal(t, "test-instance-id", r.URL.Query().Get("instance_id"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -139,7 +140,7 @@ func TestSSEConnect_CertHeader(t *testing.T) {
 	})
 	client.SetClientCert([]byte("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n"))
 
-	sseClient := NewSSEClient(client, "test-agent-id", slog.Default())
+	sseClient := NewSSEClient(client, "test-agent-id", "test-instance-id", slog.Default())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
