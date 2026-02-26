@@ -27,6 +27,21 @@ logger = get_logger(__name__)
 # Bridge internal health/relay port
 BRIDGE_INTERNAL_PORT = 8080
 
+# Shared httpx client for bridge relay requests.
+# Module-level to avoid per-request client creation (prevents GC from
+# killing streaming connections and enables connection pooling).
+_bridge_client: httpx.AsyncClient | None = None
+
+
+def _get_bridge_client() -> httpx.AsyncClient:
+    global _bridge_client
+    if _bridge_client is None:
+        _bridge_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0),
+        )
+    return _bridge_client
+
+
 # How long to wait for a relay connection to establish after sending relay_connect.
 # The agent typically connects in <100ms; 1 second is generous.
 RELAY_CONNECT_WAIT_SECONDS = 1
@@ -46,13 +61,13 @@ async def forward_to_bridge(
 ) -> httpx.Response | None:
     """Forward an HTTP request to the bridge relay endpoint."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                content=body,
-            )
+        client = _get_bridge_client()
+        return await client.request(
+            method=method,
+            url=url,
+            headers=headers,
+            content=body,
+        )
     except httpx.ConnectError:
         logger.warning("Bridge connection failed", url=url)
         return None

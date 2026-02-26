@@ -173,8 +173,12 @@ async def kube_proxy(
 
     # Return K8s API response as-is (no header rewriting needed)
     resp_headers = dict(resp.headers)
-    # Strip hop-by-hop headers from response
-    for h in ("transfer-encoding", "connection"):
+    # Strip hop-by-hop and framing headers from response.
+    # content-length/content-encoding must be stripped because httpx may
+    # decompress the body (resp.content is decompressed) while headers
+    # still reflect the compressed transfer. Starlette sets these correctly
+    # from the actual body.
+    for h in ("transfer-encoding", "connection", "content-length", "content-encoding"):
         resp_headers.pop(h, None)
 
     return Response(

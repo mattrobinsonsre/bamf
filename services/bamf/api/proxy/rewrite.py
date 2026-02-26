@@ -14,7 +14,9 @@ Response headers are rewritten before returning to the browser:
 
 from __future__ import annotations
 
-# Headers that should not be forwarded (hop-by-hop).
+# Headers that should not be forwarded from upstream responses.
+# Includes standard hop-by-hop headers plus framing headers that the
+# ASGI server (uvicorn) sets automatically from the actual body.
 # Note: "upgrade" is intentionally excluded — it must be preserved for
 # WebSocket requests. The Connection header is also selectively preserved
 # when it carries "Upgrade".
@@ -27,6 +29,8 @@ _HOP_BY_HOP = frozenset(
         "trailer",
         "proxy-authorization",
         "proxy-authenticate",
+        "content-length",
+        "content-encoding",
     }
 )
 

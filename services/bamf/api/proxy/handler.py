@@ -64,6 +64,22 @@ logger = get_logger(__name__)
 # bamf.example.com and *.tunnel.bamf.example.com
 SESSION_COOKIE_NAME = "bamf_session"
 
+# Shared httpx client for bridge relay requests.  A single client with
+# connection pooling avoids creating (and GC-ing) a client per request,
+# which would kill streaming response connections when the local variable
+# goes out of scope.
+_proxy_client: httpx.AsyncClient | None = None
+
+
+def _get_proxy_client() -> httpx.AsyncClient:
+    global _proxy_client
+    if _proxy_client is None:
+        _proxy_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0),
+        )
+    return _proxy_client
+
+
 # HTTP audit recording constants
 HTTP_RECORDING_BODY_MAX = 256 * 1024  # 256KB cap per body
 _BINARY_CONTENT_TYPES = frozenset(
@@ -259,24 +275,30 @@ async def handle_proxy_request(request: Request) -> Response:
         )
     )
 
-    # Check if this is a streaming response (SSE, chunked without Content-Length)
+    # Only stream SSE responses — these are long-lived event streams that
+    # must be relayed incrementally.  All other responses (JSON, HTML, etc.)
+    # are buffered.  Chunked transfer-encoding from the bridge is just a
+    # transport detail, not an indication that the response is a logical
+    # stream; treating it as streaming caused the httpx connection to be
+    # read asynchronously after the client reference was lost, resulting in
+    # empty bodies over HTTP/2.
     content_type = resp.headers.get("content-type", "")
-    is_streaming = "text/event-stream" in content_type or (
-        resp.headers.get("transfer-encoding", "").lower() == "chunked"
-        and "content-length" not in resp.headers
-    )
+    is_sse = "text/event-stream" in content_type
 
-    if is_streaming:
-        # Return a streaming response — iterate over chunks
+    if is_sse:
+        # Return a streaming response — iterate over chunks.
+        # The shared _proxy_client keeps the connection alive.
         return StreamingResponse(
-            content=resp.aiter_bytes(),
+            content=_stream_and_close(resp),
             status_code=resp.status_code,
             headers=rewritten_resp,
-            media_type=content_type.split(";")[0].strip() if content_type else None,
+            media_type="text/event-stream",
         )
 
-    # Buffered response — read full body
+    # Buffered response — read full body, then close to return the
+    # connection to the shared pool promptly.
     await resp.aread()
+    await resp.aclose()
 
     # Full HTTP recording for http-audit resources
     if resource.resource_type == "http-audit":
@@ -321,7 +343,7 @@ async def _forward_with_retry(
       assignments and races where the relay just dropped.
     - On connect error or timeout, return None (caller maps to 502).
     """
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0))
+    client = _get_proxy_client()
 
     async def _do_stream() -> httpx.Response | None:
         try:
@@ -349,6 +371,15 @@ async def _forward_with_retry(
         resp = await _do_stream()
 
     return resp
+
+
+async def _stream_and_close(resp: httpx.Response):
+    """Async generator that yields response chunks and closes the response when done."""
+    try:
+        async for chunk in resp.aiter_bytes():
+            yield chunk
+    finally:
+        await resp.aclose()
 
 
 async def handle_proxy_websocket(websocket: WebSocket) -> None:
