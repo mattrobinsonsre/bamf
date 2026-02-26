@@ -14,6 +14,11 @@ import (
 
 const relayIdleTimeout = 5 * time.Minute
 
+// relayAcquireTimeout is how long to wait for a relay connection before
+// giving up. Prevents indefinite blocking when the pool is exhausted
+// (e.g. re-entrant requests that deadlock if all connections are held).
+const relayAcquireTimeout = 10 * time.Second
+
 // RelayPool manages relay connections from agents.
 // Each agent may have multiple mTLS relay connections through the bridge's
 // tunnel listener, enabling concurrent request handling. The API sends HTTP
@@ -68,8 +73,10 @@ func (p *RelayPool) Add(agentID string, conn net.Conn) {
 
 // acquire returns an available (unlocked) relay connection for an agent.
 // It tries each connection in the pool with TryLock. If all are busy, it
-// blocks on the first one to avoid dropping the request.
-// Returns (conn, true) on success, (nil, false) if no connections exist.
+// polls with a timeout to avoid indefinite blocking (which would cause
+// deadlocks when re-entrant requests exhaust the pool).
+// Returns (conn, true) on success, (nil, false) if no connections exist
+// or the timeout expires.
 func (p *RelayPool) acquire(agentID string) (*relayConn, bool) {
 	p.mu.RLock()
 	pool := p.conns[agentID]
@@ -89,9 +96,22 @@ func (p *RelayPool) acquire(agentID string) (*relayConn, bool) {
 		}
 	}
 
-	// All connections busy — block on the first one.
-	conns[0].mu.Lock()
-	return conns[0], true
+	// All connections busy — poll with timeout instead of blocking forever.
+	// This prevents deadlocks when re-entrant requests (e.g. kubamf calling
+	// K8s API through kube proxy) exhaust the pool.
+	deadline := time.Now().Add(relayAcquireTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		for _, rc := range conns {
+			if rc.mu.TryLock() {
+				return rc, true
+			}
+		}
+	}
+
+	p.logger.Warn("relay pool acquire timeout", "agent_id", agentID,
+		"pool_size", len(conns), "timeout", relayAcquireTimeout)
+	return nil, false
 }
 
 // removeConn removes a specific connection from the pool and closes it.
@@ -265,7 +285,10 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Copy headers from the API request (already rewritten by the API proxy)
+	// Copy headers and content length from the API request (already rewritten
+	// by the API proxy).  Without ContentLength, Go's Request.Write uses
+	// chunked transfer encoding which many targets cannot decode.
+	innerReq.ContentLength = r.ContentLength
 	innerReq.Header = r.Header.Clone()
 	if fwdHost := r.Header.Get("X-Bamf-Forward-Host"); fwdHost != "" {
 		innerReq.Host = fwdHost
@@ -302,7 +325,11 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Upgrade response (101 Switching Protocols) — detach the relay conn
 	// from the pool and splice bytes between the API conn and the relay conn.
+	// IMPORTANT: detach BEFORE unlocking the mutex. If we unlock first, another
+	// goroutine can acquire() this conn via TryLock and write a different HTTP
+	// request on it, corrupting the WebSocket splice.
 	if isUpgrade && resp.StatusCode == http.StatusSwitchingProtocols {
+		p.detachConn(agentID, rc)
 		rc.mu.Unlock()
 		p.handleUpgradeResponse(w, r, agentID, rc, resp)
 		return
@@ -378,9 +405,10 @@ func (p *RelayPool) handleUpgradeResponse(
 ) {
 	resp.Body.Close()
 
-	// Detach relay conn from pool — the splice will own it.
-	// Use detachConn so the idle reaper doesn't close it.
-	p.detachConn(agentID, rc)
+	// Relay conn is already detached from the pool by the caller
+	// (handleRelayRequest detaches before unlocking the mutex to prevent
+	// a race where another goroutine acquires the conn between unlock
+	// and detach).
 
 	// Hijack the API→Bridge HTTP connection
 	hijacker, ok := w.(http.Hijacker)

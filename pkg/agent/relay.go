@@ -20,11 +20,16 @@ import (
 // relayPoolSize is the number of concurrent relay connections the agent
 // opens to the bridge. Multiple connections allow the bridge to dispatch
 // concurrent requests to the agent without head-of-line blocking.
-// This prevents deadlocks when a target (e.g. kubamf) calls back through
-// the same agent's relay while the original request is still in flight.
-// Size accounts for: SSE streams that detach connections (typically 2-3)
-// plus concurrent request/response pairs (each re-entrant call needs 2).
-const relayPoolSize = 8
+//
+// Size must account for re-entrant requests: when a proxied web app (e.g.
+// kubamf) calls back through the same BAMF agent (e.g. K8s API via kube
+// proxy), the inner request needs its own relay connection while the outer
+// connection is still held. With N concurrent browser requests, up to 2N
+// relay connections may be needed. Additionally, SSE streams detach
+// connections permanently (replenished, but briefly unavailable).
+//
+// 32 supports up to ~12 concurrent re-entrant requests plus SSE headroom.
+const relayPoolSize = 32
 
 // RelayManager maintains mTLS connections to a bridge for relaying HTTP
 // requests. Multiple connections are opened for concurrent request handling.
@@ -290,21 +295,20 @@ func (rm *RelayManager) serve(w *relayWorker) {
 			return
 		}
 
-		// Buffered response — read the full body so we can set
-		// Content-Length for proper relay framing.
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			rm.logger.Error("relay body read error", "error", readErr)
-			return
-		}
-		resp.Body = io.NopCloser(bytes.NewReader(body))
-		resp.ContentLength = int64(len(body))
-		resp.TransferEncoding = nil
-		resp.Close = false
+		// Normalize response framing for the persistent relay connection.
+		// The bridge detects body boundaries via Content-Length or chunked
+		// encoding.  Previously this code used io.ReadAll() to buffer the
+		// entire body and set Content-Length, but that caused OOM kills on
+		// large K8s API responses.  Instead, use chunked transfer encoding
+		// when Content-Length is unknown — Go's resp.Write() streams the
+		// body in chunks without buffering it all in memory.
 		resp.Proto = "HTTP/1.1"
 		resp.ProtoMajor = 1
 		resp.ProtoMinor = 1
+		resp.Close = false
+		if resp.ContentLength < 0 {
+			resp.TransferEncoding = []string{"chunked"}
+		}
 
 		if err := resp.Write(conn); err != nil {
 			rm.logger.Info("relay write error, connection lost", "error", err)

@@ -175,7 +175,7 @@ agent:
       memory: 128Mi
     limits:
       cpu: 200m
-      memory: 128Mi
+      memory: 256Mi
 
   # Agent configuration
   config:

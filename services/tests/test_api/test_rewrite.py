@@ -1,6 +1,10 @@
 """Tests for the HTTP proxy header rewriting module."""
 
-from bamf.api.proxy.rewrite import rewrite_request_headers, rewrite_response_headers
+from bamf.api.proxy.rewrite import (
+    rewrite_request_headers,
+    rewrite_response_headers,
+    rewrite_set_cookie,
+)
 
 
 class TestRewriteRequestHeaders:
@@ -21,6 +25,7 @@ class TestRewriteRequestHeaders:
     def test_hop_by_hop_stripped(self):
         """Standard hop-by-hop headers are removed."""
         headers = {
+            "accept-encoding": "gzip, deflate, br",
             "connection": "keep-alive",
             "keep-alive": "timeout=5",
             "transfer-encoding": "chunked",
@@ -39,6 +44,12 @@ class TestRewriteRequestHeaders:
         assert "proxy-authorization" not in result
         assert "proxy-authenticate" not in result
         assert "accept" in result
+
+    def test_accept_encoding_forced_identity(self):
+        """Accept-Encoding is replaced with 'identity' to prevent target compression."""
+        headers = {"accept-encoding": "gzip, deflate, br"}
+        result = rewrite_request_headers(headers=headers, **self._base_kwargs())
+        assert result["Accept-Encoding"] == "identity"
 
     def test_upgrade_header_preserved(self):
         """Upgrade header is NOT stripped — needed for WebSocket proxying."""
@@ -139,6 +150,18 @@ class TestRewriteRequestHeaders:
         )
         assert result["X-Forwarded-Groups"] == "view"
 
+    def test_content_length_preserved(self):
+        """Content-Length passes through on requests (needed for POST bodies)."""
+        headers = {"content-length": "42", "content-type": "application/json"}
+        result = rewrite_request_headers(headers=headers, **self._base_kwargs())
+        assert result["content-length"] == "42"
+
+    def test_content_encoding_preserved(self):
+        """Content-Encoding passes through on requests."""
+        headers = {"content-encoding": "gzip", "content-type": "application/json"}
+        result = rewrite_request_headers(headers=headers, **self._base_kwargs())
+        assert result["content-encoding"] == "gzip"
+
 
 class TestRewriteResponseHeaders:
     """Test rewrite_response_headers() for proxy response transformation."""
@@ -209,3 +232,66 @@ class TestRewriteResponseHeaders:
         headers = {"connection": "keep-alive", "content-type": "text/html"}
         result = rewrite_response_headers(headers=headers, **self._base_kwargs())
         assert "connection" not in result
+
+    def test_content_length_stripped_response(self):
+        """Content-Length is stripped from responses (Starlette re-adds from body)."""
+        headers = {"content-length": "1234", "content-type": "text/html"}
+        result = rewrite_response_headers(headers=headers, **self._base_kwargs())
+        assert "content-length" not in result
+
+    def test_content_encoding_stripped_response(self):
+        """Content-Encoding is stripped from responses (Starlette re-adds from body)."""
+        headers = {"content-encoding": "gzip", "content-type": "text/html"}
+        result = rewrite_response_headers(headers=headers, **self._base_kwargs())
+        assert "content-encoding" not in result
+
+    def test_csp_rewritten(self):
+        """CSP absolute URLs are replaced with tunnel origin."""
+        headers = {
+            "content-security-policy": "default-src 'self' http://grafana.internal:3000; img-src *"
+        }
+        result = rewrite_response_headers(headers=headers, **self._base_kwargs())
+        assert (
+            result["content-security-policy"]
+            == "default-src 'self' https://grafana.tunnel.bamf.local; img-src *"
+        )
+
+    def test_csp_rewritten_without_port(self):
+        """CSP URLs without port are rewritten."""
+        headers = {"content-security-policy": "connect-src http://grafana.internal/api"}
+        result = rewrite_response_headers(headers=headers, **self._base_kwargs())
+        assert (
+            result["content-security-policy"] == "connect-src https://grafana.tunnel.bamf.local/api"
+        )
+
+    def test_csp_no_match_passthrough(self):
+        """CSP without target URLs passes through unchanged."""
+        headers = {"content-security-policy": "default-src 'self'; script-src 'unsafe-inline'"}
+        result = rewrite_response_headers(headers=headers, **self._base_kwargs())
+        assert result["content-security-policy"] == "default-src 'self'; script-src 'unsafe-inline'"
+
+
+class TestRewriteSetCookie:
+    """Test rewrite_set_cookie() for individual Set-Cookie header rewriting."""
+
+    def test_domain_rewritten(self):
+        """domain= attribute is rewritten to tunnel hostname."""
+        result = rewrite_set_cookie(
+            "session=abc; domain=grafana.internal; path=/",
+            target_host="grafana.internal",
+            tunnel_hostname="grafana",
+            tunnel_domain="tunnel.bamf.local",
+        )
+        assert "domain=grafana.tunnel.bamf.local" in result
+        assert "domain=grafana.internal" not in result
+
+    def test_no_domain_passthrough(self):
+        """Cookie without domain attribute passes through unchanged."""
+        original = "session=abc; path=/; HttpOnly"
+        result = rewrite_set_cookie(
+            original,
+            target_host="grafana.internal",
+            tunnel_hostname="grafana",
+            tunnel_domain="tunnel.bamf.local",
+        )
+        assert result == original

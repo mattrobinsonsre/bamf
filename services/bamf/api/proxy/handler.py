@@ -55,7 +55,7 @@ from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource_by_tunnel_hostname
 
 from .redact import redact_body, redact_headers, redact_query
-from .rewrite import rewrite_request_headers, rewrite_response_headers
+from .rewrite import rewrite_request_headers, rewrite_response_headers, rewrite_set_cookie
 from .websocket import ws_handshake, ws_relay
 
 logger = get_logger(__name__)
@@ -75,7 +75,12 @@ def _get_proxy_client() -> httpx.AsyncClient:
     global _proxy_client
     if _proxy_client is None:
         _proxy_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0),
+            timeout=httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=10.0),
+            limits=httpx.Limits(
+                max_connections=30,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            ),
         )
     return _proxy_client
 
@@ -249,8 +254,10 @@ async def handle_proxy_request(request: Request) -> Response:
             headers={"Retry-After": "5"},
         )
 
-    # Rewrite response headers
-    resp_headers = dict(resp.headers)
+    # Extract Set-Cookie headers individually — dict(resp.headers) would
+    # comma-join multiple Set-Cookie values, which violates RFC 6265.
+    set_cookies = [v for k, v in resp.headers.multi_items() if k.lower() == "set-cookie"]
+    resp_headers = {k: v for k, v in resp.headers.items() if k.lower() != "set-cookie"}
     rewritten_resp = rewrite_response_headers(
         headers=resp_headers,
         tunnel_hostname=tunnel_hostname,
@@ -314,11 +321,17 @@ async def handle_proxy_request(request: Request) -> Response:
             )
         )
 
-    return Response(
+    response = Response(
         content=resp.content,
         status_code=resp.status_code,
         headers=rewritten_resp,
     )
+    for cookie in set_cookies:
+        response.headers.append(
+            "set-cookie",
+            rewrite_set_cookie(cookie, target_host, tunnel_hostname, tunnel_domain),
+        )
+    return response
 
 
 async def _forward_with_retry(
@@ -338,14 +351,17 @@ async def _forward_with_retry(
     (for SSE/chunked) or read it all at once (for buffered responses).
 
     Retry strategy:
-    - On 502 (relay not found on bridge), re-send relay_connect and retry
-      up to 2 times with a short backoff. This handles both stale relay
-      assignments and races where the relay just dropped.
-    - On connect error or timeout, return None (caller maps to 502).
+    - On 502 (relay not found on bridge) or connection failure (timeout,
+      pool exhaustion, connect error), re-send relay_connect and retry up
+      to 2 times. This handles stale relay assignments, dead relay pools,
+      and httpx pool exhaustion from zombie streaming connections.
     """
     client = _get_proxy_client()
 
+    pool_exhausted = False
+
     async def _do_stream() -> httpx.Response | None:
+        nonlocal pool_exhausted
         try:
             resp = await client.send(
                 client.build_request(method=method, url=url, headers=headers, content=body),
@@ -355,22 +371,49 @@ async def _forward_with_retry(
         except httpx.ConnectError:
             logger.warning("Bridge connection failed", url=url)
             return None
+        except httpx.PoolTimeout:
+            logger.warning("Bridge connection pool exhausted", url=url)
+            pool_exhausted = True
+            return None
         except httpx.TimeoutException:
             logger.warning("Bridge request timed out", url=url)
             return None
 
     resp = await _do_stream()
 
-    # Retry up to 2 times on 502 (relay not available on bridge).
+    # Reset the httpx client if the pool is exhausted — this clears zombie
+    # streaming connections left over from dead relay connections (e.g. agent
+    # OOM kill). Must be done before retrying so the new attempt uses a clean pool.
+    if pool_exhausted:
+        global _proxy_client
+        if _proxy_client is not None:
+            # Close in background — aclose() may block waiting for in-flight requests
+            old_client = _proxy_client
+            _proxy_client = None
+            asyncio.create_task(_close_client(old_client))
+
+    # Retry up to 2 times on failure (502, timeout, or connect error).
+    # Each retry re-triggers relay_connect to ensure the agent has active
+    # relay connections before we forward.
     for _attempt in range(2):
-        if resp is None or resp.status_code != 502:
+        should_retry = resp is None or resp.status_code == 502
+        if not should_retry:
             break
-        await resp.aclose()
+        if resp is not None:
+            await resp.aclose()
         # Re-trigger relay_connect (idempotent via ensure_relay_connected)
         await ensure_relay_connected(r, agent_id, relay_bridge)
         resp = await _do_stream()
 
     return resp
+
+
+async def _close_client(client: httpx.AsyncClient) -> None:
+    """Close an httpx client in the background, ignoring errors."""
+    try:
+        await client.aclose()
+    except Exception:
+        pass
 
 
 async def _stream_and_close(resp: httpx.Response):

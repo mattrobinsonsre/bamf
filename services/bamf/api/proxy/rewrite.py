@@ -14,14 +14,18 @@ Response headers are rewritten before returning to the browser:
 
 from __future__ import annotations
 
-# Headers that should not be forwarded from upstream responses.
-# Includes standard hop-by-hop headers plus framing headers that the
-# ASGI server (uvicorn) sets automatically from the actual body.
+# Hop-by-hop headers that should not be forwarded on requests.
 # Note: "upgrade" is intentionally excluded — it must be preserved for
 # WebSocket requests. The Connection header is also selectively preserved
 # when it carries "Upgrade".
-_HOP_BY_HOP = frozenset(
+# content-length and content-encoding are NOT stripped from requests — the
+# target needs them to correctly parse the request body.
+# accept-encoding is stripped because the proxy chain cannot transparently
+# handle all encodings (e.g., brotli). Target apps must return uncompressed
+# bodies; the ingress controller handles browser-facing compression.
+_HOP_BY_HOP_REQUEST = frozenset(
     {
+        "accept-encoding",
         "connection",
         "keep-alive",
         "transfer-encoding",
@@ -29,10 +33,13 @@ _HOP_BY_HOP = frozenset(
         "trailer",
         "proxy-authorization",
         "proxy-authenticate",
-        "content-length",
-        "content-encoding",
     }
 )
+
+# Hop-by-hop headers that should not be forwarded on responses.
+# Includes framing headers (content-length, content-encoding) that the
+# ASGI server (uvicorn) sets automatically from the actual body.
+_HOP_BY_HOP_RESPONSE = _HOP_BY_HOP_REQUEST | {"content-length", "content-encoding"}
 
 # Cookie name used for BAMF session auth — strip from forwarded requests
 _BAMF_COOKIE_NAME = "bamf_session"
@@ -64,7 +71,7 @@ def rewrite_request_headers(
     # Copy headers, skipping hop-by-hop, auth, and headers we rewrite below
     for k, v in headers.items():
         lower_k = k.lower()
-        if lower_k in _HOP_BY_HOP:
+        if lower_k in _HOP_BY_HOP_REQUEST:
             # For upgrade requests, preserve "connection" header
             if lower_k == "connection" and is_upgrade:
                 out[k] = v
@@ -107,6 +114,13 @@ def rewrite_request_headers(
     out["X-Forwarded-Roles"] = ",".join(user_roles)
     if kubernetes_groups:
         out["X-Forwarded-Groups"] = ",".join(kubernetes_groups)
+
+    # Disable content encoding negotiation — the proxy chain cannot handle
+    # all encodings (brotli, zstd, etc.) transparently. Setting identity
+    # explicitly prevents httpx and Go's http.Client from adding their own
+    # Accept-Encoding defaults. Ingress-level compression (Traefik, etc.)
+    # handles browser-facing encoding separately.
+    out["Accept-Encoding"] = "identity"
 
     # BAMF internal headers (agent reads X-Bamf-Target to determine target)
     out["X-Bamf-Target"] = target_origin
@@ -158,7 +172,7 @@ def rewrite_response_headers(
         lower_k = k.lower()
 
         # Skip hop-by-hop — but preserve connection/upgrade for 101 responses
-        if lower_k in _HOP_BY_HOP:
+        if lower_k in _HOP_BY_HOP_RESPONSE:
             if is_upgrade and lower_k == "connection":
                 out[k] = v
             continue
@@ -179,9 +193,31 @@ def rewrite_response_headers(
                 if origin in v:
                     v = tunnel_origin
 
+        elif lower_k == "content-security-policy":
+            for origin in target_origins:
+                v = v.replace(origin, tunnel_origin)
+
         out[k] = v
 
     return out
+
+
+def rewrite_set_cookie(
+    value: str,
+    target_host: str,
+    tunnel_hostname: str,
+    tunnel_domain: str,
+) -> str:
+    """Rewrite a single Set-Cookie header value.
+
+    Replaces ``domain=<target_host>`` with the tunnel hostname so the
+    browser stores the cookie on the correct domain.  Cookies without an
+    explicit ``domain`` attribute pass through unchanged.
+    """
+    return value.replace(
+        f"domain={target_host}",
+        f"domain={tunnel_hostname}.{tunnel_domain}",
+    )
 
 
 def _strip_bamf_cookie(cookie_header: str) -> str:

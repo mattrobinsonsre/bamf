@@ -37,7 +37,12 @@ def _get_bridge_client() -> httpx.AsyncClient:
     global _bridge_client
     if _bridge_client is None:
         _bridge_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0),
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=10.0),
+            limits=httpx.Limits(
+                max_connections=30,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            ),
         )
     return _bridge_client
 
