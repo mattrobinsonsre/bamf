@@ -55,6 +55,7 @@ def rewrite_request_headers(
     user_email: str,
     user_roles: list[str],
     client_ip: str | None,
+    display_name: str | None = None,
     kubernetes_groups: list[str] | None = None,
     session_token: str | None = None,
 ) -> dict[str, str]:
@@ -111,6 +112,8 @@ def rewrite_request_headers(
         out["X-Forwarded-For"] = client_ip
     out["X-Forwarded-User"] = user_email
     out["X-Forwarded-Email"] = user_email
+    if display_name:
+        out["X-Forwarded-Preferred-Username"] = display_name
     out["X-Forwarded-Roles"] = ",".join(user_roles)
     if kubernetes_groups:
         out["X-Forwarded-Groups"] = ",".join(kubernetes_groups)

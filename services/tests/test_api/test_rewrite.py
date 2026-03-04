@@ -110,6 +110,22 @@ class TestRewriteRequestHeaders:
         assert "bamf_session" not in result.get("cookie", "")
         assert "other_cookie=xyz" in result["cookie"]
 
+    def test_preferred_username_injected(self):
+        """X-Forwarded-Preferred-Username is injected when display_name is provided."""
+        headers = {}
+        result = rewrite_request_headers(
+            headers=headers,
+            **self._base_kwargs(),
+            display_name="Alice Smith",
+        )
+        assert result["X-Forwarded-Preferred-Username"] == "Alice Smith"
+
+    def test_preferred_username_not_injected_when_none(self):
+        """X-Forwarded-Preferred-Username is NOT injected when display_name is None."""
+        headers = {}
+        result = rewrite_request_headers(headers=headers, **self._base_kwargs())
+        assert "X-Forwarded-Preferred-Username" not in result
+
     def test_kubernetes_groups_injected(self):
         """X-Forwarded-Groups header is injected when kubernetes_groups is provided."""
         headers = {}

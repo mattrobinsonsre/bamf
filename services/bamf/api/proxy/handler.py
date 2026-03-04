@@ -222,6 +222,7 @@ async def handle_proxy_request(request: Request) -> Response:
         user_email=session.email,
         user_roles=session.roles,
         client_ip=client_ip,
+        display_name=session.display_name,
         kubernetes_groups=session.kubernetes_groups,
         session_token=session_token,
     )
@@ -539,6 +540,8 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
     ws_headers["X-Forwarded-Proto"] = "https"
     ws_headers["X-Forwarded-User"] = session.email
     ws_headers["X-Forwarded-Email"] = session.email
+    if session.display_name:
+        ws_headers["X-Forwarded-Preferred-Username"] = session.display_name
     ws_headers["X-Forwarded-Roles"] = ",".join(session.roles)
     if session.kubernetes_groups:
         ws_headers["X-Forwarded-Groups"] = ",".join(session.kubernetes_groups)
