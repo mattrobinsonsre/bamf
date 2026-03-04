@@ -182,3 +182,71 @@ hostname.
 generate HTTP URLs. The proxy rewrites `Location` and `Set-Cookie` headers,
 but inline URLs in HTML/JS are not modified. Configure the target app to use
 relative URLs or to respect `X-Forwarded-Proto: https`.
+
+## Webhooks
+
+External services (GitHub, Stripe, Slack, PagerDuty, etc.) send webhook
+requests to your applications. These requests authenticate using their own
+mechanisms (HMAC signatures, shared secrets, bearer tokens) — not BAMF
+sessions. BAMF supports per-resource webhook path passthrough to allow these
+requests through without BAMF authentication.
+
+### Configuration
+
+Add a `webhooks` list to any HTTP resource in the agent config:
+
+```yaml
+resources:
+  - name: jenkins
+    type: http
+    tunnel_hostname: jenkins
+    host: jenkins.internal
+    port: 8080
+    webhooks:
+      - path: /github-webhook/
+        methods: [POST]
+      - path: /generic-webhook-trigger/invoke
+        methods: [POST]
+        source_cidrs: [140.82.112.0/20, 185.199.108.0/22]
+```
+
+### Path Matching
+
+Webhook paths use strict prefix matching:
+
+- `/github-webhook/` matches `/github-webhook/` and `/github-webhook/foo`
+- `/github-webhook/` does **not** match `/github-webhook` (no trailing slash)
+  or `/github-webhookx`
+- Paths must start with `/`
+- No regex, no glob — explicit paths only
+
+Use a trailing slash in the path to prevent matching unintended sub-strings.
+
+### Source CIDR Filtering
+
+The optional `source_cidrs` field restricts which IP addresses can use the
+webhook path. When set, only requests from matching CIDRs are passed through.
+When omitted or empty, all source IPs are allowed.
+
+Many webhook providers publish their IP ranges:
+- GitHub: [Meta API](https://api.github.com/meta) — `hooks` field
+- Stripe: [Webhook IPs](https://stripe.com/docs/ips#webhook-notifications)
+- Slack: [Event API IPs](https://api.slack.com/events/url_verification)
+
+### Audit
+
+All webhook requests are logged in the audit log with
+`action: webhook_passthrough`, including the matched webhook path, request
+method, HTTP status, and source IP.
+
+> **Security Warning**: Webhook paths bypass BAMF authentication entirely.
+> Any request matching a configured webhook path+method is forwarded to the
+> target application without verifying the caller's identity. The target
+> application is solely responsible for authenticating webhook requests
+> (e.g., verifying HMAC signatures, checking shared secrets).
+>
+> - Keep webhook paths as specific as possible — never use `/` or broad prefixes
+> - Always specify allowed methods (typically just `POST`)
+> - Use `source_cidrs` when the webhook provider publishes IP ranges
+> - Monitor webhook audit logs for unexpected traffic
+> - The webhook path is matched as a prefix — `/webhook` also matches `/webhook/foo`

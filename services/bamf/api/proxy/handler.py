@@ -27,6 +27,7 @@ Flow:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import time
 from datetime import UTC, datetime
@@ -55,7 +56,12 @@ from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource_by_tunnel_hostname
 
 from .redact import redact_body, redact_headers, redact_query
-from .rewrite import rewrite_request_headers, rewrite_response_headers, rewrite_set_cookie
+from .rewrite import (
+    rewrite_request_headers,
+    rewrite_response_headers,
+    rewrite_set_cookie,
+    rewrite_webhook_request_headers,
+)
 from .websocket import ws_handshake, ws_relay
 
 logger = get_logger(__name__)
@@ -129,6 +135,49 @@ async def proxy_middleware(request: Request, call_next):
     return await handle_proxy_request(request)
 
 
+def _match_webhook(
+    resource, method: str, path: str, client_ip: str | None
+) -> dict | None:
+    """Check if a request matches a webhook passthrough rule.
+
+    Returns the matched webhook config dict, or None if no match.
+    Path matching is strict prefix: a webhook path of "/hook/" matches
+    "/hook/" and "/hook/foo" but not "/hookx".
+    """
+    webhooks = getattr(resource, "webhooks", None)
+    if not webhooks:
+        return None
+
+    for wh in webhooks:
+        wh_path = wh.get("path", "")
+        wh_methods = [m.upper() for m in wh.get("methods", [])]
+
+        # Method check
+        if method.upper() not in wh_methods:
+            continue
+
+        # Path prefix check — strict prefix match
+        if not path.startswith(wh_path):
+            continue
+
+        # Source CIDR check
+        source_cidrs = wh.get("source_cidrs", [])
+        if source_cidrs and client_ip:
+            try:
+                addr = ipaddress.ip_address(client_ip)
+                if not any(addr in ipaddress.ip_network(cidr) for cidr in source_cidrs):
+                    continue
+            except ValueError:
+                continue
+        elif source_cidrs and not client_ip:
+            # CIDRs configured but no client IP available — deny
+            continue
+
+        return wh
+
+    return None
+
+
 async def handle_proxy_request(request: Request) -> Response:
     """Handle a proxied HTTP request to a web application."""
     r = get_redis_client()
@@ -145,6 +194,12 @@ async def handle_proxy_request(request: Request) -> Response:
             content=f"No resource found for '{tunnel_hostname}'",
             status_code=404,
         )
+
+    # Check webhook passthrough BEFORE authentication
+    client_ip = request.client.host if request.client else None
+    webhook_match = _match_webhook(resource, request.method, request.url.path, client_ip)
+    if webhook_match:
+        return await _handle_webhook_request(request, resource, tunnel_hostname, tunnel_domain, webhook_match)
 
     # Authenticate: try Bearer token first, then session cookie.
     # Browser requests get a redirect to login on failure; API clients get 401.
@@ -706,6 +761,178 @@ def _auth_error_response(request: Request) -> Response:
         status_code=401,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def _handle_webhook_request(
+    request: Request,
+    resource,
+    tunnel_hostname: str,
+    tunnel_domain: str,
+    webhook_match: dict,
+) -> Response:
+    """Handle a webhook passthrough request — no BAMF auth, no RBAC."""
+    r = get_redis_client()
+
+    agent_id = resource.agent_id
+    if not agent_id:
+        return StarletteResponse(content="Resource has no agent", status_code=503)
+
+    agent_status = await r.get(f"agent:{agent_id}:status")
+    if not agent_status:
+        return StarletteResponse(content="Agent is offline", status_code=503)
+
+    # Resolve relay bridge
+    relay_bridge = await r.get(f"agent:{agent_id}:relay_bridge")
+    needs_relay_connect = relay_bridge is None
+
+    if needs_relay_connect:
+        relay_bridge = await assign_relay_bridge(r, agent_id)
+        if relay_bridge is None:
+            return StarletteResponse(content="No bridges available", status_code=503)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        if not ready:
+            return StarletteResponse(
+                content="Relay connection timed out — please retry",
+                status_code=503,
+                headers={"Retry-After": "2"},
+            )
+
+    agent_name = await r.get(f"agent:{agent_id}:name")
+    if not agent_name:
+        agent_name = agent_id
+
+    bridge_url = build_bridge_relay_url(
+        relay_bridge, agent_name, request.url.path, request.url.query
+    )
+
+    target_protocol = "http"
+    target_host = resource.hostname or "localhost"
+    target_port = resource.port or 80
+
+    # Webhook-specific header rewriting — no identity headers
+    client_ip = request.client.host if request.client else None
+    raw_headers = dict(request.headers)
+    rewritten = rewrite_webhook_request_headers(
+        headers=raw_headers,
+        tunnel_hostname=tunnel_hostname,
+        tunnel_domain=tunnel_domain,
+        target_host=target_host,
+        target_port=target_port,
+        target_protocol=target_protocol,
+        client_ip=client_ip,
+    )
+
+    body = await request.body()
+
+    resp = await _forward_with_retry(
+        request.method,
+        bridge_url,
+        rewritten,
+        body,
+        r=r,
+        agent_id=agent_id,
+        relay_bridge=relay_bridge,
+        needs_relay_connect=needs_relay_connect,
+    )
+
+    if resp is None:
+        return StarletteResponse(content="Bridge connection failed", status_code=502)
+
+    if resp.status_code == 502:
+        return StarletteResponse(
+            content="Relay connection not available — try again shortly",
+            status_code=503,
+            headers={"Retry-After": "5"},
+        )
+
+    set_cookies = [v for k, v in resp.headers.multi_items() if k.lower() == "set-cookie"]
+    resp_headers = {k: v for k, v in resp.headers.items() if k.lower() != "set-cookie"}
+    rewritten_resp = rewrite_response_headers(
+        headers=resp_headers,
+        tunnel_hostname=tunnel_hostname,
+        tunnel_domain=tunnel_domain,
+        target_host=target_host,
+        target_port=target_port,
+        target_protocol=target_protocol,
+    )
+
+    # Audit: log webhook passthrough
+    asyncio.create_task(
+        _log_webhook_audit(
+            resource_name=resource.name,
+            method=request.method,
+            path=request.url.path,
+            status_code=resp.status_code,
+            client_ip=client_ip,
+            webhook_path=webhook_match.get("path", ""),
+        )
+    )
+
+    # SSE streaming
+    content_type = resp.headers.get("content-type", "")
+    is_sse = "text/event-stream" in content_type
+
+    if is_sse:
+        return StreamingResponse(
+            content=_stream_and_close(resp),
+            status_code=resp.status_code,
+            headers=rewritten_resp,
+            media_type="text/event-stream",
+        )
+
+    await resp.aread()
+    await resp.aclose()
+
+    response = Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=rewritten_resp,
+    )
+    for cookie in set_cookies:
+        response.headers.append(
+            "set-cookie",
+            rewrite_set_cookie(cookie, target_host, tunnel_hostname, tunnel_domain),
+        )
+    return response
+
+
+async def _log_webhook_audit(
+    *,
+    resource_name: str,
+    method: str,
+    path: str,
+    status_code: int,
+    client_ip: str | None,
+    webhook_path: str,
+) -> None:
+    """Log an audit event for a webhook passthrough request."""
+    try:
+        async with async_session_factory() as db:
+            await log_audit_event(
+                db,
+                event_type="access",
+                action="webhook_passthrough",
+                actor_type="external",
+                actor_id=client_ip or "unknown",
+                target_type="resource",
+                target_id=resource_name,
+                actor_ip=client_ip,
+                details={
+                    "protocol": "http",
+                    "method": method,
+                    "path": path,
+                    "status_code": status_code,
+                    "webhook_path": webhook_path,
+                },
+                success=status_code < 500,
+            )
+            await db.commit()
+    except Exception:
+        logger.warning(
+            "Failed to log webhook audit event",
+            resource_name=resource_name,
+            exc_info=True,
+        )
 
 
 async def _log_proxy_audit(

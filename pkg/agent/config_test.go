@@ -231,6 +231,65 @@ resources:
 	require.Equal(t, 22, sshAudit.Port) // ssh-audit defaults to port 22
 }
 
+func TestLoadConfig_WebhooksParsed(t *testing.T) {
+	clearEnvs(t,
+		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",
+		"BAMF_JOIN_TOKEN", "BAMF_AGENT_NAME", "BAMF_DATA_DIR",
+		"BAMF_LABELS", "BAMF_RESOURCES",
+	)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "agent.yaml")
+
+	yamlContent := `
+agent_name: webhook-agent
+resources:
+  - name: jenkins
+    type: http
+    hostname: jenkins.internal
+    port: 8080
+    tunnel_hostname: jenkins
+    webhooks:
+      - path: /github-webhook/
+        methods: [POST]
+      - path: /generic-webhook-trigger/invoke
+        methods: [POST]
+        source_cidrs: [140.82.112.0/20, 185.199.108.0/22]
+  - name: prod-ssh
+    type: ssh
+    hostname: prod-01.internal
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(yamlContent), 0644))
+	setEnv(t, "BAMF_CONFIG_FILE", configFile)
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	require.Len(t, cfg.Resources, 2)
+
+	resourcesByName := make(map[string]ResourceConfig)
+	for _, r := range cfg.Resources {
+		resourcesByName[r.Name] = r
+	}
+
+	jenkins := resourcesByName["jenkins"]
+	require.Equal(t, "http", jenkins.ResourceType)
+	require.Len(t, jenkins.Webhooks, 2)
+
+	wh0 := jenkins.Webhooks[0]
+	require.Equal(t, "/github-webhook/", wh0.Path)
+	require.Equal(t, []string{"POST"}, wh0.Methods)
+	require.Empty(t, wh0.SourceCIDRs)
+
+	wh1 := jenkins.Webhooks[1]
+	require.Equal(t, "/generic-webhook-trigger/invoke", wh1.Path)
+	require.Equal(t, []string{"POST"}, wh1.Methods)
+	require.Equal(t, []string{"140.82.112.0/20", "185.199.108.0/22"}, wh1.SourceCIDRs)
+
+	// SSH resource should have no webhooks
+	ssh := resourcesByName["prod-ssh"]
+	require.Nil(t, ssh.Webhooks)
+}
+
 func TestLoadConfig_EnvOverridesYAML(t *testing.T) {
 	clearEnvs(t,
 		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",

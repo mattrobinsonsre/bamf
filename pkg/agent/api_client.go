@@ -57,15 +57,24 @@ func (c *APIClient) Join(ctx context.Context, token, agentName string, labels ma
 	return []byte(resp.Certificate), []byte(resp.PrivateKey), []byte(resp.CACert), resp.AgentID, nil
 }
 
+// heartbeatWebhook matches the Python HeartbeatWebhook model
+// (services/bamf/api/routers/agents.py).
+type heartbeatWebhook struct {
+	Path        string   `json:"path"`
+	Methods     []string `json:"methods"`
+	SourceCIDRs []string `json:"source_cidrs,omitempty"`
+}
+
 // heartbeatResource matches the Python HeartbeatResource model
 // (services/bamf/api/routers/agents.py).
 type heartbeatResource struct {
-	Name           string            `json:"name"`
-	ResourceType   string            `json:"resource_type"`
-	Labels         map[string]string `json:"labels"`
-	Hostname       string            `json:"hostname,omitempty"`
-	Port           int               `json:"port,omitempty"`
-	TunnelHostname string            `json:"tunnel_hostname,omitempty"`
+	Name           string              `json:"name"`
+	ResourceType   string              `json:"resource_type"`
+	Labels         map[string]string   `json:"labels"`
+	Hostname       string              `json:"hostname,omitempty"`
+	Port           int                 `json:"port,omitempty"`
+	TunnelHostname string              `json:"tunnel_hostname,omitempty"`
+	Webhooks       []heartbeatWebhook  `json:"webhooks,omitempty"`
 }
 
 // heartbeatRequest matches the Python AgentHeartbeatRequest model
@@ -92,6 +101,13 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 			Hostname:       r.Hostname,
 			Port:           r.Port,
 			TunnelHostname: r.TunnelHostname,
+		}
+		for _, wh := range r.Webhooks {
+			hbResources[i].Webhooks = append(hbResources[i].Webhooks, heartbeatWebhook{
+				Path:        wh.Path,
+				Methods:     wh.Methods,
+				SourceCIDRs: wh.SourceCIDRs,
+			})
 		}
 	}
 

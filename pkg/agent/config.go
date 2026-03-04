@@ -47,6 +47,18 @@ type Config struct {
 	ReconnectJitterRatio float64
 }
 
+// WebhookConfig defines a webhook path that bypasses BAMF session auth.
+//
+// Webhook paths allow external services (GitHub, Stripe, Slack, etc.) to send
+// requests to HTTP resources without BAMF session authentication. The target
+// application is responsible for authenticating webhook requests (e.g., HMAC
+// signature verification).
+type WebhookConfig struct {
+	Path        string   // URL path prefix (must start with /)
+	Methods     []string // Allowed HTTP methods (e.g., ["POST"])
+	SourceCIDRs []string // Optional IP allowlist (CIDR notation)
+}
+
 // ResourceConfig defines a resource exposed by the agent.
 //
 // Go contract: maps to HeartbeatResource in services/bamf/api/routers/agents.py.
@@ -58,6 +70,7 @@ type ResourceConfig struct {
 	Port           int               // Target port
 	Labels         map[string]string // Resource labels
 	TunnelHostname string            // Tunnel hostname for HTTP proxy (e.g., "grafana" → grafana.tunnel.domain)
+	Webhooks       []WebhookConfig   // Webhook paths that bypass auth (HTTP resources only)
 }
 
 // yamlConfig is the YAML file structure for agent configuration.
@@ -77,6 +90,13 @@ type yamlConfig struct {
 	Resources yaml.Node `yaml:"resources"`
 }
 
+// yamlWebhook represents a webhook config entry in YAML.
+type yamlWebhook struct {
+	Path        string   `yaml:"path"`
+	Methods     []string `yaml:"methods"`
+	SourceCIDRs []string `yaml:"source_cidrs"`
+}
+
 // yamlResource represents a resource in YAML config.
 type yamlResource struct {
 	Name           string            `yaml:"name"`
@@ -86,6 +106,7 @@ type yamlResource struct {
 	Port           int               `yaml:"port"`
 	Labels         map[string]string `yaml:"labels"`
 	TunnelHostname string            `yaml:"tunnel_hostname"`
+	Webhooks       []yamlWebhook     `yaml:"webhooks"`
 }
 
 // yamlResourceLegacy is used for the deprecated map format where the map
@@ -303,6 +324,15 @@ func resourceConfigFromYAML(resourceType string, res yamlResource) ResourceConfi
 	// For HTTP resources, default tunnel_hostname to the resource name
 	if rc.TunnelHostname == "" && (resourceType == "http" || resourceType == "http-audit" || resourceType == "https") {
 		rc.TunnelHostname = rc.Name
+	}
+
+	// Webhooks
+	for _, wh := range res.Webhooks {
+		rc.Webhooks = append(rc.Webhooks, WebhookConfig{
+			Path:        wh.Path,
+			Methods:     wh.Methods,
+			SourceCIDRs: wh.SourceCIDRs,
+		})
 	}
 
 	return rc

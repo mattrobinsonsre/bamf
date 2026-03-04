@@ -137,6 +137,74 @@ def rewrite_request_headers(
     return out
 
 
+def rewrite_webhook_request_headers(
+    headers: dict[str, str],
+    tunnel_hostname: str,
+    tunnel_domain: str,
+    target_host: str,
+    target_port: int | None,
+    target_protocol: str,
+    client_ip: str | None,
+) -> dict[str, str]:
+    """Rewrite HTTP request headers for a webhook passthrough request.
+
+    Like rewrite_request_headers() but does NOT inject user identity headers
+    (X-Forwarded-User/Email/Roles/Groups/Preferred-Username) or the BAMF
+    session token. Webhook requests are unauthenticated from BAMF's perspective.
+    """
+    out: dict[str, str] = {}
+
+    # Detect upgrade request — preserve Upgrade and Connection headers
+    is_upgrade = any(k.lower() == "upgrade" for k in headers)
+
+    # Copy headers, skipping hop-by-hop and headers we rewrite below
+    for k, v in headers.items():
+        lower_k = k.lower()
+        if lower_k in _HOP_BY_HOP_REQUEST:
+            if lower_k == "connection" and is_upgrade:
+                out[k] = v
+            continue
+        if lower_k in ("host", "origin"):
+            continue
+        # Keep Authorization — it belongs to the webhook provider, not BAMF
+        # Strip bamf_session cookie but keep other cookies
+        if lower_k == "cookie":
+            v = _strip_bamf_cookie(v)
+            if not v:
+                continue
+        out[k] = v
+
+    # Build target origin
+    target_origin = f"{target_protocol}://{target_host}"
+    if target_port and target_port not in (80, 443):
+        target_origin += f":{target_port}"
+
+    # Rewrite Host → target's internal hostname
+    if target_port and target_port not in (80, 443):
+        out["Host"] = f"{target_host}:{target_port}"
+    else:
+        out["Host"] = target_host
+
+    # Rewrite Origin if present
+    if any(k.lower() == "origin" for k in headers):
+        out["Origin"] = target_origin
+
+    # Standard proxy headers (no identity headers)
+    out["X-Forwarded-Host"] = f"{tunnel_hostname}.{tunnel_domain}"
+    out["X-Forwarded-Proto"] = "https"
+    if client_ip:
+        out["X-Forwarded-For"] = client_ip
+
+    # Disable content encoding negotiation
+    out["Accept-Encoding"] = "identity"
+
+    # BAMF internal headers (agent reads X-Bamf-Target to determine target)
+    out["X-Bamf-Target"] = target_origin
+    out["X-Bamf-Resource"] = tunnel_hostname
+
+    return out
+
+
 def rewrite_response_headers(
     headers: dict[str, str],
     tunnel_hostname: str,

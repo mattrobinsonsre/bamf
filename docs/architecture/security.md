@@ -471,6 +471,47 @@ was last). There is no practical reason to default to TLS 1.2.
 Internal traffic is protected by Kubernetes network policies. Istio service
 mesh can be enabled for internal mTLS if required.
 
+## Webhook Passthrough
+
+HTTP resources can define webhook paths that bypass BAMF session
+authentication. This is necessary because external services (GitHub, Stripe,
+Slack, etc.) authenticate using their own mechanisms (HMAC signatures, shared
+secrets) and cannot obtain BAMF sessions.
+
+### Security Properties
+
+- Only explicitly configured path+method combinations bypass auth
+- No user identity headers are injected (`X-Forwarded-User/Email/Roles/Groups`
+  are absent) — the target application cannot assume any BAMF identity context
+- Standard proxy headers (`X-Forwarded-Host/Proto/For`) and agent routing
+  headers (`X-Bamf-Target/Resource`) are still injected
+- Optional `source_cidrs` per webhook restrict access to known IP ranges
+- All webhook requests are audited with `action: webhook_passthrough`
+- RBAC is fully bypassed (there is no user context to evaluate)
+- The `Authorization` header from the webhook provider is preserved and
+  forwarded to the target application (unlike authenticated requests, where
+  BAMF's own Bearer token is stripped)
+
+### Threat Model
+
+The webhook passthrough trades BAMF-layer authentication for application-layer
+authentication. The security assumptions are:
+
+1. **The target application validates webhook requests.** BAMF does not verify
+   HMAC signatures, shared secrets, or any webhook-specific auth. If the
+   target fails to validate, anyone who knows the webhook URL can send
+   arbitrary requests.
+2. **Webhook paths are specific.** Broad prefixes (e.g., `/`) would expose
+   the entire application without authentication.
+3. **Source CIDRs reduce attack surface** but are not a substitute for
+   application-level authentication (IP ranges can be spoofed in some
+   network configurations).
+
+### Configuration
+
+See [Agent Config Reference](../reference/agent-config.md#webhooks) and
+[Web Apps Guide](../guides/web-apps.md#webhooks).
+
 ## Hardening Checklist
 
 - [x] TLS 1.3 on ingress and internal mTLS (default since v0.4.0)

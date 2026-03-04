@@ -13,7 +13,7 @@ Key patterns:
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import redis.asyncio as aioredis
 
@@ -33,6 +33,7 @@ class ResourceInfo:
     hostname: str | None = None
     port: int | None = None
     tunnel_hostname: str | None = None
+    webhooks: list[dict] = field(default_factory=list)
 
 
 async def get_resource(r: aioredis.Redis, resource_name: str) -> ResourceInfo | None:

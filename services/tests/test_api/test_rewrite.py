@@ -4,6 +4,7 @@ from bamf.api.proxy.rewrite import (
     rewrite_request_headers,
     rewrite_response_headers,
     rewrite_set_cookie,
+    rewrite_webhook_request_headers,
 )
 
 
@@ -311,3 +312,73 @@ class TestRewriteSetCookie:
             tunnel_domain="tunnel.bamf.local",
         )
         assert result == original
+
+
+class TestRewriteWebhookRequestHeaders:
+    """Test rewrite_webhook_request_headers() for webhook passthrough."""
+
+    def _base_kwargs(self) -> dict:
+        return {
+            "tunnel_hostname": "jenkins",
+            "tunnel_domain": "tunnel.bamf.local",
+            "target_host": "jenkins.internal",
+            "target_port": 8080,
+            "target_protocol": "http",
+            "client_ip": "140.82.112.10",
+        }
+
+    def test_standard_proxy_headers_set(self):
+        """Standard proxy headers (Host, X-Forwarded-Host/Proto/For) are set."""
+        headers = {"host": "jenkins.tunnel.bamf.local"}
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        assert result["Host"] == "jenkins.internal:8080"
+        assert result["X-Forwarded-Host"] == "jenkins.tunnel.bamf.local"
+        assert result["X-Forwarded-Proto"] == "https"
+        assert result["X-Forwarded-For"] == "140.82.112.10"
+
+    def test_bamf_target_and_resource_set(self):
+        """X-Bamf-Target and X-Bamf-Resource headers are set."""
+        result = rewrite_webhook_request_headers(headers={}, **self._base_kwargs())
+        assert result["X-Bamf-Target"] == "http://jenkins.internal:8080"
+        assert result["X-Bamf-Resource"] == "jenkins"
+
+    def test_identity_headers_not_set(self):
+        """User identity headers are NOT injected for webhooks."""
+        result = rewrite_webhook_request_headers(headers={}, **self._base_kwargs())
+        assert "X-Forwarded-User" not in result
+        assert "X-Forwarded-Email" not in result
+        assert "X-Forwarded-Roles" not in result
+        assert "X-Forwarded-Groups" not in result
+        assert "X-Forwarded-Preferred-Username" not in result
+        assert "X-Bamf-Session-Token" not in result
+
+    def test_authorization_preserved(self):
+        """Authorization header is preserved (belongs to webhook provider, not BAMF)."""
+        headers = {"authorization": "token ghp_abc123"}
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        assert result["authorization"] == "token ghp_abc123"
+
+    def test_hop_by_hop_stripped(self):
+        """Hop-by-hop headers are still stripped."""
+        headers = {
+            "connection": "keep-alive",
+            "transfer-encoding": "chunked",
+            "accept": "application/json",
+        }
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        assert "connection" not in result
+        assert "transfer-encoding" not in result
+        assert "accept" in result
+
+    def test_accept_encoding_forced_identity(self):
+        """Accept-Encoding is forced to identity."""
+        headers = {"accept-encoding": "gzip"}
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        assert result["Accept-Encoding"] == "identity"
+
+    def test_bamf_cookie_stripped(self):
+        """bamf_session cookie is stripped even on webhook requests."""
+        headers = {"cookie": "bamf_session=abc; github_token=xyz"}
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        assert "bamf_session" not in result.get("cookie", "")
+        assert "github_token=xyz" in result["cookie"]

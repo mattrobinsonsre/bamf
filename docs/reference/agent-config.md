@@ -263,3 +263,48 @@ Group=bamf-agent
 [Install]
 WantedBy=multi-user.target
 ```
+
+## Webhooks
+
+HTTP resources can define webhook paths that bypass BAMF session
+authentication, allowing external services to deliver webhooks directly to
+the target application.
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | URL path prefix (must start with `/`) |
+| `methods` | list[string] | Yes | Allowed HTTP methods (e.g., `["POST"]`) |
+| `source_cidrs` | list[string] | No | IP allowlist in CIDR notation |
+
+### Example
+
+```yaml
+resources:
+  - name: jenkins
+    type: http
+    host: jenkins.internal
+    port: 8080
+    tunnel_hostname: jenkins
+    webhooks:
+      - path: /github-webhook/
+        methods: [POST]
+      - path: /generic-webhook-trigger/invoke
+        methods: [POST]
+        source_cidrs: [140.82.112.0/20, 185.199.108.0/22]
+```
+
+### Path Matching
+
+Paths are matched as strict prefixes. A trailing slash prevents matching
+unintended sub-strings:
+
+- `/hook/` matches `/hook/` and `/hook/foo` but not `/hookx`
+- `/hook` matches `/hook`, `/hook/foo`, and `/hookx`
+
+### Security
+
+Webhook paths bypass BAMF authentication — the target application must
+authenticate requests itself (e.g., HMAC signature verification). See
+[Security Model](../architecture/security.md#webhook-passthrough) for details.

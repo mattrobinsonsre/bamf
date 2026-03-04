@@ -111,6 +111,17 @@ async def resolve_agent_id(agent_id_or_name: str, db: AsyncSession) -> tuple[UUI
 # ── Heartbeat request/resource models ─────────────────────────────────
 
 
+class HeartbeatWebhook(BAMFBaseModel):
+    """A webhook passthrough config reported by an agent in its heartbeat.
+
+    Go contract: maps to heartbeatWebhook struct in pkg/agent/api_client.go.
+    """
+
+    path: str
+    methods: list[str]
+    source_cidrs: list[str] = Field(default_factory=list)
+
+
 class HeartbeatResource(BAMFBaseModel):
     """A resource reported by an agent in its heartbeat.
 
@@ -123,6 +134,7 @@ class HeartbeatResource(BAMFBaseModel):
     hostname: str | None = None
     port: int | None = None
     tunnel_hostname: str | None = None
+    webhooks: list[HeartbeatWebhook] = Field(default_factory=list)
 
 
 class AgentHeartbeatRequest(BAMFBaseModel):
@@ -324,6 +336,7 @@ async def agent_heartbeat(
                     hostname=res.hostname,
                     port=res.port,
                     tunnel_hostname=res.tunnel_hostname,
+                    webhooks=[wh.model_dump() for wh in res.webhooks],
                 )
                 for res in body.resources
             ]
