@@ -3,6 +3,7 @@
 {{- $labels := include "bamf.labels" . -}}
 {{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
 {{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+{{- $annotations := .Values.bridge.service.annotations -}}
 
 # Per-pod Services for SNI-based routing
 # Each bridge pod gets its own Service so TLSRoute can target it specifically
@@ -18,6 +19,10 @@ metadata:
     {{- $labels | nindent 4 }}
     app.kubernetes.io/component: bridge
     bamf.io/bridge-ordinal: "{{ $i }}"
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   selector:
     # StatefulSet automatically adds this label to each pod

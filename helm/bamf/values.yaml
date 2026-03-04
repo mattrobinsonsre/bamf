@@ -57,9 +57,26 @@ api:
   # Spot instance handling
   preStopSleepSeconds: 15
 
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # Extra env vars, volumes, and init containers for the API pod
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraInitContainers: []
+
+  service:
+    type: ClusterIP
+    annotations: {}
 
   serviceAccount:
     create: true
@@ -106,6 +123,9 @@ bridge:
     type: LoadBalancer
     annotations: {}
 
+  headlessService:
+    annotations: {}
+
   # Single tunnel port — bridge is protocol-agnostic, all tunnels use one mTLS port
   tunnelPort: 8443
 
@@ -126,9 +146,21 @@ bridge:
     tokenSecret: ""
     tokenKey: "token"
 
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # Extra env vars and volumes for the bridge pod
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # ── Web UI ────────────────────────────────────────────────────────────────────
 web:
@@ -143,6 +175,17 @@ web:
     tag: ""
     pullPolicy: IfNotPresent
 
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  terminationGracePeriodSeconds: 60
+
   livenessProbe: {}
   readinessProbe: {}
 
@@ -153,6 +196,14 @@ web:
     limits:
       cpu: 200m
       memory: 128Mi
+
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  service:
+    type: ClusterIP
+    annotations: {}
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
 # Deploy agents within this cluster to provide access to cluster resources.
@@ -243,9 +294,21 @@ agent:
   # Pre-stop sleep to allow in-flight heartbeats to complete
   preStopSleepSeconds: 5
 
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: ""
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # Extra env vars and volumes for the agent pod
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # ── Gateway / Ingress Routing ────────────────────────────────────────────────
 # provider: traefik (default) or istio
@@ -437,6 +500,16 @@ auth:
 # ── Migrations ────────────────────────────────────────────────────────────────
 migrations:
   enabled: true
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 # ── TLS ───────────────────────────────────────────────────────────────────────
 tls:

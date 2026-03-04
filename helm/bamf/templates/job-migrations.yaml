@@ -18,6 +18,10 @@ spec:
       labels:
         {{- include "bamf.labels" . | nindent 8 }}
         app.kubernetes.io/component: migrations
+      {{- with .Values.migrations.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -42,10 +46,13 @@ spec:
             - name: DATABASE_URL
               value: {{ include "bamf.databaseUrl" . | quote }}
           resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+      {{- with .Values.migrations.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migrations.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 {{- end }}

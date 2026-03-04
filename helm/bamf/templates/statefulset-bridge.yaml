@@ -18,18 +18,39 @@ spec:
     metadata:
       labels:
         {{- include "bamf.bridge.selectorLabels" . | nindent 8 }}
+        {{- with .Values.bridge.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
+        {{- with .Values.bridge.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.bridge.terminationGracePeriodSeconds }}
+      {{- with .Values.bridge.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.bridge.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.bridge.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: bridge
+          {{- with .Values.bridge.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           image: {{ include "bamf.bridge.image" . }}
           imagePullPolicy: {{ .Values.bridge.image.pullPolicy }}
           ports:
@@ -82,6 +103,13 @@ spec:
             - name: BAMF_CA_CERT
               value: /var/lib/bamf/bridge/ca.crt
             {{- end }}
+            {{- with .Values.bridge.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.bridge.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.bridge.bootstrap.enabled }}
             - name: data
@@ -90,6 +118,9 @@ spec:
             - name: tls
               mountPath: /etc/bamf/tls
               readOnly: true
+            {{- end }}
+            {{- with .Values.bridge.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
             httpGet:
@@ -119,6 +150,9 @@ spec:
             {{- else }}
             secretName: {{ include "bamf.fullname" . }}-tls
             {{- end }}
+        {{- end }}
+        {{- with .Values.bridge.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.bridge.nodeSelector }}
       nodeSelector:
