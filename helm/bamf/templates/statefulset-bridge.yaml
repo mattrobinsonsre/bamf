@@ -138,6 +138,15 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.bridge.resources | nindent 12 }}
+          {{- if gt (int .Values.bridge.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.bridge.preStopSleepSeconds }}
+          {{- end }}
       volumes:
         {{- if .Values.bridge.bootstrap.enabled }}
         - name: data

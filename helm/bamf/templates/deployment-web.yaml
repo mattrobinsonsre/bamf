@@ -85,6 +85,15 @@ spec:
             timeoutSeconds: {{ hasKey .Values.web.readinessProbe "timeoutSeconds" | ternary .Values.web.readinessProbe.timeoutSeconds 1 }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
+          {{- if gt (int .Values.web.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.web.preStopSleepSeconds }}
+          {{- end }}
       {{- with .Values.web.extraVolumes }}
       volumes:
         {{- toYaml . | nindent 8 }}

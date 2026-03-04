@@ -134,6 +134,11 @@ bridge:
   # ssh-audit sessions to finish naturally. 30 min covers most interactive sessions.
   terminationGracePeriodSeconds: 1800
 
+  # Pre-stop sleep to allow load balancer to drain connections.
+  # The bridge's own graceful shutdown handles tunnel migration;
+  # this sleep only ensures the LB stops sending new connections first.
+  preStopSleepSeconds: 15
+
   # Bootstrap configuration for certificate issuance
   # When enabled, bridges request their certificates from the API on startup
   bootstrap:
@@ -185,6 +190,7 @@ web:
   tolerations: []
   affinity: {}
   terminationGracePeriodSeconds: 60
+  preStopSleepSeconds: 5
 
   livenessProbe: {}
   readinessProbe: {}
