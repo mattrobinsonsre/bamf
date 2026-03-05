@@ -52,8 +52,8 @@ bamf tcp file-server -p 1445
 ### Using the command line
 
 ```zsh
-# Mount via tunnel
-bamf tcp file-server -p 1445 &
+# Mount via tunnel (background the tunnel with -b)
+bamf tcp file-server -p 1445 -b
 mount_smbfs //user@127.0.0.1:1445/share /Volumes/share
 
 # Or use smbutil
@@ -64,14 +64,14 @@ smbutil view //user@127.0.0.1:1445
 
 ```zsh
 bamf tcp file-server -p 1445 \
-  --exec "smbclient //{host}/share -p {port} -U {user}"
+  --exec "smbclient //{host}/share -p {port} -U {user}" -U admin
 ```
 
 ## Linux
 
 Linux `mount.cifs` supports the `port=` mount option.
 
-```zsh
+```bash
 # Open the tunnel
 bamf tcp file-server -p 1445
 
@@ -83,11 +83,11 @@ sudo mount -t cifs //127.0.0.1/share /mnt/share \
 smbclient //127.0.0.1/share -p 1445 -U admin
 ```
 
-### Persistent mount with systemd
+### Persistent mount
 
-```zsh
+```bash
 # Start the tunnel in background mode
-bamf tcp file-server -p 1445 --background
+bamf tcp file-server -p 1445 -b
 
 # Add to /etc/fstab
 # //127.0.0.1/share /mnt/share cifs port=1445,credentials=/etc/smbcreds 0 0
@@ -164,28 +164,11 @@ NET USE Z: \\127.0.0.1\share /USER:admin
 The user doesn't need to know about the portproxy — they use standard UNC
 paths with `127.0.0.1`.
 
-#### Multiple file servers
-
-To access multiple servers simultaneously, use different loopback addresses
-(`127.0.0.2`, `127.0.0.3`, etc.):
-
-```powershell
-# One-time setup per address
-netsh interface portproxy add v4tov4 `
-  listenaddress=127.0.0.2 listenport=445 `
-  connectaddress=127.0.0.2 connectport=44445
-
-netsh interface portproxy add v4tov4 `
-  listenaddress=127.0.0.3 listenport=445 `
-  connectaddress=127.0.0.3 connectport=44445
-
-# Then map each server to a different address
-bamf tcp file-server-1 -p 44445 --bind 127.0.0.2
-bamf tcp file-server-2 -p 44445 --bind 127.0.0.3
-
-NET USE X: \\127.0.0.2\share /USER:admin
-NET USE Y: \\127.0.0.3\share /USER:admin
-```
+> **Limitation:** The portproxy approach only supports one file server at a
+> time on older Windows, because `bamf tcp` always binds to `127.0.0.1` and
+> there is only one portproxy rule for `127.0.0.1:445`. To access multiple
+> file servers, upgrade to Windows 11 24H2+ which supports custom ports
+> natively via `/TCPPORT:`, or disconnect and reconnect between servers.
 
 #### Verify portproxy rules
 
@@ -214,9 +197,8 @@ establishing the tunnel. The SMB authentication is between the client and
 the file server through the encrypted tunnel.
 
 If your environment requires Kerberos for SMB, a tunnel through BAMF is not
-compatible. Consider accessing the file server through a BAMF-tunneled RDP
-session instead, where the RDP session has native network access and Kerberos
-works normally.
+compatible. Consider accessing the file server through an RDP session on a
+machine with native network access, where Kerberos works normally.
 
 ### SMB Multichannel
 
