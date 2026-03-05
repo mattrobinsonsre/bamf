@@ -65,7 +65,7 @@ type WebhookConfig struct {
 // The agent sends resources on every heartbeat.
 type ResourceConfig struct {
 	Name           string            // Resource name
-	ResourceType   string            // ssh, ssh-audit, kubernetes, postgres, mysql, http, http-audit
+	ResourceType   string            // ssh, ssh-audit, tcp, kubernetes, postgres, mysql, http, http-audit
 	Hostname       string            // Target hostname
 	Port           int               // Target port
 	Labels         map[string]string // Resource labels

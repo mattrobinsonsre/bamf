@@ -18,22 +18,22 @@ The tunnel stays open until you press Ctrl+C or unmount the share.
 
 ## Agent Configuration
 
-Register the file server as a generic TCP resource in the agent config:
+Register the file server as a `tcp` resource in the agent config:
 
 ```yaml
 resources:
   - name: file-server
-    type: ssh          # any TCP-capable type works; ssh is simplest
+    type: tcp
     hostname: fs.internal.corp
+    port: 445
     labels:
       env: prod
       team: engineering
 ```
 
 > **Note:** There is no dedicated `smb` resource type. File shares use the
-> same TCP tunnel infrastructure as SSH and database resources. Use any TCP
-> resource type (`ssh` for simplicity) — the bridge never interprets the
-> tunneled protocol.
+> generic `tcp` resource type, which tunnels raw bytes without interpreting
+> the protocol. SMB signing and encryption work end-to-end through the tunnel.
 
 ## macOS
 

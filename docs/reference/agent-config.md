@@ -89,6 +89,15 @@ resources:
     labels:
       env: prod
 
+  # Generic TCP service (SMB file server, Redis, custom protocols)
+  - name: file-server
+    type: tcp
+    hostname: fs.internal.corp
+    port: 445                        # Port is required for tcp type
+    labels:
+      env: prod
+      team: engineering
+
   # Kubernetes API
   - name: prod-cluster
     type: kubernetes
@@ -122,6 +131,7 @@ resources:
 |------|-------------|-------------|
 | `ssh` | 22 | SSH access (byte-splice tunnel) |
 | `ssh-audit` | 22 | SSH with terminal session recording (asciicast v2) |
+| `tcp` | — | Generic TCP tunnel (SMB, Redis, custom protocols). Port required. |
 | `postgres` | 5432 | PostgreSQL database access |
 | `postgres-audit` | 5432 | PostgreSQL with query audit logging |
 | `mysql` | 3306 | MySQL database access |
