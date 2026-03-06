@@ -1,10 +1,9 @@
 /**
  * Auth helpers for client-side session state.
  *
- * Session metadata (token, email, roles) is stored in sessionStorage. This
- * survives page navigation and refreshes within the same tab but is cleared
- * when the tab is closed. More practical than pure in-memory storage (which
- * loses state on every navigation) while still scoped to the browser tab.
+ * Session metadata (token, email, roles) is stored in localStorage. This
+ * persists across tabs and browser restarts until explicitly cleared (logout
+ * or session expiry). Login once, authenticated everywhere.
  */
 
 const AUTH_KEY = 'bamf_auth'
@@ -19,7 +18,7 @@ interface AuthState {
 function loadAuth(): AuthState | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = sessionStorage.getItem(AUTH_KEY)
+    const raw = localStorage.getItem(AUTH_KEY)
     if (!raw) return null
     return JSON.parse(raw) as AuthState
   } catch {
@@ -30,7 +29,7 @@ function loadAuth(): AuthState | null {
 export function setAuth(token: string, email: string, roles: string[], expiresAt?: string): void {
   const state: AuthState = { token, email, roles, expiresAt }
   if (typeof window !== 'undefined') {
-    sessionStorage.setItem(AUTH_KEY, JSON.stringify(state))
+    localStorage.setItem(AUTH_KEY, JSON.stringify(state))
   }
 }
 
@@ -60,7 +59,7 @@ export function getExpiresAt(): Date | null {
 
 export function clearAuth(): void {
   if (typeof window !== 'undefined') {
-    sessionStorage.removeItem(AUTH_KEY)
+    localStorage.removeItem(AUTH_KEY)
   }
 }
 
