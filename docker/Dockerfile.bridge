@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     ./cmd/bamf-bridge
 
 # Final image — alpine for CA certs + psql/mysql CLI tools (web-db terminal)
-FROM alpine:3.21
+FROM alpine:3.23
 
 # CA certs + database client tools for web-db terminal sessions
 RUN apk add --no-cache ca-certificates postgresql16-client mysql-client
