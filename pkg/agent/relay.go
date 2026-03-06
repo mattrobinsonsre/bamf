@@ -422,9 +422,9 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 			}
 			pool := x509.NewCertPool()
 			pool.AppendCertsFromPEM(caCert)
-			tlsCfg = &tls.Config{RootCAs: pool}
+			tlsCfg = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS13}
 		} else {
-			tlsCfg = &tls.Config{}
+			tlsCfg = &tls.Config{MinVersion: tls.VersionTLS13}
 		}
 		tlsCfg.ServerName = parsed.Hostname()
 		targetConn, err = tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", targetAddr, tlsCfg)
@@ -737,7 +737,8 @@ func (rm *RelayManager) getK8sClient() (*http.Client, error) {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
 			TLSClientConfig: &tls.Config{
-				RootCAs: caCertPool,
+				RootCAs:    caCertPool,
+				MinVersion: tls.VersionTLS13,
 			},
 		},
 	}, nil
