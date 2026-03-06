@@ -95,3 +95,6 @@ helm/bamf/values-local.yaml
 # Claude Code / MCP artifacts
 .claude/
 .mcp.json
+
+# Pen test reports
+reports/

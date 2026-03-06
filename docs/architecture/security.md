@@ -516,6 +516,8 @@ See [Agent Config Reference](../reference/agent-config.md#webhooks) and
 
 - [x] TLS 1.3 on ingress and internal mTLS (default since v0.4.0)
 - [x] Rate limiting on public HTTP endpoints (default since v0.4.0)
+- [x] SAST (Semgrep) and container image scanning (Trivy) in CI
+- [x] DAST (Nuclei) with custom templates validating auth, CORS, header injection
 - [ ] Use external SSO (not local auth) for production
 - [ ] Set `require_external_sso_for_roles: [admin]`
 - [ ] Enable MFA in your identity provider
@@ -524,4 +526,72 @@ See [Agent Config Reference](../reference/agent-config.md#webhooks) and
 - [ ] Deploy Kubernetes NetworkPolicies restricting database access to API pods
 - [ ] Use cert-manager or external PKI for the BAMF CA
 - [ ] Configure audit log retention and export to SIEM
-- [ ] Run `govulncheck` and `pip-audit` regularly
+- [ ] Run `govulncheck` and `pip-audit` regularly (`gmake security-scan`)
+- [ ] Run pen test suite regularly (`gmake pentest`)
+
+## Pen Testing
+
+BAMF ships a built-in pen testing suite (`gmake pentest`) that exercises three
+layers of security analysis. All tools run in Docker containers.
+
+### SAST (Semgrep)
+
+Static analysis of the source code. Runs standard rulesets (OWASP Top 10,
+Python, Go, secrets detection) plus custom BAMF rules that enforce
+architecture invariants:
+
+- **No CGo** — `import "C"` is prohibited across all Go code
+- **No `database/sql`** in Go components — only the Python API connects to PostgreSQL
+- **No naive datetimes** — `datetime.now()` without timezone is flagged
+- **No hardcoded secrets** — password/secret string literals outside test files
+
+Custom rules live in `pentest/semgrep/.semgrep.yml`.
+
+```zsh
+gmake pentest-sast
+# Output: reports/pentest/semgrep-results.json
+```
+
+### Container Image Scanning (Trivy)
+
+Scans all four BAMF container images for OS package and language dependency CVEs
+at HIGH and CRITICAL severity. Accepted CVEs can be added to
+`pentest/trivy/.trivyignore` with a justification comment.
+
+```zsh
+gmake images       # build images first
+gmake pentest-images
+# Output: reports/pentest/trivy-{bamf-api,bamf-bridge,bamf-agent,bamf-web}.json
+```
+
+### DAST (Nuclei)
+
+Dynamic application security testing against the live local stack. Authenticates
+as the bootstrap admin user (PKCE flow) and runs custom templates that validate
+the security properties documented in this file:
+
+| Template | What it tests |
+|----------|---------------|
+| `auth-bypass.yaml` | Admin endpoints (users, roles, sessions, certs) return 401/403 without auth |
+| `header-injection.yaml` | Proxy strips injected `X-Forwarded-User/Email/Roles` headers |
+| `internal-endpoints.yaml` | Internal bridge API endpoints reject external requests |
+| `cert-endpoints.yaml` | CA public cert is accessible; cert issuance requires auth |
+| `cors-proxy.yaml` | API does not reflect arbitrary Origin headers |
+| `webhook-passthrough.yaml` | TRACE method disabled; webhook paths enforce method restrictions |
+
+Templates live in `pentest/nuclei/bamf-templates/`. Nuclei also runs its
+built-in misconfiguration and exposure templates.
+
+```zsh
+gmake dev          # start local stack first
+gmake pentest-dast
+# Output: reports/pentest/nuclei-results.jsonl
+```
+
+### CI Integration
+
+SAST and image scanning run automatically in CI on every push and pull request.
+DAST is excluded from CI because it requires a running Kubernetes stack with
+Tilt.
+
+See the `sast` and `image-scan` jobs in `.github/workflows/ci.yml`.

@@ -11,6 +11,7 @@
 	publish publish-images publish-chart publish-release \
 	release dev dev-down \
 	security-scan security-scan-go security-scan-python \
+	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset proto \
 	help
@@ -92,6 +93,19 @@ security-scan-go:       ## Run govulncheck (Go vulnerability scanner)
 
 security-scan-python:   ## Run pip-audit (Python vulnerability scanner)
 	scripts/security-scan.sh python
+
+# ── Penetration Testing ─────────────────────────────────
+pentest:            ## Run all pen tests (DAST + image scan + SAST)
+	scripts/pentest.sh
+
+pentest-dast:       ## Run DAST against live local stack (requires Tilt)
+	scripts/pentest.sh dast
+
+pentest-images:     ## Scan container images for CVEs (Trivy)
+	scripts/pentest.sh images
+
+pentest-sast:       ## Run SAST static analysis (Semgrep)
+	scripts/pentest.sh sast
 
 # ── Development ──────────────────────────────────────────
 dev:                ## Start Tilt development environment

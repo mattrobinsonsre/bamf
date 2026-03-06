@@ -148,6 +148,38 @@ bamf/
 - **Git**: Conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
 - **Helm**: Primary deployment mechanism; every service change needs chart updates
 
+## Security Testing
+
+BAMF includes a pen testing suite that runs SAST, container image scanning, and
+DAST. All tools run in Docker.
+
+```zsh
+# Static analysis (Semgrep) — no prerequisites
+gmake pentest-sast
+
+# Container image CVE scan (Trivy) — requires gmake images
+gmake pentest-images
+
+# Dynamic testing against live local stack (Nuclei) — requires gmake dev
+gmake pentest-dast
+
+# Run all three
+gmake pentest
+```
+
+Reports are written to `reports/pentest/` (gitignored). SAST and image scanning
+run in CI automatically. DAST requires a running Kubernetes stack, so it is run
+locally before releases.
+
+Custom BAMF-specific rules:
+- **Semgrep**: `pentest/semgrep/.semgrep.yml` — architecture rules (no CGo, no
+  `database/sql` in Go, timezone-aware datetimes, no hardcoded secrets)
+- **Nuclei**: `pentest/nuclei/bamf-templates/` — auth bypass, header injection,
+  internal endpoint exposure, CORS, certificate endpoint, webhook security
+- **Trivy**: `pentest/trivy/.trivyignore` — accepted CVE allowlist
+
+See [Security Model](architecture/security.md#pen-testing) for full details.
+
 ## Makefile Targets
 
 | Target | Description |
@@ -161,6 +193,11 @@ bamf/
 | `gmake test-go` | Run Go tests |
 | `gmake test-python` | Run Python tests (Docker) |
 | `gmake lint` | Run all linters |
+| `gmake security-scan` | Run dependency vulnerability scanners |
+| `gmake pentest` | Run all pen tests (SAST + image scan + DAST) |
+| `gmake pentest-sast` | Static analysis (Semgrep) |
+| `gmake pentest-images` | Container image CVE scan (Trivy) |
+| `gmake pentest-dast` | Dynamic testing against live stack (Nuclei) |
 | `gmake db-migrate` | Apply database migrations |
 | `gmake db-rollback` | Rollback last migration |
 | `gmake db-reset` | Full database reset |

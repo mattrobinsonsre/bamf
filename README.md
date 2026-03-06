@@ -269,6 +269,38 @@ kubectl --context bamf-prod-cluster get pods
 | [Development](docs/development.md) | Building from source |
 | [BAMF vs Teleport](docs/comparison.md) | Feature and license comparison |
 
+## Security Testing
+
+BAMF includes a built-in pen testing suite covering static analysis, container
+image CVE scanning, and dynamic application security testing against the live
+stack. All tools run in Docker — no local security tooling required.
+
+```zsh
+# Static analysis (Semgrep) — no prerequisites
+gmake pentest-sast
+
+# Container image CVE scan (Trivy) — requires gmake images
+gmake pentest-images
+
+# Dynamic testing against live stack (Nuclei) — requires gmake dev
+gmake pentest-dast
+
+# Run all pen tests
+gmake pentest
+```
+
+| Tool | What it checks |
+|------|----------------|
+| **Semgrep** (SAST) | OWASP Top 10, secrets in code, Python/Go best practices, BAMF architecture rules (no CGo, no direct DB access from Go, timezone-aware datetimes) |
+| **Trivy** (image scan) | OS package and language dependency CVEs in all four container images (API, bridge, agent, web) |
+| **Nuclei** (DAST) | Auth bypass, identity header injection, internal endpoint exposure, CORS misconfig, certificate endpoint security, webhook method restrictions |
+
+SAST and image scanning run in CI on every push. Custom Semgrep rules enforce
+BAMF-specific architecture invariants. Custom Nuclei templates validate the
+security properties documented in [Security Model](docs/architecture/security.md).
+
+See [Development Guide](docs/development.md) for details.
+
 ## Building from Source
 
 ```zsh
