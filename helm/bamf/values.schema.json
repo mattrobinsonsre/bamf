@@ -162,6 +162,11 @@
         "extraVolumes": { "type": "array" },
         "extraVolumeMounts": { "type": "array" },
         "extraInitContainers": { "type": "array" },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Override container command (e.g., uvicorn with --reload for local dev)."
+        },
         "service": { "$ref": "#/$defs/serviceSpec" },
         "serviceAccount": { "$ref": "#/$defs/serviceAccountSpec" }
       }
@@ -225,6 +230,7 @@
         "resources": { "$ref": "#/$defs/resourceSpec" },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
         "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "startupProbe": { "type": "object" },
         "livenessProbe": { "type": "object" },
         "readinessProbe": { "type": "object" },
         "podAnnotations": { "type": "object" },
@@ -662,10 +668,19 @@
       }
     },
 
+    "bootstrap": {
+      "type": "object",
+      "description": "Bootstrap admin user and join token for initial setup.",
+      "properties": {
+        "adminEmail": { "type": "string" },
+        "adminPassword": { "type": "string" },
+        "joinToken": { "type": "string" }
+      }
+    },
+
     "kubamf": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "Kubamf — browser-based Kubernetes GUI, deployed alongside agent.",
+      "description": "Kubamf — browser-based Kubernetes GUI, deployed alongside agent. Accepts subchart values.",
       "properties": {
         "enabled": { "type": "boolean" },
         "bamf": {
