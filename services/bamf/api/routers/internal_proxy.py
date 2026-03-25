@@ -409,9 +409,7 @@ async def recording(req: RecordingRequest) -> dict:
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _match_webhook(
-    resource, method: str, path: str, client_ip: str | None
-) -> dict | None:
+def _match_webhook(resource, method: str, path: str, client_ip: str | None) -> dict | None:
     """Check if a request matches a webhook passthrough rule.
 
     Returns the matched webhook config dict, or None if no match.
@@ -452,9 +450,7 @@ def _match_webhook(
     return None
 
 
-async def _resolve_relay(
-    r, resource, satellite_name: str | None = None
-) -> RelayInfo | None:
+async def _resolve_relay(r, resource, satellite_name: str | None = None) -> RelayInfo | None:
     """Resolve relay bridge and agent for a resource.
 
     Handles: agent status check, relay bridge assignment, relay_connect

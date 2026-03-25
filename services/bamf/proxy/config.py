@@ -26,7 +26,9 @@ class ProxySettings(BaseSettings):
     # Shared secret for authenticating with the API's internal proxy endpoints
     internal_token: str = Field(
         default="",
-        description="Shared secret for proxy→API auth. Must match BAMF_PROXY_INTERNAL_TOKEN on API.",
+        description=(
+            "Shared secret for proxy→API auth. Must match BAMF_PROXY_INTERNAL_TOKEN on API."
+        ),
     )
 
     # Tunnel domain for host-header matching (e.g., "tunnel.bamf.local")

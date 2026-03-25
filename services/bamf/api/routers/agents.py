@@ -356,9 +356,7 @@ async def agent_heartbeat(
                 cursor = "0"
                 prefix = f"agent:{agent_id_str}:relay:"
                 while True:
-                    cursor, keys = await r.scan(
-                        cursor=cursor, match=f"{prefix}*", count=20
-                    )
+                    cursor, keys = await r.scan(cursor=cursor, match=f"{prefix}*", count=20)
                     for key in keys:
                         # Skip the global relay_bridge key (already handled)
                         if key == f"agent:{agent_id_str}:relay_bridge":

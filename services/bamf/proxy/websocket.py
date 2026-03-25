@@ -15,11 +15,10 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+import structlog
 import wsproto
 import wsproto.events
 from starlette.websockets import WebSocket, WebSocketDisconnect
-
-import structlog
 
 if TYPE_CHECKING:
     pass
@@ -176,7 +175,7 @@ async def ws_relay(
             task.cancel()
             try:
                 await task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError, Exception:
                 pass
     finally:
         writer.close()

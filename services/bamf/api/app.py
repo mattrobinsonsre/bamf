@@ -36,9 +36,9 @@ from .routers.internal_proxy import router as internal_proxy_router
 from .routers.resources import router as resources_router
 from .routers.role_assignments import router as role_assignments_router
 from .routers.roles import router as roles_router
-from .routers.terminal import router as terminal_router
 from .routers.satellite_tokens import router as satellite_tokens_router
 from .routers.satellites import router as satellites_router
+from .routers.terminal import router as terminal_router
 from .routers.tokens import router as tokens_router
 from .routers.tunnels import router as tunnels_router
 from .routers.users import router as users_router

@@ -78,9 +78,7 @@ def geoip_lookup(source_ip: str) -> tuple[float, float] | None:
     return None
 
 
-def haversine_distance(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great-circle distance in km between two points.
 
     Uses the haversine formula. Earth radius = 6371 km.

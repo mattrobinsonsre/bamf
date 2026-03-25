@@ -81,9 +81,7 @@ async def forward_to_bridge(
         return None
 
 
-async def assign_relay_bridge(
-    r, agent_id: str, satellite_name: str | None = None
-) -> str | None:
+async def assign_relay_bridge(r, agent_id: str, satellite_name: str | None = None) -> str | None:
     """Assign a bridge for the agent's relay connection.
 
     Picks the least-loaded bridge from the sorted set and stores

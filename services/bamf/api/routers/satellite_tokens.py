@@ -90,9 +90,7 @@ async def create_satellite_token(
     The secret token value is returned only once at creation time.
     """
     # Check for duplicate name
-    existing = await db.execute(
-        select(SatelliteToken).where(SatelliteToken.name == body.name)
-    )
+    existing = await db.execute(select(SatelliteToken).where(SatelliteToken.name == body.name))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -162,9 +160,7 @@ async def get_satellite_token(
     current_user: Session = Depends(require_admin_or_audit),
 ) -> SatelliteTokenResponse:
     """Get a single satellite token by ID."""
-    result = await db.execute(
-        select(SatelliteToken).where(SatelliteToken.id == token_id)
-    )
+    result = await db.execute(select(SatelliteToken).where(SatelliteToken.id == token_id))
     token = result.scalar_one_or_none()
 
     if not token:
@@ -183,9 +179,7 @@ async def revoke_satellite_token(
     current_user: Session = Depends(require_admin),
 ) -> SuccessResponse:
     """Revoke a satellite token."""
-    result = await db.execute(
-        select(SatelliteToken).where(SatelliteToken.id == token_id)
-    )
+    result = await db.execute(select(SatelliteToken).where(SatelliteToken.id == token_id))
     token = result.scalar_one_or_none()
 
     if not token:
@@ -231,9 +225,7 @@ async def revoke_satellite_token_by_name(
     current_user: Session = Depends(require_admin),
 ) -> SuccessResponse:
     """Revoke a satellite token by name (CLI convenience)."""
-    result = await db.execute(
-        select(SatelliteToken).where(SatelliteToken.name == token_name)
-    )
+    result = await db.execute(select(SatelliteToken).where(SatelliteToken.name == token_name))
     token = result.scalar_one_or_none()
 
     if not token:

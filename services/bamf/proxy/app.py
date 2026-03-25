@@ -23,7 +23,8 @@ from starlette.websockets import WebSocket
 from . import api_client
 from .config import settings
 from .handler import handle_proxy_websocket, proxy_middleware
-from .kube import kube_proxy_ws, router as kube_router
+from .kube import kube_proxy_ws
+from .kube import router as kube_router
 
 logger = structlog.get_logger(__name__)
 

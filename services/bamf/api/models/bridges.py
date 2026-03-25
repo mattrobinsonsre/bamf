@@ -32,9 +32,7 @@ class BridgeHeartbeatRequest(BAMFBaseModel):
 
     active_tunnels: int = Field(default=0, ge=0)
     hostname: str = Field(default="", description="Bridge hostname for re-registration")
-    satellite_name: str | None = Field(
-        default=None, description="Satellite this bridge belongs to"
-    )
+    satellite_name: str | None = Field(default=None, description="Satellite this bridge belongs to")
 
 
 class SessionValidateRequest(BAMFBaseModel):

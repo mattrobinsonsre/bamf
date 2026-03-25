@@ -64,9 +64,7 @@ async def join_satellite(
     """
     token_hash = hashlib.sha256(request.join_token.encode()).hexdigest()
 
-    result = await db.execute(
-        select(SatelliteToken).where(SatelliteToken.token_hash == token_hash)
-    )
+    result = await db.execute(select(SatelliteToken).where(SatelliteToken.token_hash == token_hash))
     token = result.scalar_one_or_none()
 
     if not token:
@@ -214,9 +212,7 @@ async def get_satellite(
     current_user: Session = Depends(require_admin_or_audit),
 ) -> SatelliteResponse:
     """Get a single satellite by ID."""
-    result = await db.execute(
-        select(Satellite).where(Satellite.id == satellite_id)
-    )
+    result = await db.execute(select(Satellite).where(Satellite.id == satellite_id))
     satellite = result.scalar_one_or_none()
 
     if not satellite:
@@ -240,9 +236,7 @@ async def deactivate_satellite(
     pods will fail auth and stop serving traffic. Bridge registrations
     expire via Redis TTL. Agent relay connections are disconnected.
     """
-    result = await db.execute(
-        select(Satellite).where(Satellite.id == satellite_id)
-    )
+    result = await db.execute(select(Satellite).where(Satellite.id == satellite_id))
     satellite = result.scalar_one_or_none()
 
     if not satellite:
@@ -278,6 +272,4 @@ async def deactivate_satellite(
         details={"satellite_name": satellite.name},
     )
 
-    return SuccessResponse(
-        message=f"Satellite '{satellite.name}' has been deactivated"
-    )
+    return SuccessResponse(message=f"Satellite '{satellite.name}' has been deactivated")

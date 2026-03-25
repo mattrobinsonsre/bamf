@@ -342,7 +342,11 @@ async def _select_bridge(
     if satellite_name:
         bridges_with_scores = await r.zrangebyscore(
             f"bridges:available:{satellite_name}",
-            "-inf", "+inf", start=0, num=50, withscores=True,
+            "-inf",
+            "+inf",
+            start=0,
+            num=50,
+            withscores=True,
         )
     if not bridges_with_scores:
         bridges_with_scores = await r.zrangebyscore(
