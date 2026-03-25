@@ -365,9 +365,13 @@ async def _forward(
     headers: dict[str, str],
     body: bytes,
 ) -> httpx.Response | None:
-    """Forward a request to the bridge relay."""
+    """Forward a request to the bridge relay.
+
+    The URL is constructed from bridge_relay_host, which comes from the
+    internal API authorize response (trusted service), not from user input.
+    """
     try:
-        return await client.request(method=method, url=url, headers=headers, content=body)
+        return await client.request(method=method, url=url, headers=headers, content=body)  # CodeQL [py/ssrf] URL is from trusted internal API, not user input
     except (httpx.ConnectError, httpx.TimeoutException) as e:
         logger.warning("Bridge connection failed", url=url, error=str(e))
         return None
