@@ -288,7 +288,7 @@ async def _forward_with_retry(
     async def _do_stream() -> httpx.Response | None:
         nonlocal pool_exhausted
         try:
-            resp = await client.send(  # CodeQL [py/ssrf] URL is from trusted internal API, not user input
+            resp = await client.send(  # codeql[py/ssrf] URL is from trusted internal API, not user input
                 client.build_request(method=method, url=url, headers=headers, content=body),
                 stream=True,
             )
