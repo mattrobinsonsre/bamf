@@ -6,26 +6,31 @@ flow and admin management endpoints.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.routers.satellite_tokens import router as token_router
 from bamf.api.routers.satellites import router as satellite_router
 from bamf.auth.sessions import Session
 from bamf.db.session import get_db
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
+_NOW = datetime.now(UTC).isoformat()
 
 ADMIN_SESSION = Session(
     email="admin@example.com",
     display_name="Admin",
     roles=["admin"],
     provider_name="local",
+    created_at=_NOW,
+    expires_at=_NOW,
+    last_active_at=_NOW,
 )
 
 

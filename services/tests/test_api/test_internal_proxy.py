@@ -15,7 +15,6 @@ from httpx import ASGITransport, AsyncClient
 
 from bamf.api.routers.internal_proxy import router
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
 
@@ -232,7 +231,9 @@ class TestAuthorizeEndpoint:
             ),
             patch(
                 "bamf.api.routers.internal_proxy.async_session_factory_read",
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()),
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()
+                ),
             ),
             patch(
                 "bamf.api.routers.internal_proxy.check_access",
@@ -284,7 +285,9 @@ class TestAuthorizeEndpoint:
             ),
             patch(
                 "bamf.api.routers.internal_proxy.async_session_factory_read",
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()),
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()
+                ),
             ),
             patch(
                 "bamf.api.routers.internal_proxy.check_access",
@@ -319,9 +322,7 @@ class TestAuthorizeEndpoint:
     @pytest.mark.asyncio
     async def test_webhook_bypass_auth(self, internal_client):
         """Webhook match skips session auth entirely."""
-        resource = FakeResource(
-            webhooks=[{"path": "/webhook", "methods": ["POST"]}]
-        )
+        resource = FakeResource(webhooks=[{"path": "/webhook", "methods": ["POST"]}])
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(
             side_effect=lambda key: {
@@ -409,7 +410,9 @@ class TestAuditEndpoint:
         with (
             patch(
                 "bamf.api.routers.internal_proxy.async_session_factory",
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()),
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()
+                ),
             ),
             patch(
                 "bamf.api.routers.internal_proxy.log_audit_event",
@@ -462,7 +465,9 @@ class TestRecordingEndpoint:
         mock_db = AsyncMock()
         with patch(
             "bamf.api.routers.internal_proxy.async_session_factory",
-            return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()),
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_db), __aexit__=AsyncMock()
+            ),
         ):
             resp = await internal_client.post(
                 "/api/v1/internal/proxy/recording",

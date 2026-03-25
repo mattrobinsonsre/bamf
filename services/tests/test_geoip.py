@@ -16,7 +16,6 @@ from bamf.services.geoip import (
     select_nearest_satellite,
 )
 
-
 # ── haversine_distance ───────────────────────────────────────────────────
 
 

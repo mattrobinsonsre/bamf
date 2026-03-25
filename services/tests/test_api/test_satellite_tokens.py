@@ -6,25 +6,30 @@ revoking, and getting satellite join tokens.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.routers.satellite_tokens import router
 from bamf.auth.sessions import Session
 from bamf.db.session import get_db
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
+_NOW = datetime.now(UTC).isoformat()
 
 ADMIN_SESSION = Session(
     email="admin@example.com",
     display_name="Admin",
     roles=["admin"],
     provider_name="local",
+    created_at=_NOW,
+    expires_at=_NOW,
+    last_active_at=_NOW,
 )
 
 AUDIT_SESSION = Session(
@@ -32,6 +37,9 @@ AUDIT_SESSION = Session(
     display_name="Auditor",
     roles=["audit"],
     provider_name="local",
+    created_at=_NOW,
+    expires_at=_NOW,
+    last_active_at=_NOW,
 )
 
 
@@ -189,9 +197,7 @@ class TestRevokeSatelliteToken:
         token_id = create_resp.json()["id"]
 
         with _patch_admin(), _patch_audit_log():
-            resp = await sat_token_client.delete(
-                f"/api/v1/satellite-tokens/{token_id}"
-            )
+            resp = await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
         assert resp.status_code == 200
         assert "revoked" in resp.json()["message"].lower()
 
@@ -206,9 +212,7 @@ class TestRevokeSatelliteToken:
                     "expires_in_hours": 24,
                 },
             )
-            resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens/revoke-name-test/revoke"
-            )
+            resp = await sat_token_client.post("/api/v1/satellite-tokens/revoke-name-test/revoke")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -224,9 +228,7 @@ class TestRevokeSatelliteToken:
             )
             token_id = create_resp.json()["id"]
             await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
-            resp = await sat_token_client.delete(
-                f"/api/v1/satellite-tokens/{token_id}"
-            )
+            resp = await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
