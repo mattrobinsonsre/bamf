@@ -380,7 +380,7 @@ satellite:
   # DNS-safe short name for this satellite (e.g., "us-east", "eu", "apac").
   # Used as a hostname prefix: *.{name}.tunnel.{domain}
   # Must match [a-z][a-z0-9-]*, max 63 characters.
-  name: ""
+  name: "default"
 
   # For remote satellites (api is not co-located):
   # Join token from `POST /api/v1/satellite-tokens`
