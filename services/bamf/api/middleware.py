@@ -18,7 +18,7 @@ from bamf.db.session import async_session_factory
 from bamf.logging_config import get_logger
 from bamf.services.audit_service import log_audit_event
 
-from .proxy.redact import redact_body, redact_headers, redact_query
+from bamf.proxy.redact import redact_body, redact_headers, redact_query
 
 logger = get_logger(__name__)
 
