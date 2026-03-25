@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import bamf.proxy.api_client as mod
+
 
 # We patch the settings import before importing api_client so
 # the module-level `settings` picks up our test values.
@@ -28,8 +30,6 @@ def _patch_settings():
 @pytest.fixture(autouse=True)
 def _reset_client():
     """Reset the shared httpx client between tests."""
-    import bamf.proxy.api_client as mod
-
     mod._client = None
     yield
     mod._client = None
@@ -41,8 +41,6 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_allowed_with_full_response(self):
         """Successful authorize returns all fields populated."""
-        from bamf.proxy.api_client import authorize
-
         response_data = {
             "allowed": True,
             "reason": None,
@@ -81,7 +79,7 @@ class TestAuthorize:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(
+            result = await mod.authorize(
                 session_token="tok-abc",
                 tunnel_hostname="grafana",
                 method="GET",
@@ -107,8 +105,6 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_denied_no_session(self):
         """Denied authorize with reason no_session."""
-        from bamf.proxy.api_client import authorize
-
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -121,7 +117,7 @@ class TestAuthorize:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(tunnel_hostname="grafana")
+            result = await mod.authorize(tunnel_hostname="grafana")
 
         assert result.allowed is False
         assert result.reason == "no_session"
@@ -132,13 +128,11 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_connection_error_returns_api_unavailable(self):
         """Network error returns allowed=False with reason api_unavailable."""
-        from bamf.proxy.api_client import authorize
-
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("connection refused")
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(session_token="tok-abc", tunnel_hostname="grafana")
+            result = await mod.authorize(session_token="tok-abc", tunnel_hostname="grafana")
 
         assert result.allowed is False
         assert result.reason == "api_unavailable"
@@ -146,13 +140,11 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_timeout_returns_api_unavailable(self):
         """Timeout returns allowed=False with reason api_unavailable."""
-        from bamf.proxy.api_client import authorize
-
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ReadTimeout("read timeout")
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(session_token="tok-abc", tunnel_hostname="grafana")
+            result = await mod.authorize(session_token="tok-abc", tunnel_hostname="grafana")
 
         assert result.allowed is False
         assert result.reason == "api_unavailable"
@@ -160,8 +152,6 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_api_error_status(self):
         """Non-200 status returns allowed=False with reason api_error."""
-        from bamf.proxy.api_client import authorize
-
         mock_resp = MagicMock()
         mock_resp.status_code = 500
 
@@ -169,7 +159,7 @@ class TestAuthorize:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(session_token="tok-abc", tunnel_hostname="grafana")
+            result = await mod.authorize(session_token="tok-abc", tunnel_hostname="grafana")
 
         assert result.allowed is False
         assert result.reason == "api_error"
@@ -177,8 +167,6 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_webhook_match_no_session(self):
         """Webhook match returns with no session but resource and relay."""
-        from bamf.proxy.api_client import authorize
-
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -197,7 +185,7 @@ class TestAuthorize:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(tunnel_hostname="grafana", method="POST", path="/webhook")
+            result = await mod.authorize(tunnel_hostname="grafana", method="POST", path="/webhook")
 
         assert result.allowed is True
         assert result.session is None
@@ -207,8 +195,6 @@ class TestAuthorize:
     @pytest.mark.asyncio
     async def test_missing_optional_fields(self):
         """Response with minimal fields still parses correctly."""
-        from bamf.proxy.api_client import authorize
-
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"allowed": False, "reason": "resource_not_found"}
@@ -217,7 +203,7 @@ class TestAuthorize:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            result = await authorize(tunnel_hostname="nonexistent")
+            result = await mod.authorize(tunnel_hostname="nonexistent")
 
         assert result.allowed is False
         assert result.reason == "resource_not_found"
@@ -232,8 +218,6 @@ class TestLogAudit:
     @pytest.mark.asyncio
     async def test_fire_and_forget(self):
         """log_audit sends POST and doesn't raise on success."""
-        from bamf.proxy.api_client import log_audit
-
         mock_resp = MagicMock()
         mock_resp.status_code = 202
 
@@ -241,7 +225,7 @@ class TestLogAudit:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            await log_audit(
+            await mod.log_audit(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 method="GET",
@@ -256,14 +240,12 @@ class TestLogAudit:
     @pytest.mark.asyncio
     async def test_swallows_errors(self):
         """log_audit doesn't raise on network errors."""
-        from bamf.proxy.api_client import log_audit
-
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("down")
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
             # Should not raise
-            await log_audit(resource_name="grafana")
+            await mod.log_audit(resource_name="grafana")
 
 
 class TestStoreRecording:
@@ -272,8 +254,6 @@ class TestStoreRecording:
     @pytest.mark.asyncio
     async def test_fire_and_forget(self):
         """store_recording sends POST and doesn't raise on success."""
-        from bamf.proxy.api_client import store_recording
-
         mock_resp = MagicMock()
         mock_resp.status_code = 202
 
@@ -281,7 +261,7 @@ class TestStoreRecording:
         mock_client.post.return_value = mock_resp
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
-            await store_recording(
+            await mod.store_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 data='{"request": {}, "response": {}}',
@@ -294,14 +274,12 @@ class TestStoreRecording:
     @pytest.mark.asyncio
     async def test_swallows_errors(self):
         """store_recording doesn't raise on network errors."""
-        from bamf.proxy.api_client import store_recording
-
         mock_client = AsyncMock()
         mock_client.post.side_effect = Exception("boom")
 
         with patch("bamf.proxy.api_client._get_client", return_value=mock_client):
             # Should not raise
-            await store_recording(
+            await mod.store_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 data="{}",
@@ -314,15 +292,11 @@ class TestCloseClient:
     @pytest.mark.asyncio
     async def test_close_client_resets_global(self):
         """close_client sets _client back to None."""
-        from bamf.proxy.api_client import close_client
-
-        import bamf.proxy.api_client as mod
-
         # Simulate an initialized client
         mock_client = AsyncMock()
         mod._client = mock_client
 
-        await close_client()
+        await mod.close_client()
 
         assert mod._client is None
         mock_client.aclose.assert_called_once()
@@ -330,10 +304,6 @@ class TestCloseClient:
     @pytest.mark.asyncio
     async def test_close_client_noop_when_none(self):
         """close_client is safe to call when no client exists."""
-        from bamf.proxy.api_client import close_client
-
-        import bamf.proxy.api_client as mod
-
         mod._client = None
         # Should not raise
-        await close_client()
+        await mod.close_client()
