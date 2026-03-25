@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from bamf.api.routers.internal_proxy import _match_webhook, router
+from bamf.api.routers.internal_proxy import router
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────

@@ -337,7 +337,7 @@ async def _forward_with_retry(
 async def _close_client(client: httpx.AsyncClient) -> None:
     try:
         await client.aclose()
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort cleanup, errors are not actionable
         pass
 
 

@@ -314,7 +314,7 @@ class TestCloseClient:
     @pytest.mark.asyncio
     async def test_close_client_resets_global(self):
         """close_client sets _client back to None."""
-        from bamf.proxy.api_client import _client, close_client
+        from bamf.proxy.api_client import close_client
 
         import bamf.proxy.api_client as mod
 

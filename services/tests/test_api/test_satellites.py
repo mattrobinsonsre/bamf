@@ -6,19 +6,15 @@ flow and admin management endpoints.
 
 from __future__ import annotations
 
-import hashlib
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.routers.satellite_tokens import router as token_router
 from bamf.api.routers.satellites import router as satellite_router
 from bamf.auth.sessions import Session
-from bamf.db.models import Satellite, SatelliteToken
 from bamf.db.session import get_db
 
 

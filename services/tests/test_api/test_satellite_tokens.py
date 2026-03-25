@@ -6,18 +6,14 @@ revoking, and getting satellite join tokens.
 
 from __future__ import annotations
 
-import hashlib
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.routers.satellite_tokens import router
 from bamf.auth.sessions import Session
-from bamf.db.models import SatelliteToken
 from bamf.db.session import get_db
 
 

@@ -13,16 +13,14 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
-import json
 import secrets
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.bridge_relay import (
     assign_relay_bridge,

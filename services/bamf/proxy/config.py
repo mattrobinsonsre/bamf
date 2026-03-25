@@ -4,8 +4,6 @@ Minimal config — the proxy only needs to know how to reach the API
 and the tunnel domain for host-header matching.
 """
 
-from typing import Any
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

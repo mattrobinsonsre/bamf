@@ -45,7 +45,7 @@ def _get_reader():
         _reader = geoip2.database.Reader(path)
         logger.info("GeoIP database loaded", path=path)
         return _reader
-    except Exception:
+    except Exception:  # noqa: BLE001 — graceful fallback when geoip2/database missing
         _reader = False
         logger.debug("GeoIP database not available — satellite selection will use defaults")
         return None
@@ -72,8 +72,8 @@ def geoip_lookup(source_ip: str) -> tuple[float, float] | None:
         response = reader.city(source_ip)
         if response.location.latitude is not None and response.location.longitude is not None:
             return (response.location.latitude, response.location.longitude)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 — IP may not exist in database
+        return None
 
     return None
 
