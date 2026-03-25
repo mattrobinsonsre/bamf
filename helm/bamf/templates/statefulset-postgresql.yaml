@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: {{ .Values.postgresql.bundled.image.repository }}:{{ .Values.postgresql.bundled.image.tag }}
+          image: {{ include "bamf.image" (dict "imageValues" .Values.postgresql.bundled.image "appVersion" .Values.postgresql.bundled.image.tag "globalRegistry" .Values.global.imageRegistry) }}
           imagePullPolicy: {{ .Values.postgresql.bundled.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - name: tcp-postgresql

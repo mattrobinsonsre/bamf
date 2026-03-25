@@ -1,0 +1,18 @@
+# gitleaks configuration for BAMF
+# https://github.com/gitleaks/gitleaks
+
+title = "BAMF gitleaks config"
+
+[allowlist]
+  description = "Allowlisted paths and patterns"
+  paths = [
+    # Test fixtures may contain fake secrets
+    '''services/tests/''',
+    # Pen test rules reference secret patterns
+    '''pentest/''',
+    # Lock files
+    '''poetry\.lock''',
+    '''package-lock\.json''',
+    # Alembic migrations (revision hashes look like secrets)
+    '''alembic/versions/''',
+  ]
