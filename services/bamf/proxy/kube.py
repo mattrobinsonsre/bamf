@@ -269,7 +269,11 @@ async def kube_proxy_ws(
 
     try:
         ws_conn, negotiated = await ws_handshake(
-            reader, writer, relay_path, ws_headers, subprotocols,
+            reader,
+            writer,
+            relay_path,
+            ws_headers,
+            subprotocols,
         )
     except RuntimeError as e:
         logger.error("Kube WS: upgrade handshake failed", error=str(e))
@@ -371,7 +375,7 @@ async def _forward(
     internal API authorize response (trusted service), not from user input.
     """
     try:
-        return await client.request(method=method, url=url, headers=headers, content=body)  # codeql[py/ssrf] URL is from trusted internal API, not user input
+        return await client.request(method=method, url=url, headers=headers, content=body)
     except (httpx.ConnectError, httpx.TimeoutException) as e:
         logger.warning("Bridge connection failed", url=url, error=str(e))
         return None

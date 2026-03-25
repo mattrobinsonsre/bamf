@@ -153,9 +153,7 @@ async def handle_proxy_request(request: Request) -> Response:
 
     # Handle webhook passthrough
     if auth.webhook_match:
-        return await _handle_webhook_request(
-            request, auth, tunnel_hostname, tunnel_domain
-        )
+        return await _handle_webhook_request(request, auth, tunnel_hostname, tunnel_domain)
 
     # Authenticated request
     resource = auth.resource
@@ -192,7 +190,10 @@ async def handle_proxy_request(request: Request) -> Response:
     t0 = time.monotonic()
 
     resp = await _forward_with_retry(
-        request.method, bridge_url, rewritten, body,
+        request.method,
+        bridge_url,
+        rewritten,
+        body,
         auth=auth,
     )
 
@@ -288,7 +289,7 @@ async def _forward_with_retry(
     async def _do_stream() -> httpx.Response | None:
         nonlocal pool_exhausted
         try:
-            resp = await client.send(  # codeql[py/ssrf] URL is from trusted internal API, not user input
+            resp = await client.send(
                 client.build_request(method=method, url=url, headers=headers, content=body),
                 stream=True,
             )
@@ -322,7 +323,7 @@ async def _forward_with_retry(
             await resp.aclose()
         # Re-authorize to ensure relay is connected
         # (the API's authorize endpoint handles relay_connect internally)
-        reauth = await api_client.authorize(
+        await api_client.authorize(
             session_token=None,  # Webhook or already-authed
             tunnel_hostname=auth.resource.tunnel_hostname if auth.resource else None,
             resource_name=auth.resource.name if auth.resource else None,
@@ -440,7 +441,11 @@ async def handle_proxy_websocket(websocket: WebSocket) -> None:
 
     try:
         ws_conn, negotiated = await ws_handshake(
-            reader, writer, relay_path, ws_headers, subprotocols,
+            reader,
+            writer,
+            relay_path,
+            ws_headers,
+            subprotocols,
         )
     except RuntimeError as e:
         logger.error("WebSocket: upgrade handshake failed", error=str(e))
@@ -526,9 +531,7 @@ def _auth_error_response(request: Request) -> Response:
         original_url = f"https://{host}{request.url.path}"
         if request.url.query:
             original_url += f"?{request.url.query}"
-        login_url = (
-            f"{settings.callback_base_url}/login?redirect={quote(original_url, safe='')}"
-        )
+        login_url = f"{settings.callback_base_url}/login?redirect={quote(original_url, safe='')}"
         return RedirectResponse(url=login_url, status_code=302)
 
     return StarletteResponse(
@@ -584,7 +587,11 @@ async def _handle_webhook_request(
     body = await request.body()
 
     resp = await _forward_with_retry(
-        request.method, bridge_url, rewritten, body, auth=auth,
+        request.method,
+        bridge_url,
+        rewritten,
+        body,
+        auth=auth,
     )
 
     if resp is None:
