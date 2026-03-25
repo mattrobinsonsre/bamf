@@ -33,7 +33,12 @@ def upgrade() -> None:
         sa.Column("max_uses", sa.Integer, nullable=True),
         sa.Column("use_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("is_revoked", sa.Boolean, nullable=False, server_default="false"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
     )
 
@@ -47,8 +52,18 @@ def upgrade() -> None:
         sa.Column("latitude", sa.Float, nullable=True),
         sa.Column("longitude", sa.Float, nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
     )
 
 

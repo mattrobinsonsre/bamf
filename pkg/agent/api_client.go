@@ -103,11 +103,7 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 			TunnelHostname: r.TunnelHostname,
 		}
 		for _, wh := range r.Webhooks {
-			hbResources[i].Webhooks = append(hbResources[i].Webhooks, heartbeatWebhook{
-				Path:        wh.Path,
-				Methods:     wh.Methods,
-				SourceCIDRs: wh.SourceCIDRs,
-			})
+			hbResources[i].Webhooks = append(hbResources[i].Webhooks, heartbeatWebhook(wh))
 		}
 	}
 

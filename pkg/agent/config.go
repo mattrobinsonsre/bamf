@@ -328,11 +328,7 @@ func resourceConfigFromYAML(resourceType string, res yamlResource) ResourceConfi
 
 	// Webhooks
 	for _, wh := range res.Webhooks {
-		rc.Webhooks = append(rc.Webhooks, WebhookConfig{
-			Path:        wh.Path,
-			Methods:     wh.Methods,
-			SourceCIDRs: wh.SourceCIDRs,
-		})
+		rc.Webhooks = append(rc.Webhooks, WebhookConfig(wh))
 	}
 
 	return rc

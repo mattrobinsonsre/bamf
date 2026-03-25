@@ -14,9 +14,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bamf.api.dependencies import require_admin, require_admin_or_audit
 from bamf.api.routers.satellite_tokens import router
 from bamf.auth.sessions import Session
-from bamf.db.session import get_db
+from bamf.db.session import get_db, get_db_read
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -45,14 +46,23 @@ AUDIT_SESSION = Session(
 
 @pytest.fixture
 def sat_token_app(db_session: AsyncSession):
-    """Minimal app with satellite-tokens router."""
+    """Minimal app with satellite-tokens router and auth overrides."""
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
     async def override_get_db():
         yield db_session
 
+    async def override_admin() -> Session:
+        return ADMIN_SESSION
+
+    async def override_audit() -> Session:
+        return AUDIT_SESSION
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_db_read] = override_get_db
+    app.dependency_overrides[require_admin] = override_admin
+    app.dependency_overrides[require_admin_or_audit] = override_audit
     return app
 
 
@@ -63,22 +73,6 @@ async def sat_token_client(sat_token_app):
         base_url="http://test",
     ) as client:
         yield client
-
-
-def _patch_admin():
-    """Patch require_admin to return ADMIN_SESSION."""
-    return patch(
-        "bamf.api.routers.satellite_tokens.require_admin",
-        return_value=ADMIN_SESSION,
-    )
-
-
-def _patch_audit():
-    """Patch require_admin_or_audit to return AUDIT_SESSION."""
-    return patch(
-        "bamf.api.routers.satellite_tokens.require_admin_or_audit",
-        return_value=AUDIT_SESSION,
-    )
 
 
 def _patch_audit_log():
@@ -95,7 +89,7 @@ def _patch_audit_log():
 class TestCreateSatelliteToken:
     @pytest.mark.asyncio
     async def test_create_returns_token(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             resp = await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -114,7 +108,7 @@ class TestCreateSatelliteToken:
 
     @pytest.mark.asyncio
     async def test_create_with_region_and_max_uses(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             resp = await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -132,7 +126,7 @@ class TestCreateSatelliteToken:
 
     @pytest.mark.asyncio
     async def test_create_duplicate_name_fails(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -155,8 +149,7 @@ class TestCreateSatelliteToken:
 class TestListSatelliteTokens:
     @pytest.mark.asyncio
     async def test_list_empty(self, sat_token_client):
-        with _patch_audit():
-            resp = await sat_token_client.get("/api/v1/satellite-tokens")
+        resp = await sat_token_client.get("/api/v1/satellite-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -164,7 +157,7 @@ class TestListSatelliteTokens:
 
     @pytest.mark.asyncio
     async def test_list_includes_created_token(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -173,8 +166,7 @@ class TestListSatelliteTokens:
                     "expires_in_hours": 24,
                 },
             )
-        with _patch_audit():
-            resp = await sat_token_client.get("/api/v1/satellite-tokens")
+        resp = await sat_token_client.get("/api/v1/satellite-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) >= 1
@@ -185,7 +177,7 @@ class TestListSatelliteTokens:
 class TestRevokeSatelliteToken:
     @pytest.mark.asyncio
     async def test_revoke_by_id(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             create_resp = await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -196,14 +188,14 @@ class TestRevokeSatelliteToken:
             )
         token_id = create_resp.json()["id"]
 
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             resp = await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
         assert resp.status_code == 200
         assert "revoked" in resp.json()["message"].lower()
 
     @pytest.mark.asyncio
     async def test_revoke_by_name(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -217,7 +209,7 @@ class TestRevokeSatelliteToken:
 
     @pytest.mark.asyncio
     async def test_revoke_already_revoked_fails(self, sat_token_client, db_session):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             create_resp = await sat_token_client.post(
                 "/api/v1/satellite-tokens",
                 json={
@@ -233,7 +225,7 @@ class TestRevokeSatelliteToken:
 
     @pytest.mark.asyncio
     async def test_revoke_nonexistent_fails(self, sat_token_client):
-        with _patch_admin(), _patch_audit_log():
+        with _patch_audit_log():
             resp = await sat_token_client.delete(
                 "/api/v1/satellite-tokens/00000000-0000-0000-0000-000000000000"
             )
