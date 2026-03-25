@@ -90,6 +90,13 @@ spec:
                   name: {{ .Values.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
                   key: {{ .Values.bridge.bootstrap.tokenKey | default "token" }}
             {{- end }}
+            {{- if .Values.proxy.enabled }}
+            - name: BAMF_PROXY_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.fullname" . }}-proxy-token
+                  key: token
+            {{- end }}
             {{- range $name, $provider := .Values.auth.sso.oidc }}
             {{- if $provider.enabled }}
             - name: BAMF_{{ $name | upper }}_CLIENT_SECRET

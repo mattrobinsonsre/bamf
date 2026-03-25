@@ -1,0 +1,120 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bamf.fullname" . }}-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  {{- if not .Values.proxy.autoscaling.enabled }}
+  replicas: {{ .Values.proxy.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "bamf.proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-proxy.yaml") . | sha256sum }}
+        {{- with .Values.proxy.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "bamf.proxy.selectorLabels" . | nindent 8 }}
+        {{- with .Values.proxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.proxy.terminationGracePeriodSeconds | default 120 }}
+      containers:
+        - name: proxy
+          image: {{ include "bamf.proxy.image" . }}
+          imagePullPolicy: {{ .Values.proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8001
+              protocol: TCP
+          env:
+            - name: BAMF_PROXY_API_URL
+              {{- if .Values.proxy.apiUrl }}
+              value: {{ .Values.proxy.apiUrl | quote }}
+              {{- else }}
+              value: "http://{{ include "bamf.fullname" . }}-api:8000"
+              {{- end }}
+            - name: BAMF_PROXY_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bamf.fullname" . }}-proxy-token
+                  key: token
+            - name: BAMF_PROXY_TUNNEL_DOMAIN
+              value: {{ include "bamf.satellite.tunnelDomain" . | quote }}
+            {{- if .Values.satellite.name }}
+            - name: BAMF_PROXY_SATELLITE_NAME
+              value: {{ .Values.satellite.name | quote }}
+            {{- end }}
+            {{- if .Values.gateway.enabled }}
+            {{- $port := int (.Values.gateway.ports.https | default 443) }}
+            {{- if eq $port 443 }}
+            - name: BAMF_PROXY_CALLBACK_BASE_URL
+              value: {{ printf "https://%s" .Values.gateway.hostname | quote }}
+            {{- else }}
+            - name: BAMF_PROXY_CALLBACK_BASE_URL
+              value: {{ printf "https://%s:%d" .Values.gateway.hostname $port | quote }}
+            {{- end }}
+            {{- end }}
+            - name: BAMF_PROXY_BRIDGE_HEADLESS_SERVICE
+              value: {{ printf "%s-bridge-headless" (include "bamf.fullname" .) | quote }}
+            - name: BAMF_PROXY_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BAMF_PROXY_BRIDGE_INTERNAL_PORT
+              value: "8080"
+            - name: BAMF_PROXY_LOG_LEVEL
+              value: {{ .Values.proxy.logLevel | default "info" | quote }}
+            - name: BAMF_PROXY_JSON_LOGS
+              value: {{ .Values.proxy.jsonLogs | default "true" | quote }}
+            {{- with .Values.proxy.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.proxy.resources | nindent 12 }}
+          {{- if gt (int (.Values.proxy.preStopSleepSeconds | default 15)) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep {{ .Values.proxy.preStopSleepSeconds | default 15 }}
+          {{- end }}
+      {{- with .Values.proxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.proxy.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.proxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

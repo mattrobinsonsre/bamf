@@ -1,0 +1,14 @@
+{{- if and .Values.proxy.enabled .Values.proxy.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "bamf.fullname" . }}-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  minAvailable: {{ .Values.proxy.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "bamf.proxy.selectorLabels" . | nindent 6 }}
+{{- end }}

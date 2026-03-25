@@ -1,0 +1,19 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bamf.fullname" . }}-proxy-config
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+data:
+  # Proxy configuration is primarily via environment variables (see deployment-proxy.yaml).
+  # This ConfigMap exists for any future file-based config needs.
+  proxy-info: |
+    service: bamf-proxy
+    api_service: {{ include "bamf.fullname" . }}-api
+    tunnel_domain: {{ include "bamf.satellite.tunnelDomain" . | quote }}
+    {{- if .Values.satellite.name }}
+    satellite_name: {{ .Values.satellite.name | quote }}
+    {{- end }}
+{{- end }}

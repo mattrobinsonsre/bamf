@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import get_current_session, require_admin_or_audit
-from bamf.api.proxy.handler import (
+from bamf.proxy.handler import (
     HTTP_RECORDING_BODY_MAX,
     _capture_body,
     _is_binary_content_type,

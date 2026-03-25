@@ -19,12 +19,12 @@ import wsproto
 import wsproto.events
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from bamf.logging_config import get_logger
+import structlog
 
 if TYPE_CHECKING:
     pass
 
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def ws_handshake(

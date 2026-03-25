@@ -17,6 +17,19 @@ spec:
   entryPoints:
     - {{ $entryPoint }}
   routes:
+    {{- if .Values.proxy.enabled }}
+    # Kube proxy routes go to proxy service (must come before general /api)
+    - match: Host(`{{ .Values.gateway.hostname }}`) && PathPrefix(`/api/v1/kube`)
+      kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
+      services:
+        - name: {{ $fullName }}-proxy
+          port: 8001
+    {{- end }}
     # API routes (highest specificity — Traefik auto-prioritizes by rule length)
     - match: Host(`{{ .Values.gateway.hostname }}`) && (PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/ready`))
       kind: Rule
