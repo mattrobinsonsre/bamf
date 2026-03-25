@@ -1,0 +1,704 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "BAMF Helm Chart Values",
+  "description": "Schema for BAMF Helm chart values. Validates at helm lint / helm install / helm upgrade time.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "imageSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "resourceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": { "oneOf": [{ "type": "string" }, { "type": "integer" }] },
+            "memory": { "type": "string" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": { "oneOf": [{ "type": "string" }, { "type": "integer" }] },
+            "memory": { "type": "string" }
+          }
+        }
+      }
+    },
+    "autoscalingSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "targetTunnelsPerPod": { "type": "integer", "minimum": 0 },
+        "nonMigratableOversubscribeFactor": { "type": "number", "minimum": 1 }
+      }
+    },
+    "pdbSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+        "maxUnavailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
+      }
+    },
+    "serviceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
+        },
+        "annotations": { "type": "object" }
+      }
+    },
+    "serviceAccountSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    }
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Global settings shared across all components.",
+      "properties": {
+        "imageRegistry": {
+          "type": "string",
+          "description": "Override container registry for all images (e.g., ECR pull-through cache). Prepended to image repository."
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "API server (Python/FastAPI) — control plane, auth, RBAC, state.",
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+        "pdb": { "$ref": "#/$defs/pdbSpec" },
+        "config": {
+          "type": "object",
+          "description": "API configuration mounted as /etc/bamf/config.yaml. Secrets must be injected via env vars from K8s Secrets.",
+          "properties": {
+            "log_level": {
+              "type": "string",
+              "enum": ["debug", "info", "warning", "error", "critical"]
+            },
+            "certificates": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "user_ttl_hours": { "type": "integer", "minimum": 1 },
+                "agent_ttl_hours": { "type": "integer", "minimum": 1 },
+                "bridge_ttl_hours": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "audit": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "retention_days": { "type": "integer", "minimum": 1 },
+                "api_audit_enabled": { "type": "boolean" }
+              }
+            },
+            "cors": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "allow_origins": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "podAnnotations": { "type": "object" },
+        "podLabels": { "type": "object" },
+        "priorityClassName": { "type": "string" },
+        "topologySpreadConstraints": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" },
+        "extraEnv": { "type": "array" },
+        "extraEnvFrom": { "type": "array" },
+        "extraVolumes": { "type": "array" },
+        "extraVolumeMounts": { "type": "array" },
+        "extraInitContainers": { "type": "array" },
+        "service": { "$ref": "#/$defs/serviceSpec" },
+        "serviceAccount": { "$ref": "#/$defs/serviceAccountSpec" }
+      }
+    },
+
+    "bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Bridge server (Go) — protocol-agnostic TCP tunnel gateway, deployed as StatefulSet.",
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+        "pdb": { "$ref": "#/$defs/pdbSpec" },
+        "service": { "$ref": "#/$defs/serviceSpec" },
+        "headlessService": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": { "type": "object" }
+          }
+        },
+        "tunnelPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "token": { "type": "string" },
+            "tokenSecret": { "type": "string" },
+            "tokenKey": { "type": "string" }
+          }
+        },
+        "podAnnotations": { "type": "object" },
+        "podLabels": { "type": "object" },
+        "priorityClassName": { "type": "string" },
+        "topologySpreadConstraints": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" },
+        "extraEnv": { "type": "array" },
+        "extraEnvFrom": { "type": "array" },
+        "extraVolumes": { "type": "array" },
+        "extraVolumeMounts": { "type": "array" }
+      }
+    },
+
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Web UI — React/Next.js frontend served as standalone pods or via bridge.",
+      "properties": {
+        "standalone": { "type": "boolean" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "livenessProbe": { "type": "object" },
+        "readinessProbe": { "type": "object" },
+        "podAnnotations": { "type": "object" },
+        "podLabels": { "type": "object" },
+        "priorityClassName": { "type": "string" },
+        "topologySpreadConstraints": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" },
+        "extraEnv": { "type": "array" },
+        "extraVolumes": { "type": "array" },
+        "extraVolumeMounts": { "type": "array" },
+        "service": { "$ref": "#/$defs/serviceSpec" }
+      }
+    },
+
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent (Go) — lightweight binary deployed alongside target resources.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+        "pdb": { "$ref": "#/$defs/pdbSpec" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "labels": { "type": "object" },
+            "resources": { "type": "array" }
+          }
+        },
+        "joinToken": { "type": "string" },
+        "joinTokenSecret": { "type": "string" },
+        "joinTokenKey": { "type": "string" },
+        "platformUrl": { "type": "string" },
+        "clusterInternal": { "type": "boolean" },
+        "kubernetes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "impersonation": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "dataDir": { "type": "string" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "podAnnotations": { "type": "object" },
+        "podLabels": { "type": "object" },
+        "priorityClassName": { "type": "string" },
+        "topologySpreadConstraints": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" },
+        "extraEnv": { "type": "array" },
+        "extraEnvFrom": { "type": "array" },
+        "extraVolumes": { "type": "array" },
+        "extraVolumeMounts": { "type": "array" }
+      }
+    },
+
+    "proxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Standalone HTTP proxy service — web app proxying and Kubernetes API proxying.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+        "pdb": { "$ref": "#/$defs/pdbSpec" },
+        "internalToken": { "type": "string" },
+        "logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warning", "error", "critical"]
+        },
+        "jsonLogs": { "type": "string" },
+        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "apiUrl": { "type": "string", "description": "Override API URL for satellite deployments." },
+        "podAnnotations": { "type": "object" },
+        "podLabels": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" },
+        "extraEnv": { "type": "array" }
+      }
+    },
+
+    "satellite": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Satellite configuration — every proxy+bridge is a satellite. Required for multi-region deployments.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": {
+          "type": "string",
+          "description": "DNS-safe satellite name (e.g., 'us-east', 'eu'). Required when satellite.enabled=true.",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "joinToken": {
+          "type": "string",
+          "description": "Satellite join token for remote satellite registration. Required when api.enabled=false."
+        },
+        "apiUrl": {
+          "type": "string",
+          "description": "Central API URL for remote satellites. Required when api.enabled=false."
+        },
+        "geodns": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Ingress routing via Traefik IngressRoute/IngressRouteTCP or Istio Gateway API.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "provider": {
+          "type": "string",
+          "enum": ["traefik", "istio"]
+        },
+        "className": { "type": "string" },
+        "hostname": { "type": "string" },
+        "tunnelDomain": { "type": "string" },
+        "annotations": { "type": "object" },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "https": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "traefik": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entryPoint": { "type": "string" }
+          }
+        },
+        "rateLimit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "average": { "type": "integer", "minimum": 1 },
+            "burst": { "type": "integer", "minimum": 1 },
+            "period": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Legacy ingress (disabled by default). Use gateway instead.",
+      "properties": {
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "className": { "type": "string" },
+            "hostname": { "type": "string" },
+            "tls": { "type": "boolean" },
+            "certManager": { "type": "boolean" },
+            "annotations": { "type": "object" }
+          }
+        }
+      }
+    },
+
+    "postgresql": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PostgreSQL — bundled (dev/staging) or external (production).",
+      "properties": {
+        "bundled": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "database": { "type": "string" },
+                "username": { "type": "string" },
+                "password": { "type": "string" }
+              }
+            },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "size": { "type": "string" },
+                "storageClass": { "type": "string" }
+              }
+            }
+          }
+        },
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "database": { "type": "string" },
+            "username": { "type": "string" },
+            "sslmode": {
+              "type": "string",
+              "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+            },
+            "password": { "type": "string" },
+            "existingSecret": { "type": "string" },
+            "existingSecretKey": { "type": "string" },
+            "externalSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretStoreRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "kind": { "type": "string" }
+                  }
+                },
+                "remoteRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": { "type": "string" },
+                    "property": { "type": "string" }
+                  }
+                }
+              }
+            },
+            "readReplica": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "host": { "type": "string" },
+                "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+                "database": { "type": "string" },
+                "username": { "type": "string" },
+                "sslmode": { "type": "string" },
+                "password": { "type": "string" },
+                "existingSecret": { "type": "string" },
+                "existingSecretKey": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "redis": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Redis — bundled (dev/staging) or external (production).",
+      "properties": {
+        "bundled": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "size": { "type": "string" },
+                "storageClass": { "type": "string" }
+              }
+            }
+          }
+        },
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "existingSecret": { "type": "string" },
+            "existingSecretKey": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Authentication — local password auth and SSO (OIDC/SAML).",
+      "properties": {
+        "local": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "sso": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "defaultProvider": { "type": "string" },
+            "oidc": {
+              "type": "object",
+              "description": "Map of OIDC providers keyed by provider name.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "displayName": { "type": "string" },
+                  "issuerUrl": { "type": "string" },
+                  "clientId": { "type": "string" },
+                  "audience": { "type": "string" },
+                  "scopes": { "type": "array", "items": { "type": "string" } },
+                  "groupsClaim": { "type": "string" },
+                  "rolePrefixes": { "type": "array", "items": { "type": "string" } },
+                  "existingSecret": { "type": "string" },
+                  "existingSecretKey": { "type": "string" },
+                  "claimsToRoles": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "claim": { "type": "string" },
+                        "value": { "type": "string" },
+                        "roles": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Alembic database migrations — runs as Helm pre-install/pre-upgrade hook.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "podAnnotations": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "resources": { "$ref": "#/$defs/resourceSpec" }
+      }
+    },
+
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "TLS configuration — cert-manager, ingress hardening, internal mTLS.",
+      "properties": {
+        "certManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "issuerRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "kind": {
+                  "type": "string",
+                  "enum": ["ClusterIssuer", "Issuer"]
+                }
+              }
+            }
+          }
+        },
+        "existingSecret": { "type": "string" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minVersion": { "type": "string" },
+            "cipherSuites": { "type": "array", "items": { "type": "string" } },
+            "curvePreferences": { "type": "array", "items": { "type": "string" } },
+            "istioCipherSuites": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "internal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minVersion": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "kubamf": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Kubamf — browser-based Kubernetes GUI, deployed alongside agent.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "bamf": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "apiUrl": { "type": "string" },
+            "kubeResourceName": { "type": "string" }
+          }
+        },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "resourceName": { "type": "string" },
+        "tunnelHostname": { "type": "string" }
+      }
+    },
+
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Monitoring — Prometheus metrics and ServiceMonitor.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string" },
+            "labels": { "type": "object" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -4,7 +4,6 @@
 {{- $fullName := include "bamf.fullname" . -}}
 {{- $labels := include "bamf.labels" . -}}
 {{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
-{{- $tunnelDomain := .Values.gateway.tunnelDomain -}}
 {{- $tunnelPort := int .Values.bridge.tunnelPort -}}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" -}}
 
@@ -28,7 +27,7 @@ spec:
   entryPoints:
     - {{ $entryPoint }}
   routes:
-    - match: HostSNI(`{{ $i }}.bridge.{{ $tunnelDomain }}`)
+    - match: HostSNI(`{{ include "bamf.bridge.sniHostname" (dict "root" $ "ordinal" $i) }}`)
       services:
         - name: {{ $fullName }}-bridge-{{ $i }}
           port: {{ $tunnelPort }}

@@ -4,6 +4,10 @@
 
 # Global settings
 global:
+  # Override container registry for all images (e.g., ECR pull-through cache).
+  # When set, prepended to image repository: "registry/repo:tag".
+  # Example: "123456789.dkr.ecr.us-east-1.amazonaws.com"
+  imageRegistry: ""
   imagePullSecrets: []
 
 # ── API Server (Python/FastAPI) ───────────────────────────────────────────────
@@ -315,6 +319,80 @@ agent:
   extraEnvFrom: []
   extraVolumes: []
   extraVolumeMounts: []
+
+# ── Proxy Service (standalone HTTP proxy) ─────────────────────────────────────
+# Handles web app proxying (*.tunnel.domain) and Kubernetes API proxying
+# (/api/v1/kube/*). Communicates with the API exclusively via internal HTTP.
+proxy:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: ghcr.io/mattrobinsonsre/bamf-proxy
+    tag: ""  # Defaults to appVersion
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Shared secret for proxy→API internal auth.
+  # Auto-generated and stored in a K8s Secret if empty.
+  internalToken: ""
+
+  logLevel: info
+  jsonLogs: "true"
+  preStopSleepSeconds: 15
+  terminationGracePeriodSeconds: 120
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+  # For satellite deployments, override the API URL to point at a remote central API.
+  # apiUrl: https://bamf.example.com
+
+# ── Satellite ──────────────────────────────────────────────────────────────────
+# Every proxy+bridge combination is a satellite. The co-located deployment (with API)
+# is just a satellite that shares a cluster with the API.
+satellite:
+  # Enable satellite components (proxy + bridge).
+  # When true, satellite.name is required.
+  enabled: true
+
+  # DNS-safe short name for this satellite (e.g., "us-east", "eu", "apac").
+  # Used as a hostname prefix: *.{name}.tunnel.{domain}
+  # Must match [a-z][a-z0-9-]*, max 63 characters.
+  name: ""
+
+  # For remote satellites (api is not co-located):
+  # Join token from `POST /api/v1/satellite-tokens`
+  joinToken: ""
+  # Central API URL (required when satellite is remote)
+  apiUrl: ""
+
+  # GeoDNS — optional convenience layer for shared *.tunnel.{domain} hostname.
+  # When enabled, the proxy accepts requests on both *.{sat}.tunnel.{domain}
+  # and *.tunnel.{domain}. Does NOT manage DNS records.
+  geodns:
+    enabled: false
 
 # ── Gateway / Ingress Routing ────────────────────────────────────────────────
 # provider: traefik (default) or istio

@@ -28,7 +28,7 @@ gmake build
 
 ```zsh
 gmake images
-# Builds: bamf-api, bamf-bridge, bamf-agent, bamf-web
+# Builds: bamf-api, bamf-proxy, bamf-bridge, bamf-agent, bamf-web
 ```
 
 ### Go Binaries (local platform only, requires local Go)
@@ -127,8 +127,9 @@ gmake db-reset       # Full reset (drop + recreate)
 
 ```
 bamf/
-├── services/          # Python API server (FastAPI)
-│   ├── bamf/api/      # API routes, middleware
+├── services/          # Python services
+│   ├── bamf/api/      # API server (FastAPI) — auth, RBAC, state
+│   ├── bamf/proxy/    # Proxy service (FastAPI) — HTTP/kube proxy
 │   ├── bamf/auth/     # CA, RBAC, SSO
 │   └── bamf/db/       # SQLAlchemy models
 ├── cmd/               # Go binaries (CLI, bridge, agent)

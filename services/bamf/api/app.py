@@ -14,7 +14,6 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.websockets import WebSocket
 
 from bamf.auth.ca import init_ca
 from bamf.auth.connectors import init_connectors
@@ -33,11 +32,13 @@ from .routers.auth import router as auth_router
 from .routers.certificates import router as certificates_router
 from .routers.connect import router as connect_router
 from .routers.internal_bridges import router as internal_bridges_router
-from .routers.kube import router as kube_router
+from .routers.internal_proxy import router as internal_proxy_router
 from .routers.resources import router as resources_router
 from .routers.role_assignments import router as role_assignments_router
 from .routers.roles import router as roles_router
 from .routers.terminal import router as terminal_router
+from .routers.satellite_tokens import router as satellite_tokens_router
+from .routers.satellites import router as satellites_router
 from .routers.tokens import router as tokens_router
 from .routers.tunnels import router as tunnels_router
 from .routers.users import router as users_router
@@ -100,17 +101,11 @@ def create_application() -> FastAPI:
             allow_headers=settings.cors.allow_headers,
         )
 
-    # HTTP proxy middleware — intercepts *.tunnel_domain requests before API routes
-    from bamf.api.proxy.handler import proxy_middleware
-
-    @app.middleware("http")
-    async def http_proxy(request: Request, call_next: Any) -> Any:
-        """Route *.tunnel_domain requests to the HTTP proxy handler."""
-        return await proxy_middleware(request, call_next)
+    # HTTP proxy middleware REMOVED — proxy traffic now handled by the standalone
+    # proxy service (services/bamf/proxy/). The API only serves internal proxy
+    # endpoints (/api/v1/internal/proxy/*) that the proxy calls.
 
     # API self-audit middleware — captures API request/response exchanges.
-    # Runs after request ID (so request_id is available) and before proxy
-    # middleware (so it only captures API requests, not proxied web app traffic).
     from bamf.api.middleware import api_audit_middleware
 
     @app.middleware("http")
@@ -151,9 +146,11 @@ def create_application() -> FastAPI:
     app.include_router(roles_router, prefix=settings.api_prefix)
     app.include_router(certificates_router, prefix=settings.api_prefix)
     app.include_router(connect_router, prefix=settings.api_prefix)
-    app.include_router(kube_router, prefix=settings.api_prefix)
+    # Kube router REMOVED — kube proxy traffic now handled by standalone proxy service
     app.include_router(resources_router, prefix=settings.api_prefix)
     app.include_router(role_assignments_router, prefix=settings.api_prefix)
+    app.include_router(satellite_tokens_router, prefix=settings.api_prefix)
+    app.include_router(satellites_router, prefix=settings.api_prefix)
     app.include_router(tokens_router, prefix=settings.api_prefix)
     app.include_router(terminal_router, prefix=settings.api_prefix)
     app.include_router(tunnels_router, prefix=settings.api_prefix)
@@ -162,16 +159,15 @@ def create_application() -> FastAPI:
     # Internal routes (called by Go bridge/agent, not end users)
     app.include_router(internal_bridges_router, prefix=settings.api_prefix)
 
+    # Internal proxy routes (called by standalone proxy service)
+    app.include_router(internal_proxy_router, prefix=settings.api_prefix)
+
     # Explicit WebSocket routes — registered directly on the app because
     # Starlette's catch-all /{path:path} pattern shadows WebSocket routes
     # from included routers. These must come BEFORE the catch-all.
-    from bamf.api.routers.kube import kube_proxy_ws
+    # Note: Kube WebSocket route REMOVED — handled by standalone proxy service.
     from bamf.api.routers.terminal import terminal_db, terminal_ssh
 
-    app.add_api_websocket_route(
-        f"{settings.api_prefix}/kube/{{resource_name}}/{{path:path}}",
-        kube_proxy_ws,
-    )
     app.add_api_websocket_route(
         f"{settings.api_prefix}/terminal/ssh/{{session_id}}",
         terminal_ssh,
@@ -181,14 +177,8 @@ def create_application() -> FastAPI:
         terminal_db,
     )
 
-    # Catch-all WebSocket route for proxy requests (*.tunnel.domain).
-    # Must come AFTER all specific WebSocket routes above.
-    from bamf.api.proxy.handler import handle_proxy_websocket
-
-    @app.websocket("/{path:path}")
-    async def proxy_ws_catch_all(websocket: WebSocket, path: str) -> None:
-        """Proxy WebSocket connections to *.tunnel.domain web apps."""
-        await handle_proxy_websocket(websocket)
+    # Proxy WebSocket catch-all REMOVED — handled by standalone proxy service.
+    # The API no longer serves *.tunnel.domain traffic.
 
     return app
 

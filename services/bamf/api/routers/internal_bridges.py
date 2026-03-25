@@ -23,11 +23,13 @@ Changes to request/response shapes must be coordinated with the Go
 bridge code. See contract comments on individual endpoints.
 """
 
+import hashlib
 import json
 import time
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import BridgeIdentity, get_bridge_identity
@@ -51,8 +53,8 @@ from bamf.api.models.bridges import (
 from bamf.api.models.common import SuccessResponse
 from bamf.auth.ca import get_ca, get_ssh_host_key_pem, serialize_certificate, serialize_private_key
 from bamf.config import settings
-from bamf.db.models import SessionRecording, utc_now
-from bamf.db.session import get_db
+from bamf.db.models import Satellite, SessionRecording, utc_now
+from bamf.db.session import async_session_factory_read, get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
 from bamf.services.audit_service import log_audit_event
@@ -77,30 +79,42 @@ async def bootstrap_bridge(
     Called by bridges on first startup before they have a certificate.
     Authenticates using a bootstrap token mounted from a Kubernetes Secret.
 
-    The bootstrap token is configured via BAMF_BRIDGE_BOOTSTRAP_TOKEN env var.
-    In production, this should be a random secret generated per deployment.
+    Checks two sources:
+    1. Co-located bootstrap token (BAMF_BRIDGE_BOOTSTRAP_TOKEN env var)
+    2. Satellite bridge bootstrap tokens (DB hash lookup)
 
     Go contract: pkg/bridge/api_client.go:Bootstrap() sends
     {bridge_id, hostname, bootstrap_token} and receives certificate material.
     """
-    # Validate bootstrap token
-    expected_token = settings.bridge_bootstrap_token
-    if not expected_token:
-        logger.error("Bridge bootstrap token not configured")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Bridge bootstrap not configured",
-        )
+    satellite_name: str | None = None
 
-    if request.bootstrap_token != expected_token:
-        logger.warning(
-            "Invalid bridge bootstrap token",
-            bridge_id=request.bridge_id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid bootstrap token",
-        )
+    # Check 1: co-located bootstrap token (env var)
+    co_located_token = settings.bridge_bootstrap_token
+    if co_located_token and request.bootstrap_token == co_located_token:
+        satellite_name = settings.default_satellite_name
+    else:
+        # Check 2: satellite bridge bootstrap token (DB hash lookup)
+        token_hash = hashlib.sha256(request.bootstrap_token.encode()).hexdigest()
+        async with async_session_factory_read() as db:
+            result = await db.execute(
+                select(Satellite).where(
+                    Satellite.bridge_bootstrap_token_hash == token_hash,
+                    Satellite.is_active == True,  # noqa: E712
+                )
+            )
+            satellite = result.scalar_one_or_none()
+
+        if satellite:
+            satellite_name = satellite.name
+        else:
+            logger.warning(
+                "Invalid bridge bootstrap token",
+                bridge_id=request.bridge_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid bootstrap token",
+            )
 
     # Issue bridge certificate — include external, per-pod, and headless FQDNs
     # so agents and the API can connect via any internal hostname.
@@ -136,6 +150,7 @@ async def bootstrap_bridge(
         ca_certificate=ca.ca_cert_pem,
         expires_at=cert.not_valid_after_utc,
         ssh_host_key=get_ssh_host_key_pem(),
+        satellite_name=satellite_name,
     )
 
 
@@ -214,6 +229,7 @@ async def register_bridge(
     """
     bridge_key = f"bridge:{request.bridge_id}"
 
+    sat = request.satellite_name or ""
     await r.hset(
         bridge_key,
         mapping={
@@ -221,14 +237,23 @@ async def register_bridge(
             "status": "ready",
             "active_tunnels": "0",
             "registered_at": str(time.time()),
+            "satellite": sat,
         },
     )
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Add to available bridges sorted set (score = 0 active tunnels)
     await r.zadd("bridges:available", {request.bridge_id: 0})
+    # Also add to per-satellite sorted set if satellite is known
+    if sat:
+        await r.zadd(f"bridges:available:{sat}", {request.bridge_id: 0})
 
-    logger.info("Bridge registered", bridge_id=request.bridge_id, hostname=request.hostname)
+    logger.info(
+        "Bridge registered",
+        bridge_id=request.bridge_id,
+        hostname=request.hostname,
+        satellite_name=sat or None,
+    )
     return SuccessResponse(message="Registered")
 
 
@@ -252,13 +277,20 @@ async def update_bridge_status(
 
     await r.hset(bridge_key, "status", request.status)
 
+    # Read satellite affiliation from the bridge hash
+    sat = await r.hget(bridge_key, "satellite") or ""
+
     # Remove from available set if draining/offline
     if request.status != "ready":
         await r.zrem("bridges:available", bridge_id)
+        if sat:
+            await r.zrem(f"bridges:available:{sat}", bridge_id)
     else:
         # Re-add if going back to ready
         tunnels = int(await r.hget(bridge_key, "active_tunnels") or "0")
         await r.zadd("bridges:available", {bridge_id: tunnels})
+        if sat:
+            await r.zadd(f"bridges:available:{sat}", {bridge_id: tunnels})
 
     logger.info("Bridge status updated", bridge_id=bridge_id, status=request.status)
     return SuccessResponse(message="Status updated")
@@ -278,6 +310,8 @@ async def bridge_heartbeat(
     """
     bridge_key = f"bridge:{bridge_id}"
 
+    sat = request.satellite_name or ""
+
     exists = await r.exists(bridge_key)
     if not exists:
         # Re-register the bridge — hash expired (API restart, Redis flush, etc.)
@@ -290,17 +324,22 @@ async def bridge_heartbeat(
                 "status": "ready",
                 "active_tunnels": str(request.active_tunnels),
                 "registered_at": str(time.time()),
+                "satellite": sat,
             },
         )
 
     # Update tunnel count and refresh TTL
     await r.hset(bridge_key, "active_tunnels", str(request.active_tunnels))
+    if sat:
+        await r.hset(bridge_key, "satellite", sat)
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Update sorted set score
     bridge_status = await r.hget(bridge_key, "status")
     if bridge_status == "ready":
         await r.zadd("bridges:available", {bridge_id: request.active_tunnels})
+        if sat:
+            await r.zadd(f"bridges:available:{sat}", {bridge_id: request.active_tunnels})
 
     return SuccessResponse(message="OK")
 
@@ -520,6 +559,10 @@ async def tunnel_closed(
     if bridge_id:
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
+        # Also update per-satellite sorted set
+        sat = await r.hget(f"bridge:{bridge_id}", "satellite")
+        if sat:
+            await r.zincrby(f"bridges:available:{sat}", -1, bridge_id)
 
     # Audit: record that a connection ended
     details: dict = {
@@ -626,6 +669,9 @@ async def drain_bridge(
         # Decrement old bridge tunnel count
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
+        drain_sat = await r.hget(f"bridge:{bridge_id}", "satellite")
+        if drain_sat:
+            await r.zincrby(f"bridges:available:{drain_sat}", -1, bridge_id)
 
         try:
             # Create a minimal Session-like object for _issue_session
