@@ -157,6 +157,22 @@ jobs:
       - uses: actions/checkout@v6
       - run: scripts/lint.sh web
 
+  web-audit:
+    name: npm Audit
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    container: node:25-alpine
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: npm ci
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
   # ── Helm ────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint
@@ -583,6 +599,7 @@ jobs:
       - python-test
       - python-security
       - web-lint
+      - web-audit
       - helm-lint
       - sast
       - secret-scan
@@ -606,6 +623,7 @@ jobs:
             "${{ needs.python-test.result }}"
             "${{ needs.python-security.result }}"
             "${{ needs.web-lint.result }}"
+            "${{ needs.web-audit.result }}"
             "${{ needs.helm-lint.result }}"
             "${{ needs.sast.result }}"
             "${{ needs.secret-scan.result }}"
