@@ -1,37 +1,47 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-html {
-  background: #0f172a;
-  height: 100%;
-}
+@custom-variant dark (&:is(.dark *));
 
-body {
-  color: #e2e8f0;
-  background: #0f172a;
-  min-height: 100%;
+@theme {
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-800: #5b21b6;
+  --color-brand-900: #4c1d95;
+
+  --shadow-glow-sm: 0 0 10px rgba(124, 58, 237, 0.3);
+  --shadow-glow: 0 0 20px rgba(124, 58, 237, 0.4);
+  --shadow-glow-lg: 0 0 30px rgba(124, 58, 237, 0.5);
 }
 
 /*
- * Smoke glow effect for primary action buttons.
- *
- * Two pseudo-elements create layered purple glow halos behind the button.
- * Outer layer: large soft blur (tendrils) using brand-800.
- * Inner layer: tighter glow (core) using brand-600.
- * On hover, both intensify and the outer layer expands.
- *
- * CSS-only. Uses will-change for GPU compositing.
- * Transitions opacity + transform only (compositor-friendly).
- */
-@layer components {
-  .btn-smoke {
-    position: relative;
-    z-index: 0;
-  }
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
 
-  .btn-smoke::before,
-  .btn-smoke::after {
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility btn-smoke {
+  position: relative;
+  z-index: 0;
+
+  &::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -39,11 +49,26 @@ body {
     z-index: -1;
     pointer-events: none;
     will-change: opacity, transform;
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    transition:
+      opacity 0.3s ease,
+      transform 0.3s ease;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: -1;
+    pointer-events: none;
+    will-change: opacity, transform;
+    transition:
+      opacity 0.3s ease,
+      transform 0.3s ease;
   }
 
   /* Outer tendril layer */
-  .btn-smoke::before {
+  &::before {
     inset: -6px;
     background: radial-gradient(
       ellipse at center,
@@ -56,7 +81,7 @@ body {
   }
 
   /* Inner core glow */
-  .btn-smoke::after {
+  &::after {
     inset: -3px;
     background: radial-gradient(
       ellipse at center,
@@ -68,17 +93,30 @@ body {
     opacity: 0.6;
   }
 
-  .btn-smoke:hover::before {
+  &:hover::before {
     opacity: 0.8;
     transform: scale(1.08);
   }
 
-  .btn-smoke:hover::after {
+  &:hover::after {
     opacity: 0.9;
     transform: scale(1.04);
   }
 
-  .btn-smoke:focus-visible::after {
+  &:focus-visible::after {
     opacity: 1;
+  }
+}
+
+@layer base {
+  html {
+    background: #0f172a;
+    height: 100%;
+  }
+
+  body {
+    color: #e2e8f0;
+    background: #0f172a;
+    min-height: 100%;
   }
 }

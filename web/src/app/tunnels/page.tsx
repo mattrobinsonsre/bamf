@@ -200,7 +200,7 @@ export default function TunnelsPage() {
             )}
             <button
               onClick={fetchTunnels}
-              className="p-1.5 rounded hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-sm hover:bg-slate-800 transition-colors"
               title="Refresh now"
             >
               <RefreshCw size={14} />
