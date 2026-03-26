@@ -134,7 +134,7 @@ function SSHForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="e.g. root, ubuntu"
-          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50"
           autoFocus
           required
         />
@@ -178,7 +178,7 @@ function SSHForm({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter password"
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50"
             required
           />
         ) : (
@@ -270,7 +270,7 @@ function DBForm({
           value={database}
           onChange={(e) => setDatabase(e.target.value)}
           placeholder="e.g. mydb"
-          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50"
           autoFocus
           required
         />
@@ -288,7 +288,7 @@ function DBForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder={dbType === 'postgres' ? 'e.g. postgres' : 'e.g. root'}
-          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50"
           required
         />
       </div>
@@ -305,7 +305,7 @@ function DBForm({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"
-          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50"
         />
       </div>
 

@@ -70,15 +70,105 @@ function PermissionsPills({ label, perms, color }: { label: string; perms: Permi
     <div className="flex flex-wrap items-center gap-1 mt-1">
       <span className="text-xs text-slate-500 mr-1">{label}:</span>
       {Object.entries(perms.labels).map(([key, vals]) => (
-        <span key={`l-${key}`} className={`px-2 py-0.5 text-xs rounded ${bg}`}>
+        <span key={`l-${key}`} className={`px-2 py-0.5 text-xs rounded-sm ${bg}`}>
           {key}={vals.join(',')}
         </span>
       ))}
       {perms.names.map((n) => (
-        <span key={`n-${n}`} className={`px-2 py-0.5 text-xs rounded ${bg}`}>
+        <span key={`n-${n}`} className={`px-2 py-0.5 text-xs rounded-sm ${bg}`}>
           {n}
         </span>
       ))}
+    </div>
+  )
+}
+
+function updateLabelRow(
+  rows: LabelRow[],
+  setRows: (r: LabelRow[]) => void,
+  index: number,
+  field: 'key' | 'values',
+  value: string
+) {
+  const updated = [...rows]
+  updated[index] = { ...updated[index], [field]: value }
+  setRows(updated)
+}
+
+function addLabelRow(rows: LabelRow[], setRows: (r: LabelRow[]) => void) {
+  setRows([...rows, { key: '', values: '' }])
+}
+
+function removeLabelRow(rows: LabelRow[], setRows: (r: LabelRow[]) => void, index: number) {
+  if (rows.length <= 1) {
+    setRows([{ key: '', values: '' }])
+  } else {
+    setRows(rows.filter((_, i) => i !== index))
+  }
+}
+
+function LabelEditor({
+  label,
+  rows,
+  setRows,
+  namesValue,
+  setNamesValue,
+}: {
+  label: string
+  rows: LabelRow[]
+  setRows: (r: LabelRow[]) => void
+  namesValue: string
+  setNamesValue: (v: string) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium text-slate-300">{label}</h4>
+      <div className="space-y-1">
+        <label className="text-xs text-slate-500">Labels (key = comma-separated values)</label>
+        {rows.map((row, i) => (
+          <div key={i} className="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="key"
+              value={row.key}
+              onChange={(e) => updateLabelRow(rows, setRows, i, 'key', e.target.value)}
+              className="w-32 px-2 py-1.5 border border-slate-600 rounded-sm bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+            />
+            <span className="text-slate-500">=</span>
+            <input
+              type="text"
+              placeholder="val1, val2"
+              value={row.values}
+              onChange={(e) => updateLabelRow(rows, setRows, i, 'values', e.target.value)}
+              className="flex-1 px-2 py-1.5 border border-slate-600 rounded-sm bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+            />
+            <button
+              type="button"
+              onClick={() => removeLabelRow(rows, setRows, i)}
+              className="text-slate-500 hover:text-slate-300 p-1"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => addLabelRow(rows, setRows)}
+          className="text-xs text-brand-400 hover:text-brand-300"
+        >
+          + Add label
+        </button>
+      </div>
+      <div>
+        <label className="text-xs text-slate-500">Names (comma-separated)</label>
+        <input
+          type="text"
+          placeholder="resource-a, resource-b"
+          value={namesValue}
+          onChange={(e) => setNamesValue(e.target.value)}
+          className="w-full px-2 py-1.5 border border-slate-600 rounded-sm bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+        />
+      </div>
     </div>
   )
 }
@@ -117,94 +207,6 @@ function RoleForm({
     })
   }
 
-  const updateLabelRow = (
-    rows: LabelRow[],
-    setRows: (r: LabelRow[]) => void,
-    index: number,
-    field: 'key' | 'values',
-    value: string
-  ) => {
-    const updated = [...rows]
-    updated[index] = { ...updated[index], [field]: value }
-    setRows(updated)
-  }
-
-  const addLabelRow = (rows: LabelRow[], setRows: (r: LabelRow[]) => void) => {
-    setRows([...rows, { key: '', values: '' }])
-  }
-
-  const removeLabelRow = (rows: LabelRow[], setRows: (r: LabelRow[]) => void, index: number) => {
-    if (rows.length <= 1) {
-      setRows([{ key: '', values: '' }])
-    } else {
-      setRows(rows.filter((_, i) => i !== index))
-    }
-  }
-
-  const LabelEditor = ({
-    label,
-    rows,
-    setRows,
-    namesValue,
-    setNamesValue,
-  }: {
-    label: string
-    rows: LabelRow[]
-    setRows: (r: LabelRow[]) => void
-    namesValue: string
-    setNamesValue: (v: string) => void
-  }) => (
-    <div className="space-y-2">
-      <h4 className="text-sm font-medium text-slate-300">{label}</h4>
-      <div className="space-y-1">
-        <label className="text-xs text-slate-500">Labels (key = comma-separated values)</label>
-        {rows.map((row, i) => (
-          <div key={i} className="flex gap-2 items-center">
-            <input
-              type="text"
-              placeholder="key"
-              value={row.key}
-              onChange={(e) => updateLabelRow(rows, setRows, i, 'key', e.target.value)}
-              className="w-32 px-2 py-1.5 border border-slate-600 rounded bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-            <span className="text-slate-500">=</span>
-            <input
-              type="text"
-              placeholder="val1, val2"
-              value={row.values}
-              onChange={(e) => updateLabelRow(rows, setRows, i, 'values', e.target.value)}
-              className="flex-1 px-2 py-1.5 border border-slate-600 rounded bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
-            <button
-              type="button"
-              onClick={() => removeLabelRow(rows, setRows, i)}
-              className="text-slate-500 hover:text-slate-300 p-1"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => addLabelRow(rows, setRows)}
-          className="text-xs text-brand-400 hover:text-brand-300"
-        >
-          + Add label
-        </button>
-      </div>
-      <div>
-        <label className="text-xs text-slate-500">Names (comma-separated)</label>
-        <input
-          type="text"
-          placeholder="resource-a, resource-b"
-          value={namesValue}
-          onChange={(e) => setNamesValue(e.target.value)}
-          className="w-full px-2 py-1.5 border border-slate-600 rounded bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
-        />
-      </div>
-    </div>
-  )
-
   return (
     <form onSubmit={handleSubmit} className="p-4 bg-slate-800/80 rounded-lg border border-slate-700/50 space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -219,7 +221,7 @@ function RoleForm({
             pattern="[a-z][a-z0-9-]*"
             maxLength={63}
             placeholder="my-role"
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
           />
         </div>
         <div>
@@ -229,7 +231,7 @@ function RoleForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional description"
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           />
         </div>
       </div>
@@ -453,7 +455,7 @@ export default function RolesPage() {
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-slate-100">{role.name}</h3>
                           {role.is_builtin && (
-                            <span className="px-2 py-0.5 text-xs bg-brand-900/30 text-brand-400 rounded">
+                            <span className="px-2 py-0.5 text-xs bg-brand-900/30 text-brand-400 rounded-sm">
                               built-in
                             </span>
                           )}
@@ -468,7 +470,7 @@ export default function RolesPage() {
                         <div className="flex items-center gap-1 ml-4">
                           <button
                             onClick={() => { setEditingRole(role.name); setShowCreate(false) }}
-                            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-sm transition-colors"
                             title="Edit"
                           >
                             <Pencil size={14} />
@@ -477,14 +479,14 @@ export default function RolesPage() {
                             <button
                               onClick={() => handleDelete(role.name)}
                               disabled={submitting}
-                              className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded transition-colors"
+                              className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded-sm transition-colors"
                             >
                               {submitting ? 'Deleting...' : 'Confirm Delete?'}
                             </button>
                           ) : (
                             <button
                               onClick={() => setDeletingRole(role.name)}
-                              className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+                              className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-sm transition-colors"
                               title="Delete"
                             >
                               <Trash2 size={14} />

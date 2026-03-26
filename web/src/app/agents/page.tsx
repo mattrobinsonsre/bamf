@@ -165,7 +165,7 @@ export default function AgentsPage() {
             value={labelFilter}
             onChange={(e) => setLabelFilter(e.target.value)}
             placeholder="Filter by labels (e.g., env=prod, team=platform)"
-            className="flex-1 px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="flex-1 px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           />
           <button
             type="submit"
@@ -209,7 +209,7 @@ export default function AgentsPage() {
                         {agent.status}
                       </span>
                       {agent.connected_bridge_id && (
-                        <span className="px-2 py-0.5 text-xs bg-blue-900/30 text-blue-400 rounded">
+                        <span className="px-2 py-0.5 text-xs bg-blue-900/30 text-blue-400 rounded-sm">
                           connected
                         </span>
                       )}
@@ -234,7 +234,7 @@ export default function AgentsPage() {
                       <div className="flex flex-wrap items-center gap-1 mt-2">
                         <Tag size={12} className="text-slate-500" />
                         {Object.entries(agent.labels).map(([k, v]) => (
-                          <span key={k} className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded">
+                          <span key={k} className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded-sm">
                             {k}={v}
                           </span>
                         ))}
@@ -250,7 +250,7 @@ export default function AgentsPage() {
                     <button
                       onClick={() => setConfirmDelete(agent)}
                       disabled={deletingId === agent.id}
-                      className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors disabled:opacity-50"
+                      className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-900/20 rounded-sm transition-colors disabled:opacity-50"
                       title="Delete agent"
                     >
                       <Trash2 size={16} />

@@ -163,17 +163,17 @@ function RecordingsList() {
               </div>
               <div className="col-span-1">
                 {rec.recording_type === 'terminal' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-green-900/30 text-green-400">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-green-900/30 text-green-400">
                     <Terminal size={12} />
                     SSH
                   </span>
                 ) : rec.recording_type === 'http' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-amber-900/30 text-amber-400">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-amber-900/30 text-amber-400">
                     <Globe size={12} />
                     HTTP
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-blue-900/30 text-blue-400">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-blue-900/30 text-blue-400">
                     <Database size={12} />
                     DB
                   </span>
@@ -195,17 +195,17 @@ function RecordingsList() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {rec.recording_type === 'terminal' ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-green-900/30 text-green-400">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-green-900/30 text-green-400">
                       <Terminal size={12} />
                       SSH
                     </span>
                   ) : rec.recording_type === 'http' ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-amber-900/30 text-amber-400">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-amber-900/30 text-amber-400">
                       <Globe size={12} />
                       HTTP
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-blue-900/30 text-blue-400">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-sm bg-blue-900/30 text-blue-400">
                       <Database size={12} />
                       DB
                     </span>
