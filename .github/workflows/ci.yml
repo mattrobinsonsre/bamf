@@ -550,7 +550,9 @@ jobs:
           chart_version="${version#v}"
 
           # Generate checksums for all release artifacts
-          (cd dist && sha256sum -- *.tgz *.spdx.json bamf-* 2>/dev/null > checksums.txt)
+          # Use bamf-*-* to match Go binaries (bamf-linux-amd64, etc.)
+          # without matching the Helm chart (bamf-X.Y.Z.tgz)
+          (cd dist && sha256sum -- *.tgz *.spdx.json bamf-*-* 2>/dev/null > checksums.txt)
 
           gh release create "$version" \
             --title "$version" \
@@ -562,7 +564,7 @@ jobs:
             dist/sbom-bamf-web.spdx.json \
             dist/sbom-bamf-proxy.spdx.json \
             dist/checksums.txt \
-            dist/bamf-*
+            dist/bamf-*-*
 
   # ── Cleanup Tag on Failure ──────────────────────────────
   cleanup-tag:
