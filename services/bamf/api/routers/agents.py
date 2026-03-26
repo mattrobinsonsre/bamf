@@ -351,7 +351,7 @@ async def agent_heartbeat(
                     # Refresh TTL so it stays alive as long as the agent is healthy
                     await r.expire(f"agent:{agent_id_str}:relay_bridge", AGENT_TTL_SECONDS)
 
-                # Also refresh per-satellite relay assignments
+                # Also refresh per-outpost relay assignments
                 # Scan for agent:{id}:relay:* keys and refresh them
                 cursor = "0"
                 prefix = f"agent:{agent_id_str}:relay:"

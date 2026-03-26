@@ -33,7 +33,7 @@ class ResourceInfo:
     hostname: str | None = None
     port: int | None = None
     tunnel_hostname: str | None = None
-    satellite: str | None = None
+    outpost: str | None = None
     webhooks: list[dict] = field(default_factory=list)
 
 

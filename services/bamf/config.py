@@ -267,17 +267,17 @@ class Settings(BaseSettings):
         description="Shared secret for proxy→API internal auth. Set via BAMF_PROXY_INTERNAL_TOKEN.",
     )
 
-    # Default satellite name — used for the co-located proxy/bridge deployment.
+    # Default outpost name — used for the co-located proxy/bridge deployment.
     # When a co-located proxy authenticates via proxy_internal_token (env var),
-    # this name identifies which satellite it belongs to.
-    default_satellite_name: str | None = Field(
+    # this name identifies which outpost it belongs to.
+    default_outpost_name: str | None = Field(
         default=None,
-        description="Satellite name for the co-located proxy/bridge. "
-        "Set via BAMF_DEFAULT_SATELLITE_NAME.",
+        description="Outpost name for the co-located proxy/bridge. "
+        "Set via BAMF_DEFAULT_OUTPOST_NAME.",
     )
 
-    # GeoIP database path (MaxMind GeoLite2-City) for TCP tunnel satellite selection.
-    # Optional — when absent, satellite selection falls back to default_satellite_name.
+    # GeoIP database path (MaxMind GeoLite2-City) for TCP tunnel outpost selection.
+    # Optional — when absent, outpost selection falls back to default_outpost_name.
     geoip_database_path: str = Field(
         default="/usr/share/GeoIP/GeoLite2-City.mmdb",
         description="Path to MaxMind GeoLite2-City database file.",

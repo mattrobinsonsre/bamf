@@ -209,14 +209,14 @@ class JoinToken(Base):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
 
 
-class SatelliteToken(Base):
-    """Join token for satellite registration.
+class OutpostToken(Base):
+    """Join token for outpost registration.
 
     Mirrors the JoinToken pattern. Each token is bound to a specific
-    satellite_name — the DNS-safe short name assigned to the satellite.
+    outpost_name — the DNS-safe short name assigned to the outpost.
     """
 
-    __tablename__ = "satellite_tokens"
+    __tablename__ = "outpost_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid7
@@ -224,8 +224,8 @@ class SatelliteToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(63), nullable=False)
 
-    # Satellite identity
-    satellite_name: Mapped[str] = mapped_column(String(63), nullable=False)
+    # Outpost identity
+    outpost_name: Mapped[str] = mapped_column(String(63), nullable=False)
     region: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Limits
@@ -241,15 +241,15 @@ class SatelliteToken(Base):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
 
 
-class Satellite(Base):
-    """Registered satellite deployment (proxy + bridge cluster).
+class Outpost(Base):
+    """Registered outpost deployment (proxy + bridge cluster).
 
-    Stores durable satellite identity. Bridges and proxies in the satellite
+    Stores durable outpost identity. Bridges and proxies in the outpost
     authenticate using the internal_token_hash and bridge_bootstrap_token_hash
     respectively. Runtime state (bridge pools, relay connections) lives in Redis.
     """
 
-    __tablename__ = "satellites"
+    __tablename__ = "outposts"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid7

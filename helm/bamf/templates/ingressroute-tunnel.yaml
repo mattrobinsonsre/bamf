@@ -3,7 +3,7 @@
 {{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
 {{- $fullName := include "bamf.fullname" . }}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
-{{- $tunnelDomainEscaped := include "bamf.satellite.tunnelDomain" . | replace "." "\\." }}
+{{- $tunnelDomainEscaped := include "bamf.outpost.tunnelDomain" . | replace "." "\\." }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:

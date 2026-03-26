@@ -1,14 +1,14 @@
-# RBAC for satellite join job — allows creating/updating K8s Secrets
+# RBAC for outpost join job — allows creating/updating K8s Secrets
 # for proxy internal token and bridge bootstrap token.
-{{- if and .Values.satellite.enabled .Values.satellite.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
+{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ $fullName }}-satellite-join
+  name: {{ $fullName }}-outpost-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: satellite-join
+    app.kubernetes.io/component: outpost-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -17,10 +17,10 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ $fullName }}-satellite-join
+  name: {{ $fullName }}-outpost-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: satellite-join
+    app.kubernetes.io/component: outpost-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -39,10 +39,10 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ $fullName }}-satellite-join
+  name: {{ $fullName }}-outpost-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: satellite-join
+    app.kubernetes.io/component: outpost-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -50,9 +50,9 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ $fullName }}-satellite-join
+  name: {{ $fullName }}-outpost-join
 subjects:
   - kind: ServiceAccount
-    name: {{ $fullName }}-satellite-join
+    name: {{ $fullName }}-outpost-join
     namespace: {{ .Release.Namespace }}
 {{- end }}

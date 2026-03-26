@@ -366,30 +366,30 @@ proxy:
   affinity: {}
   extraEnv: []
 
-  # For satellite deployments, override the API URL to point at a remote central API.
+  # For outpost deployments, override the API URL to point at a remote central API.
   # apiUrl: https://bamf.example.com
 
-# ── Satellite ──────────────────────────────────────────────────────────────────
-# Every proxy+bridge combination is a satellite. The co-located deployment (with API)
-# is just a satellite that shares a cluster with the API.
-satellite:
-  # Enable satellite components (proxy + bridge).
-  # When true, satellite.name is required.
+# ── Outpost ───────────────────────────────────────────────────────────────────
+# Every proxy+bridge combination is an outpost. The co-located deployment (with API)
+# is just an outpost that shares a cluster with the API.
+outpost:
+  # Enable outpost components (proxy + bridge).
+  # When true, outpost.name is required.
   enabled: true
 
-  # DNS-safe short name for this satellite (e.g., "us-east", "eu", "apac").
+  # DNS-safe short name for this outpost (e.g., "us-east", "eu", "apac").
   # Used as a hostname prefix: *.{name}.tunnel.{domain}
   # Must match [a-z][a-z0-9-]*, max 63 characters.
   name: "default"
 
-  # For remote satellites (api is not co-located):
-  # Join token from `POST /api/v1/satellite-tokens`
+  # For remote outposts (api is not co-located):
+  # Join token from `POST /api/v1/outpost-tokens`
   joinToken: ""
-  # Central API URL (required when satellite is remote)
+  # Central API URL (required when outpost is remote)
   apiUrl: ""
 
   # GeoDNS — optional convenience layer for shared *.tunnel.{domain} hostname.
-  # When enabled, the proxy accepts requests on both *.{sat}.tunnel.{domain}
+  # When enabled, the proxy accepts requests on both *.{outpost}.tunnel.{domain}
   # and *.tunnel.{domain}. Does NOT manage DNS records.
   geodns:
     enabled: false

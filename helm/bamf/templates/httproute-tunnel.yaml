@@ -11,7 +11,7 @@ spec:
     - name: {{ include "bamf.fullname" . }}
       sectionName: https
   hostnames:
-    - "*.{{ include "bamf.satellite.tunnelDomain" . }}"
+    - "*.{{ include "bamf.outpost.tunnelDomain" . }}"
   rules:
     # All web app proxy traffic goes to proxy service (or API if proxy disabled)
     - matches:

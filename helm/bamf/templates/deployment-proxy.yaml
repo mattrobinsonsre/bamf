@@ -52,10 +52,10 @@ spec:
                   name: {{ include "bamf.fullname" . }}-proxy-token
                   key: token
             - name: BAMF_PROXY_TUNNEL_DOMAIN
-              value: {{ include "bamf.satellite.tunnelDomain" . | quote }}
-            {{- if .Values.satellite.name }}
-            - name: BAMF_PROXY_SATELLITE_NAME
-              value: {{ .Values.satellite.name | quote }}
+              value: {{ include "bamf.outpost.tunnelDomain" . | quote }}
+            {{- if .Values.outpost.name }}
+            - name: BAMF_PROXY_OUTPOST_NAME
+              value: {{ .Values.outpost.name | quote }}
             {{- end }}
             {{- if .Values.gateway.enabled }}
             {{- $port := int (.Values.gateway.ports.https | default 443) }}

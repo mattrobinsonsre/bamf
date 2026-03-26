@@ -1,6 +1,6 @@
-"""Satellite API models.
+"""Outpost API models.
 
-Satellites are regional proxy+bridge clusters that register with the
+Outposts are regional proxy+bridge clusters that register with the
 central API using join tokens, similar to agent registration.
 """
 
@@ -13,21 +13,21 @@ from pydantic import Field
 from bamf.api.models.common import BAMFBaseModel, NamedModel
 
 if TYPE_CHECKING:
-    from bamf.db.models import Satellite, SatelliteToken
+    from bamf.db.models import Outpost, OutpostToken
 
 
-# ── Satellite Token Models ────────────────────────────────────────────
+# ── Outpost Token Models ────────────────────────────────────────────
 
 
-class SatelliteTokenCreate(NamedModel):
-    """Request to create a satellite join token."""
+class OutpostTokenCreate(NamedModel):
+    """Request to create an outpost join token."""
 
-    satellite_name: str = Field(
+    outpost_name: str = Field(
         ...,
         min_length=1,
         max_length=63,
         pattern=r"^[a-z][a-z0-9-]*$",
-        description="DNS-safe satellite name (e.g., 'eu', 'us-east')",
+        description="DNS-safe outpost name (e.g., 'eu', 'us-east')",
     )
     region: str | None = Field(
         default=None,
@@ -59,12 +59,12 @@ class SatelliteTokenCreate(NamedModel):
     )
 
 
-class SatelliteTokenResponse(BAMFBaseModel):
-    """Satellite token response (without the secret token value)."""
+class OutpostTokenResponse(BAMFBaseModel):
+    """Outpost token response (without the secret token value)."""
 
     id: UUID
     name: str
-    satellite_name: str
+    outpost_name: str
     region: str | None
     expires_at: datetime
     max_uses: int | None
@@ -74,12 +74,12 @@ class SatelliteTokenResponse(BAMFBaseModel):
     created_by: str
 
     @classmethod
-    def from_db(cls, token: "SatelliteToken") -> "SatelliteTokenResponse":
+    def from_db(cls, token: "OutpostToken") -> "OutpostTokenResponse":
         """Create response from database model."""
         return cls(
             id=token.id,
             name=token.name,
-            satellite_name=token.satellite_name,
+            outpost_name=token.outpost_name,
             region=token.region,
             expires_at=token.expires_at,
             max_uses=token.max_uses,
@@ -90,8 +90,8 @@ class SatelliteTokenResponse(BAMFBaseModel):
         )
 
 
-class SatelliteTokenCreateResponse(SatelliteTokenResponse):
-    """Response when creating a satellite token - includes the secret value.
+class OutpostTokenCreateResponse(OutpostTokenResponse):
+    """Response when creating an outpost token - includes the secret value.
 
     The token value is only returned once at creation time.
     """
@@ -99,23 +99,23 @@ class SatelliteTokenCreateResponse(SatelliteTokenResponse):
     token: str = Field(description="The secret token value - only shown once!")
 
 
-# ── Satellite Models ──────────────────────────────────────────────────
+# ── Outpost Models ──────────────────────────────────────────────────
 
 
-class SatelliteJoinRequest(BAMFBaseModel):
-    """Request to register a satellite using a join token."""
+class OutpostJoinRequest(BAMFBaseModel):
+    """Request to register an outpost using a join token."""
 
-    join_token: str = Field(description="The satellite join token")
+    join_token: str = Field(description="The outpost join token")
 
 
-class SatelliteJoinResponse(BAMFBaseModel):
-    """Response after successful satellite registration.
+class OutpostJoinResponse(BAMFBaseModel):
+    """Response after successful outpost registration.
 
     Contains the tokens needed for proxy and bridge authentication.
     """
 
-    satellite_id: UUID
-    satellite_name: str
+    outpost_id: UUID
+    outpost_name: str
     region: str | None
     internal_token: str = Field(description="Token for proxy → API auth")
     bridge_bootstrap_token: str = Field(description="Token for bridge bootstrap")
@@ -123,8 +123,8 @@ class SatelliteJoinResponse(BAMFBaseModel):
     tunnel_domain: str = Field(description="Base tunnel domain")
 
 
-class SatelliteResponse(BAMFBaseModel):
-    """Satellite details (without secret tokens)."""
+class OutpostResponse(BAMFBaseModel):
+    """Outpost details (without secret tokens)."""
 
     id: UUID
     name: str
@@ -136,15 +136,15 @@ class SatelliteResponse(BAMFBaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_db(cls, satellite: "Satellite") -> "SatelliteResponse":
+    def from_db(cls, outpost: "Outpost") -> "OutpostResponse":
         """Create response from database model."""
         return cls(
-            id=satellite.id,
-            name=satellite.name,
-            region=satellite.region,
-            latitude=satellite.latitude,
-            longitude=satellite.longitude,
-            is_active=satellite.is_active,
-            created_at=satellite.created_at,
-            updated_at=satellite.updated_at,
+            id=outpost.id,
+            name=outpost.name,
+            region=outpost.region,
+            latitude=outpost.latitude,
+            longitude=outpost.longitude,
+            is_active=outpost.is_active,
+            created_at=outpost.created_at,
+            updated_at=outpost.updated_at,
         )

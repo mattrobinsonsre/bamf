@@ -1,12 +1,12 @@
-# Satellite Proxy+Bridge Deployments
+# Outpost Proxy+Bridge Deployments
 
-BAMF supports deploying regional proxy+bridge clusters (satellites) to minimize
+BAMF supports deploying regional proxy+bridge clusters (outposts) to minimize
 latency for users in different geographic regions. The central API remains the
 single source of truth for auth, RBAC, and state management.
 
-**Core principle: every proxy+bridge combination is a satellite**, including
+**Core principle: every proxy+bridge combination is an outpost**, including
 the one co-located with the API. There is no special "central" proxy/bridge —
-the co-located deployment is just a satellite that happens to share a cluster
+the co-located deployment is just an outpost that happens to share a cluster
 with the API.
 
 ## Architecture
@@ -28,7 +28,7 @@ with the API.
                 │                   │                   │
                 ▼                   ▼                   ▼
    ┌────────────────────┐ ┌─────────────────┐ ┌────────────────────┐
-   │  Satellite "eu"    │ │ Satellite        │ │  Satellite "apac"  │
+   │  Outpost "eu"      │ │ Outpost          │ │  Outpost "apac"    │
    │                    │ │ "us-east"        │ │                    │
    │  Proxy Service     │ │ (co-located)     │ │  Proxy Service     │
    │  Bridge StatefulSet│ │  Proxy + Bridge  │ │  Bridge StatefulSet│
@@ -39,20 +39,20 @@ with the API.
 
 ## DNS Architecture
 
-Each satellite gets a short DNS-safe name (e.g., `eu`, `us-east`, `apac`)
+Each outpost gets a short DNS-safe name (e.g., `eu`, `us-east`, `apac`)
 used as a subdomain prefix for routing.
 
 ### Hostnames
 
 **Proxy (web app) hostnames:**
 ```
-*.{satellite_name}.tunnel.{base_domain}
+*.{outpost_name}.tunnel.{base_domain}
 ```
 Example: `grafana.eu.tunnel.bamf.example.com`
 
 **Bridge (TCP tunnel) hostnames:**
 ```
-{ordinal}.bridge.{satellite_name}.tunnel.{base_domain}
+{ordinal}.bridge.{outpost_name}.tunnel.{base_domain}
 ```
 Example: `2.bridge.eu.tunnel.bamf.example.com`
 
@@ -62,64 +62,64 @@ Example: `2.bridge.eu.tunnel.bamf.example.com`
 API deployment (central, one location):
   bamf.example.com                              → API + Web UI
 
-Satellite "us-east" (co-located with API):
+Outpost "us-east" (co-located with API):
   *.us-east.tunnel.bamf.example.com             → US-East proxy
   *.bridge.us-east.tunnel.bamf.example.com      → US-East bridges
 
-Satellite "eu":
+Outpost "eu":
   *.eu.tunnel.bamf.example.com                  → EU proxy
   *.bridge.eu.tunnel.bamf.example.com           → EU bridges
 
-Satellite "apac":
+Outpost "apac":
   *.apac.tunnel.bamf.example.com                → APAC proxy
   *.bridge.apac.tunnel.bamf.example.com         → APAC bridges
 
-Optional GeoDNS (all satellites):
+Optional GeoDNS (all outposts):
   *.tunnel.bamf.example.com                     → GeoDNS → nearest proxy
 ```
 
-### DNS Records Required Per Satellite
+### DNS Records Required Per Outpost
 
 **Always required (standard DNS):**
 
 | Record | Type | Value |
 |--------|------|-------|
-| `*.{name}.tunnel.bamf.example.com` | A/AAAA | Satellite ingress IP |
-| `*.bridge.{name}.tunnel.bamf.example.com` | A/AAAA | Satellite ingress IP |
+| `*.{name}.tunnel.bamf.example.com` | A/AAAA | Outpost ingress IP |
+| `*.bridge.{name}.tunnel.bamf.example.com` | A/AAAA | Outpost ingress IP |
 
 **Optional GeoDNS:**
 
 | Record | Type | Value |
 |--------|------|-------|
-| `*.tunnel.bamf.example.com` | GeoDNS A/AAAA | Nearest satellite ingress IP |
+| `*.tunnel.bamf.example.com` | GeoDNS A/AAAA | Nearest outpost ingress IP |
 
 ### Naming Rules
 
-Satellite names follow DNS label rules: `[a-z][a-z0-9-]*`, max 63 characters.
+Outpost names follow DNS label rules: `[a-z][a-z0-9-]*`, max 63 characters.
 Examples: `eu`, `us-east`, `apac-tokyo`.
 
-## Satellite Registration
+## Outpost Registration
 
 ### Join Token Flow
 
-Satellite registration mirrors the agent join token pattern:
+Outpost registration mirrors the agent join token pattern:
 
-1. Admin creates a satellite token:
+1. Admin creates an outpost token:
    ```
-   POST /api/v1/satellite-tokens
-   { "name": "eu-prod-token", "satellite_name": "eu",
+   POST /api/v1/outpost-tokens
+   { "name": "eu-prod-token", "outpost_name": "eu",
      "region": "EU West (Ireland)", "expires_in_hours": 24 }
-   → { "token": "bamf_sat_abc123...", "id": "...", "name": "eu-prod-token" }
+   → { "token": "bamf_out_abc123...", "id": "...", "name": "eu-prod-token" }
    ```
 
-2. Satellite Helm install includes the token. A pre-install job calls:
+2. Outpost Helm install includes the token. A pre-install job calls:
    ```
-   POST /api/v1/satellites/join
-   { "join_token": "bamf_sat_abc123..." }
+   POST /api/v1/outposts/join
+   { "join_token": "bamf_out_abc123..." }
    ```
 
 3. API validates token (hash lookup, expiry, revocation, use count), then
-   creates or updates the satellite record and generates two tokens:
+   creates or updates the outpost record and generates two tokens:
    - `internal_token` — proxy authenticates to API internal endpoints
    - `bridge_bootstrap_token` — bridge authenticates for bootstrap
 
@@ -130,45 +130,45 @@ Satellite registration mirrors the agent join token pattern:
 
 | Token | Format | Purpose |
 |-------|--------|---------|
-| Satellite join token | `bamf_sat_{32 hex}` | One-time registration |
-| Internal token | `sat_int_{32 hex}` | Proxy → API auth |
-| Bridge bootstrap token | `sat_brg_{32 hex}` | Bridge → API auth |
+| Outpost join token | `bamf_out_{32 hex}` | One-time registration |
+| Internal token | `out_int_{32 hex}` | Proxy → API auth |
+| Bridge bootstrap token | `out_brg_{32 hex}` | Bridge → API auth |
 
 ### Re-join Behavior
 
-Re-joining with the same satellite name regenerates both tokens (invalidating
-old ones) and updates the satellite record. Existing proxy and bridge pods
+Re-joining with the same outpost name regenerates both tokens (invalidating
+old ones) and updates the outpost record. Existing proxy and bridge pods
 will fail auth and need restart — intentional to prevent two deployments
 claiming the same name.
 
-## Multi-Satellite Agent Relay
+## Multi-Outpost Agent Relay
 
-**Agents maintain relay connections to bridges in every satellite.** This is
-the key enabler for "any satellite can serve any resource."
+**Agents maintain relay connections to bridges in every outpost.** This is
+the key enabler for "any outpost can serve any resource."
 
 ### How It Works
 
 1. Agent starts, connects to API via SSE
-2. API sends the agent relay assignments per satellite:
-   `{satellite: "eu", bridge: "bridge-0"}, {satellite: "us-east", bridge: "bridge-2"}`
+2. API sends the agent relay assignments per outpost:
+   `{outpost: "eu", bridge: "bridge-0"}, {outpost: "us-east", bridge: "bridge-2"}`
 3. Agent dials each assigned bridge and establishes a gRPC relay stream
-4. When a satellite's bridge pool changes, API sends updated assignments via SSE
-5. Each satellite's bridges now have relay access to the agent
+4. When an outpost's bridge pool changes, API sends updated assignments via SSE
+5. Each outpost's bridges now have relay access to the agent
 
 ### Redis Tracking
 
-Per-agent relay state per satellite:
+Per-agent relay state per outpost:
 ```
-agent:{id}:relay:{satellite_name} → bridge_id  (TTL = relay health interval)
+agent:{id}:relay:{outpost_name} → bridge_id  (TTL = relay health interval)
 ```
 
 The authorize endpoint reads this key to find which bridge in the proxy's
-satellite has the relay to the target agent.
+outpost has the relay to the target agent.
 
 ### Connection Count
 
-With S satellites and A agents: S×A relay connections total, distributed across
-all bridges. For 3 satellites with 2 bridges each and 100 agents: 300 relay
+With S outposts and A agents: S×A relay connections total, distributed across
+all bridges. For 3 outposts with 2 bridges each and 100 agents: 300 relay
 connections total, ~50 per bridge. Relay connections are lightweight idle gRPC
 streams.
 
@@ -177,37 +177,37 @@ streams.
 ### HTTP Proxy (Web Apps)
 
 1. Browser hits `grafana.eu.tunnel.bamf.example.com`
-2. EU satellite proxy calls API `POST /internal/proxy/authorize` with its
-   `satellite_name`
-3. API reads `agent:{id}:relay:eu` to find which bridge in the EU satellite
+2. EU outpost proxy calls API `POST /internal/proxy/authorize` with its
+   `outpost_name`
+3. API reads `agent:{id}:relay:eu` to find which bridge in the EU outpost
    has the relay to the agent
 4. Proxy forwards to the local bridge → agent relay → target
 
 ### TCP Tunnels (SSH, DB)
 
 1. CLI calls API `POST /api/v1/connect` with resource name
-2. API determines nearest satellite to the CLI client (GeoIP)
-3. API selects a bridge in the chosen satellite
+2. API determines nearest outpost to the CLI client (GeoIP)
+3. API selects a bridge in the chosen outpost
 4. API issues session certs, sends dial command to agent
-5. CLI connects to `N.bridge.{satellite}.tunnel.{domain}` via mTLS
+5. CLI connects to `N.bridge.{outpost}.tunnel.{domain}` via mTLS
 
-### GeoIP Satellite Selection
+### GeoIP Outpost Selection
 
-For TCP tunnels, the API picks the satellite nearest to the CLI client:
+For TCP tunnels, the API picks the outpost nearest to the CLI client:
 
 1. MaxMind GeoLite2-City database maps source IP → lat/lon
-2. Haversine distance to each satellite's coordinates
-3. Nearest satellite is selected
+2. Haversine distance to each outpost's coordinates
+3. Nearest outpost is selected
 
 **Fallback chain:**
-1. Resource has `satellite` pinned → use that satellite (no GeoIP needed)
-2. GeoIP lookup succeeds → nearest satellite by distance
-3. GeoIP lookup fails (private IP, unknown) → use configured default satellite
-4. No satellites available → error
+1. Resource has `outpost` pinned → use that outpost (no GeoIP needed)
+2. GeoIP lookup succeeds → nearest outpost by distance
+3. GeoIP lookup fails (private IP, unknown) → use configured default outpost
+4. No outposts available → error
 
 ## Resource Region Pinning
 
-Resources can be pinned to a specific satellite when they depend on a
+Resources can be pinned to a specific outpost when they depend on a
 consistent hostname (OAuth redirects, CORS, CSP policies):
 
 ```yaml
@@ -216,26 +216,26 @@ resources:
     type: http
     hostname: grafana.internal
     port: 3000
-    satellite: eu              # Pin to EU satellite only
+    outpost: eu              # Pin to EU outpost only
 ```
 
-When `satellite` is set:
-- HTTP proxy: requests from other satellites get `redirect_satellite`
+When `outpost` is set:
+- HTTP proxy: requests from other outposts get `redirect_outpost`
   response, proxy returns 302 to the pinned hostname
-- TCP tunnels: API selects a bridge in the pinned satellite only
+- TCP tunnels: API selects a bridge in the pinned outpost only
 - The resource URL is always `grafana.eu.tunnel.bamf.example.com`
 
-When `satellite` is NOT set (default):
-- Resource is accessible through any satellite
+When `outpost` is NOT set (default):
+- Resource is accessible through any outpost
 - GeoDNS (if configured) routes to the nearest one
 
 ## GeoDNS (Optional)
 
-GeoDNS is **not required** for satellite deployments. The satellite-specific
-hostnames (`*.{sat}.tunnel.{domain}`) are the primary access method.
+GeoDNS is **not required** for outpost deployments. The outpost-specific
+hostnames (`*.{outpost}.tunnel.{domain}`) are the primary access method.
 
 GeoDNS adds a convenience layer: `*.tunnel.{domain}` resolves to the nearest
-satellite automatically.
+outpost automatically.
 
 **Supported DNS providers:** AWS Route 53 (geolocation/latency-based routing),
 Cloudflare (Geo Steering), Google Cloud DNS (geolocation routing), NS1
@@ -243,26 +243,26 @@ Cloudflare (Geo Steering), Google Cloud DNS (geolocation routing), NS1
 
 **Configuration:**
 ```yaml
-satellite:
+outpost:
   geodns:
     enabled: false           # Default: off
 ```
 
-When enabled, the proxy accepts requests on both `*.{sat}.tunnel.{domain}`
+When enabled, the proxy accepts requests on both `*.{outpost}.tunnel.{domain}`
 and `*.tunnel.{domain}`.
 
 ## Helm Deployment
 
-### Full Platform (API + co-located satellite)
+### Full Platform (API + co-located outpost)
 
 ```yaml
 api:
   enabled: true
 web:
   enabled: true
-satellite:
+outpost:
   enabled: true
-  name: "us-east"        # Required when satellite.enabled=true
+  name: "us-east"        # Required when outpost.enabled=true
 postgresql:
   bundled:
     enabled: true
@@ -271,17 +271,17 @@ redis:
     enabled: true
 ```
 
-### Remote Satellite (proxy+bridge only)
+### Remote Outpost (proxy+bridge only)
 
 ```yaml
 api:
   enabled: false
 web:
   enabled: false
-satellite:
+outpost:
   enabled: true
   name: "eu"
-  joinToken: "bamf_sat_..."
+  joinToken: "bamf_out_..."
   apiUrl: "https://bamf.example.com"
 postgresql:
   bundled:
@@ -295,53 +295,53 @@ redis:
     enabled: false
 ```
 
-When `satellite.enabled: true` and `api.enabled: false`, the chart deploys:
+When `outpost.enabled: true` and `api.enabled: false`, the chart deploys:
 - Proxy Deployment + Service + ConfigMap + HPA + PDB
 - Bridge StatefulSet + Headless Service + Per-Pod Services + HPA + PDB
-- Satellite Join Job (pre-install hook)
+- Outpost Join Job (pre-install hook)
 - ServiceAccount + Role for join job
-- Ingress routes for `*.{sat-name}.tunnel.domain` and
-  `*.bridge.{sat-name}.tunnel.domain`
-- cert-manager Certificate for the satellite's wildcard domains
+- Ingress routes for `*.{outpost-name}.tunnel.domain` and
+  `*.bridge.{outpost-name}.tunnel.domain`
+- cert-manager Certificate for the outpost's wildcard domains
 
 ### Validation
 
-- `satellite.enabled` requires `satellite.name` to be non-empty
-- `satellite.enabled` with `api.enabled: false` requires `satellite.joinToken`
-  and `satellite.apiUrl`
-- `satellite.name` must match `[a-z][a-z0-9-]*` (DNS label)
+- `outpost.enabled` requires `outpost.name` to be non-empty
+- `outpost.enabled` with `api.enabled: false` requires `outpost.joinToken`
+  and `outpost.apiUrl`
+- `outpost.name` must match `[a-z][a-z0-9-]*` (DNS label)
 
 ## API Endpoints
 
-### Satellite Token Management
+### Outpost Token Management
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `/api/v1/satellite-tokens` | POST | Admin | Create satellite token |
-| `/api/v1/satellite-tokens` | GET | Admin/Audit | List satellite tokens |
-| `/api/v1/satellite-tokens/{id}` | DELETE | Admin | Revoke token by ID |
-| `/api/v1/satellite-tokens/{name}/revoke` | POST | Admin | Revoke by name |
+| `/api/v1/outpost-tokens` | POST | Admin | Create outpost token |
+| `/api/v1/outpost-tokens` | GET | Admin/Audit | List outpost tokens |
+| `/api/v1/outpost-tokens/{id}` | DELETE | Admin | Revoke token by ID |
+| `/api/v1/outpost-tokens/{name}/revoke` | POST | Admin | Revoke by name |
 
-### Satellite Management
+### Outpost Management
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `/api/v1/satellites/join` | POST | None (token in body) | Register satellite |
-| `/api/v1/satellites` | GET | Admin/Audit | List satellites |
-| `/api/v1/satellites/{id}` | DELETE | Admin | Deactivate satellite |
+| `/api/v1/outposts/join` | POST | None (token in body) | Register outpost |
+| `/api/v1/outposts` | GET | Admin/Audit | List outposts |
+| `/api/v1/outposts/{id}` | DELETE | Admin | Deactivate outpost |
 
 ## Security
 
-- **Per-satellite tokens**: Each satellite has unique internal and bootstrap
-  tokens. Revoking a satellite invalidates both.
+- **Per-outpost tokens**: Each outpost has unique internal and bootstrap
+  tokens. Revoking an outpost invalidates both.
 - **Token rotation**: Re-joining regenerates both tokens. Requires coordinated
   restart of proxy and bridge pods.
-- **Satellite deactivation**: `is_active=false` rejects all proxy authorize
+- **Outpost deactivation**: `is_active=false` rejects all proxy authorize
   calls and bridge bootstrap attempts.
-- **Network isolation**: Satellite proxies only need to reach the central API
+- **Network isolation**: Outpost proxies only need to reach the central API
   (HTTPS). Bridges accept agent relay connections (mTLS) and proxy forwarding.
-- **TLS**: `satellite.apiUrl` must be HTTPS. Bridge relay uses BAMF CA mTLS.
+- **TLS**: `outpost.apiUrl` must be HTTPS. Bridge relay uses BAMF CA mTLS.
 - **CA distribution**: Join response includes the CA cert. If CA rotates,
-  satellites must re-join.
+  outposts must re-join.
 
-See [Security Model](security.md#satellite-trust-boundary) for threat analysis.
+See [Security Model](security.md#outpost-trust-boundary) for threat analysis.

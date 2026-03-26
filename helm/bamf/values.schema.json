@@ -325,7 +325,7 @@
         "jsonLogs": { "type": "string" },
         "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "apiUrl": { "type": "string", "description": "Override API URL for satellite deployments." },
+        "apiUrl": { "type": "string", "description": "Override API URL for outpost deployments." },
         "podAnnotations": { "type": "object" },
         "podLabels": { "type": "object" },
         "nodeSelector": { "type": "object" },
@@ -335,25 +335,25 @@
       }
     },
 
-    "satellite": {
+    "outpost": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Satellite configuration — every proxy+bridge is a satellite. Required for multi-region deployments.",
+      "description": "Outpost configuration — every proxy+bridge is an outpost. Required for multi-region deployments.",
       "properties": {
         "enabled": { "type": "boolean" },
         "name": {
           "type": "string",
-          "description": "DNS-safe satellite name (e.g., 'us-east', 'eu'). Required when satellite.enabled=true.",
+          "description": "DNS-safe outpost name (e.g., 'us-east', 'eu'). Required when outpost.enabled=true.",
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 63
         },
         "joinToken": {
           "type": "string",
-          "description": "Satellite join token for remote satellite registration. Required when api.enabled=false."
+          "description": "Outpost join token for remote outpost registration. Required when api.enabled=false."
         },
         "apiUrl": {
           "type": "string",
-          "description": "Central API URL for remote satellites. Required when api.enabled=false."
+          "description": "Central API URL for remote outposts. Required when api.enabled=false."
         },
         "geodns": {
           "type": "object",

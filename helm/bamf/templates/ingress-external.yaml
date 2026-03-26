@@ -18,7 +18,7 @@ spec:
     - hosts:
         - {{ .Values.ingress.external.hostname }}
         {{- if .Values.gateway.tunnelDomain }}
-        - "*.{{ include "bamf.satellite.tunnelDomain" . }}"
+        - "*.{{ include "bamf.outpost.tunnelDomain" . }}"
         {{- end }}
       {{- if .Values.tls.existingSecret }}
       secretName: {{ .Values.tls.existingSecret }}
@@ -73,7 +73,7 @@ spec:
           {{- end }}
     {{- if .Values.gateway.tunnelDomain }}
     # Wildcard tunnel domain → API service (HTTP proxy routes for web apps)
-    - host: "*.{{ include "bamf.satellite.tunnelDomain" . }}"
+    - host: "*.{{ include "bamf.outpost.tunnelDomain" . }}"
       http:
         paths:
           - path: /

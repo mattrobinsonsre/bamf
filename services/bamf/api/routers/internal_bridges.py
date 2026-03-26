@@ -53,7 +53,7 @@ from bamf.api.models.bridges import (
 from bamf.api.models.common import SuccessResponse
 from bamf.auth.ca import get_ca, get_ssh_host_key_pem, serialize_certificate, serialize_private_key
 from bamf.config import settings
-from bamf.db.models import Satellite, SessionRecording, utc_now
+from bamf.db.models import Outpost, SessionRecording, utc_now
 from bamf.db.session import async_session_factory_read, get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
@@ -81,31 +81,31 @@ async def bootstrap_bridge(
 
     Checks two sources:
     1. Co-located bootstrap token (BAMF_BRIDGE_BOOTSTRAP_TOKEN env var)
-    2. Satellite bridge bootstrap tokens (DB hash lookup)
+    2. Outpost bridge bootstrap tokens (DB hash lookup)
 
     Go contract: pkg/bridge/api_client.go:Bootstrap() sends
     {bridge_id, hostname, bootstrap_token} and receives certificate material.
     """
-    satellite_name: str | None = None
+    outpost_name: str | None = None
 
     # Check 1: co-located bootstrap token (env var)
     co_located_token = settings.bridge_bootstrap_token
     if co_located_token and request.bootstrap_token == co_located_token:
-        satellite_name = settings.default_satellite_name
+        outpost_name = settings.default_outpost_name
     else:
-        # Check 2: satellite bridge bootstrap token (DB hash lookup)
+        # Check 2: outpost bridge bootstrap token (DB hash lookup)
         token_hash = hashlib.sha256(request.bootstrap_token.encode()).hexdigest()
         async with async_session_factory_read() as db:
             result = await db.execute(
-                select(Satellite).where(
-                    Satellite.bridge_bootstrap_token_hash == token_hash,
-                    Satellite.is_active == True,  # noqa: E712
+                select(Outpost).where(
+                    Outpost.bridge_bootstrap_token_hash == token_hash,
+                    Outpost.is_active == True,  # noqa: E712
                 )
             )
-            satellite = result.scalar_one_or_none()
+            outpost = result.scalar_one_or_none()
 
-        if satellite:
-            satellite_name = satellite.name
+        if outpost:
+            outpost_name = outpost.name
         else:
             logger.warning(
                 "Invalid bridge bootstrap token",
@@ -150,7 +150,7 @@ async def bootstrap_bridge(
         ca_certificate=ca.ca_cert_pem,
         expires_at=cert.not_valid_after_utc,
         ssh_host_key=get_ssh_host_key_pem(),
-        satellite_name=satellite_name,
+        outpost_name=outpost_name,
     )
 
 
@@ -229,7 +229,7 @@ async def register_bridge(
     """
     bridge_key = f"bridge:{request.bridge_id}"
 
-    sat = request.satellite_name or ""
+    sat = request.outpost_name or ""
     await r.hset(
         bridge_key,
         mapping={
@@ -237,14 +237,14 @@ async def register_bridge(
             "status": "ready",
             "active_tunnels": "0",
             "registered_at": str(time.time()),
-            "satellite": sat,
+            "outpost": sat,
         },
     )
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Add to available bridges sorted set (score = 0 active tunnels)
     await r.zadd("bridges:available", {request.bridge_id: 0})
-    # Also add to per-satellite sorted set if satellite is known
+    # Also add to per-outpost sorted set if outpost is known
     if sat:
         await r.zadd(f"bridges:available:{sat}", {request.bridge_id: 0})
 
@@ -252,7 +252,7 @@ async def register_bridge(
         "Bridge registered",
         bridge_id=request.bridge_id,
         hostname=request.hostname,
-        satellite_name=sat or None,
+        outpost_name=sat or None,
     )
     return SuccessResponse(message="Registered")
 
@@ -277,8 +277,8 @@ async def update_bridge_status(
 
     await r.hset(bridge_key, "status", request.status)
 
-    # Read satellite affiliation from the bridge hash
-    sat = await r.hget(bridge_key, "satellite") or ""
+    # Read outpost affiliation from the bridge hash
+    sat = await r.hget(bridge_key, "outpost") or ""
 
     # Remove from available set if draining/offline
     if request.status != "ready":
@@ -310,7 +310,7 @@ async def bridge_heartbeat(
     """
     bridge_key = f"bridge:{bridge_id}"
 
-    sat = request.satellite_name or ""
+    sat = request.outpost_name or ""
 
     exists = await r.exists(bridge_key)
     if not exists:
@@ -324,14 +324,14 @@ async def bridge_heartbeat(
                 "status": "ready",
                 "active_tunnels": str(request.active_tunnels),
                 "registered_at": str(time.time()),
-                "satellite": sat,
+                "outpost": sat,
             },
         )
 
     # Update tunnel count and refresh TTL
     await r.hset(bridge_key, "active_tunnels", str(request.active_tunnels))
     if sat:
-        await r.hset(bridge_key, "satellite", sat)
+        await r.hset(bridge_key, "outpost", sat)
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Update sorted set score
@@ -559,8 +559,8 @@ async def tunnel_closed(
     if bridge_id:
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
-        # Also update per-satellite sorted set
-        sat = await r.hget(f"bridge:{bridge_id}", "satellite")
+        # Also update per-outpost sorted set
+        sat = await r.hget(f"bridge:{bridge_id}", "outpost")
         if sat:
             await r.zincrby(f"bridges:available:{sat}", -1, bridge_id)
 
@@ -669,7 +669,7 @@ async def drain_bridge(
         # Decrement old bridge tunnel count
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
-        drain_sat = await r.hget(f"bridge:{bridge_id}", "satellite")
+        drain_sat = await r.hget(f"bridge:{bridge_id}", "outpost")
         if drain_sat:
             await r.zincrby(f"bridges:available:{drain_sat}", -1, bridge_id)
 
