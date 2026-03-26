@@ -42,9 +42,17 @@ AUTH_HEADER = {"Authorization": f"Bearer {INTERNAL_TOKEN}"}
 
 @pytest.fixture(autouse=True)
 def _patch_settings():
-    """Patch settings to provide a test internal token."""
-    with patch("bamf.api.routers.internal_proxy.settings") as mock_settings:
+    """Patch settings and satellite lookup to avoid DB access."""
+    with (
+        patch("bamf.api.routers.internal_proxy.settings") as mock_settings,
+        patch(
+            "bamf.api.routers.internal_proxy._lookup_satellite_by_internal_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
         mock_settings.proxy_internal_token = INTERNAL_TOKEN
+        mock_settings.default_satellite_name = None
         mock_settings.api_prefix = "/api/v1"
         yield mock_settings
 
@@ -86,14 +94,16 @@ class TestVerifyInternalToken:
 
     @pytest.mark.asyncio
     async def test_token_not_configured(self, internal_client, _patch_settings):
-        """If internal token is empty on server side, returns 503."""
+        """If no co-located token and satellite lookup fails, returns 403."""
         _patch_settings.proxy_internal_token = ""
         resp = await internal_client.post(
             "/api/v1/internal/proxy/audit",
             json={"resource_name": "test"},
             headers=AUTH_HEADER,
         )
-        assert resp.status_code == 503
+        # With satellite support, empty co-located token falls through to
+        # satellite lookup. If that also fails, it's 403 (not 503).
+        assert resp.status_code == 403
 
 
 # ── Authorize Endpoint Tests ──────────────────────────────────────────────
