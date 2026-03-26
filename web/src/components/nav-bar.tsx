@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Server, Activity, Shield, Users, ShieldCheck, KeyRound, LogOut, Key, Bot, Menu, X, Film, Zap } from 'lucide-react'
@@ -39,14 +39,9 @@ function NavLink({
 
 export default function NavBar() {
   const router = useRouter()
-  const [admin, setAdmin] = useState(false)
-  const [adminOrAudit, setAdminOrAudit] = useState(false)
+  const admin = useMemo(() => isAdmin(), [])
+  const adminOrAudit = useMemo(() => isAdminOrAudit(), [])
   const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => {
-    setAdmin(isAdmin())
-    setAdminOrAudit(isAdminOrAudit())
-  }, [])
 
   const handleLogout = () => {
     clearAuth()
@@ -111,11 +106,11 @@ export default function NavBar() {
   return (
     <>
     <SessionExpiryBanner />
-    <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-10">
+    <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-xs sticky top-0 z-10">
       <div className="px-4 sm:px-6 lg:px-8">
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-1 py-2">
-          <Link href="/" className="flex items-center gap-2 mr-3 flex-shrink-0">
+          <Link href="/" className="flex items-center gap-2 mr-3 shrink-0">
             <img src="/logo.svg" alt="BAMF" className="w-7 h-7" />
             <span className="font-bold text-lg text-slate-100">BAMF</span>
           </Link>
@@ -124,7 +119,7 @@ export default function NavBar() {
           </div>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0 ml-2"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0 ml-2"
           >
             <LogOut size={16} />
             Logout

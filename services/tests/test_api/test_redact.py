@@ -1,6 +1,6 @@
 """Tests for the HTTP audit redaction module."""
 
-from bamf.api.proxy.redact import redact_body, redact_headers, redact_query
+from bamf.proxy.redact import redact_body, redact_headers, redact_query
 
 
 class TestRedactHeaders:

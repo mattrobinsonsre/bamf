@@ -16,6 +16,9 @@ class BridgeRegisterRequest(BAMFBaseModel):
 
     bridge_id: str = Field(..., min_length=1, max_length=63)
     hostname: str = Field(..., min_length=1)
+    satellite_name: str | None = Field(
+        default=None, description="Satellite this bridge belongs to (from bootstrap response)"
+    )
 
 
 class BridgeStatusRequest(BAMFBaseModel):
@@ -29,6 +32,7 @@ class BridgeHeartbeatRequest(BAMFBaseModel):
 
     active_tunnels: int = Field(default=0, ge=0)
     hostname: str = Field(default="", description="Bridge hostname for re-registration")
+    satellite_name: str | None = Field(default=None, description="Satellite this bridge belongs to")
 
 
 class SessionValidateRequest(BAMFBaseModel):
@@ -157,6 +161,9 @@ class BridgeBootstrapResponse(BAMFBaseModel):
     expires_at: datetime = Field(..., description="Certificate expiration time")
     ssh_host_key: str | None = Field(
         None, description="PEM-encoded Ed25519 SSH host key for ssh-audit proxy"
+    )
+    satellite_name: str | None = Field(
+        None, description="Satellite affinity for bridge registration"
     )
 
 

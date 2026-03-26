@@ -252,7 +252,6 @@ export default function WebTerminal({
       wsRef.current?.close()
       terminalRef.current?.dispose()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, resourceType])
 
   return (

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   pull_request:
     branches: [main]
 
@@ -10,14 +11,82 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# All jobs use the containerized scripts from scripts/*.sh.
+env:
+  REGISTRY: ghcr.io/mattrobinsonsre
+
+# All lint/test jobs use the containerized scripts from scripts/*.sh.
 # The only local requirement is Docker (for running containers).
 # No Go, Node, Python, or Helm installed on the runner.
 
 jobs:
+  # ── Prepare ──────────────────────────────────────────────
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      sha_short: ${{ steps.meta.outputs.sha_short }}
+      images_exist: ${{ steps.check.outputs.images_exist }}
+      is_tag: ${{ steps.meta.outputs.is_tag }}
+      is_pr: ${{ steps.meta.outputs.is_pr }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute metadata
+        id: meta
+        run: |
+          sha_short="${GITHUB_SHA::7}"
+          echo "sha_short=$sha_short" >> "$GITHUB_OUTPUT"
+
+          is_tag=false
+          is_pr=false
+          version=""
+
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            is_tag=true
+            version="${GITHUB_REF#refs/tags/}"
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            is_pr=true
+          fi
+
+          echo "is_tag=$is_tag" >> "$GITHUB_OUTPUT"
+          echo "is_pr=$is_pr" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if images exist
+        id: check
+        run: |
+          sha_short="${GITHUB_SHA::7}"
+          images_exist=true
+
+          for image in bamf-api bamf-bridge bamf-agent bamf-web bamf-proxy; do
+            if ! docker manifest inspect "$REGISTRY/$image:sha-$sha_short" > /dev/null 2>&1; then
+              echo "$image:sha-$sha_short not found"
+              images_exist=false
+              break
+            fi
+          done
+
+          echo "images_exist=$images_exist" >> "$GITHUB_OUTPUT"
+          echo "Images exist: $images_exist"
+
   # ── Go ──────────────────────────────────────────────────
   go-lint:
     name: Go Lint
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -25,6 +94,8 @@ jobs:
 
   go-test:
     name: Go Test
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -32,6 +103,8 @@ jobs:
 
   go-build:
     name: Go Build
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -39,6 +112,8 @@ jobs:
 
   go-security:
     name: Go Security (govulncheck)
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -47,6 +122,8 @@ jobs:
   # ── Python ──────────────────────────────────────────────
   python-lint:
     name: Python Lint
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -54,6 +131,8 @@ jobs:
 
   python-test:
     name: Python Test
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -61,6 +140,8 @@ jobs:
 
   python-security:
     name: Python Security (pip-audit)
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -69,14 +150,34 @@ jobs:
   # ── Web ─────────────────────────────────────────────────
   web-lint:
     name: Web Lint
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - run: scripts/lint.sh web
 
+  web-audit:
+    name: npm Audit
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    container: node:25-alpine
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: npm ci
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
   # ── Helm ────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -86,40 +187,206 @@ jobs:
             alpine/helm:3.17.2 \
             lint helm/bamf --values helm/bamf/values.yaml
 
-  # ── Security (Pen Testing) ─────────────────────────────
+  # ── Security ────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v6
-      - run: scripts/pentest.sh sast
-      - uses: actions/upload-artifact@v4
+      - name: Run Semgrep
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            semgrep/semgrep:1.117 \
+            semgrep scan /src \
+              --config "p/python" \
+              --config "p/golang" \
+              --config "p/owasp-top-ten" \
+              --config "p/secrets" \
+              --config "/src/pentest/semgrep/.semgrep.yml" \
+              --exclude "web/node_modules" \
+              --exclude ".next" \
+              --exclude "dist" \
+              --exclude "alembic/versions" \
+              --exclude "reports" \
+              --sarif \
+              --output "/src/semgrep-results.sarif"
+      - name: Upload SARIF
         if: always()
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          name: semgrep-results
-          path: reports/pentest/semgrep-results.json
+          sarif_file: semgrep-results.sarif
+          category: semgrep
 
-  image-scan:
-    name: Image Scan (Trivy)
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
-    needs: [go-build]
+    container: zricethezav/gitleaks:latest
     steps:
       - uses: actions/checkout@v6
-      - name: Build images
-        run: scripts/build.sh images
-      - name: Scan images
-        run: scripts/pentest.sh images
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trivy-results
-          path: reports/pentest/trivy-*.json
+      - name: Run gitleaks
+        run: gitleaks detect --source . --no-git --config .gitleaks.toml
 
-  # ── Gate ────────────────────────────────────────────────
-  ci-pass:
-    name: CI
-    if: always()
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, go, javascript-typescript]
+        include:
+          - language: python
+            build-mode: none
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v6
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+          config: |
+            query-filters:
+              - exclude:
+                  id: py/partial-ssrf
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: codeql-${{ matrix.language }}
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  # ── Build Images ────────────────────────────────────────
+  build-images:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+        image: [bamf-api, bamf-bridge, bamf-agent, bamf-web, bamf-proxy]
+        include:
+          - image: bamf-api
+            dockerfile: docker/Dockerfile.api
+          - image: bamf-bridge
+            dockerfile: docker/Dockerfile.bridge
+          - image: bamf-agent
+            dockerfile: docker/Dockerfile.agent
+          - image: bamf-web
+            dockerfile: docker/Dockerfile.web
+          - image: bamf-proxy
+            dockerfile: docker/Dockerfile.proxy
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:sha-${{ needs.prepare.outputs.sha_short }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+          provenance: false
+
+  # ── Scan Images (Trivy) ────────────────────────────────
+  scan-images:
+    name: Scan ${{ matrix.image }}
+    needs: [prepare, build-images]
+    if: |
+      always()
+      && needs.build-images.result == 'success'
+      && needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [bamf-api, bamf-bridge, bamf-agent, bamf-web, bamf-proxy]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ghcr.io/mattrobinsonsre/${{ matrix.image }}:sha-${{ needs.prepare.outputs.sha_short }}-amd64
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: pentest/trivy/.trivyignore
+          exit-code: '1'
+          limit-severities-for-sarif: true
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+  # ── Create Multi-Arch Manifests ─────────────────────────
+  create-manifests:
+    name: Manifest ${{ matrix.image }}
     needs:
+      - prepare
+      - build-images
       - go-lint
       - go-test
       - go-build
@@ -130,13 +397,248 @@ jobs:
       - web-lint
       - helm-lint
       - sast
-      - image-scan
+      - secret-scan
+      - codeql
+      - scan-images
+    if: |
+      always()
+      && needs.build-images.result == 'success'
+      && needs.prepare.outputs.is_pr != 'true'
+      && !contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [bamf-api, bamf-bridge, bamf-agent, bamf-web, bamf-proxy]
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest
+        run: |
+          sha_short="${{ needs.prepare.outputs.sha_short }}"
+          echo "Creating manifest for ${{ matrix.image }}:sha-$sha_short"
+          docker buildx imagetools create -t "$REGISTRY/${{ matrix.image }}:sha-$sha_short" \
+            "$REGISTRY/${{ matrix.image }}:sha-${sha_short}-amd64" \
+            "$REGISTRY/${{ matrix.image }}:sha-${sha_short}-arm64"
+
+  # ── Release ─────────────────────────────────────────────
+  release:
+    name: Release
+    needs: [prepare, create-manifests]
+    if: |
+      always()
+      && needs.prepare.outputs.is_tag == 'true'
+      && needs.prepare.result == 'success'
+      && (needs.create-manifests.result == 'success' || needs.create-manifests.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag images with version
+        run: |
+          sha_short="${{ needs.prepare.outputs.sha_short }}"
+          version="${{ needs.prepare.outputs.version }}"
+
+          for image in bamf-api bamf-bridge bamf-agent bamf-web bamf-proxy; do
+            echo "Retagging $image:sha-$sha_short -> $version + latest"
+            docker buildx imagetools create \
+              -t "$REGISTRY/$image:$version" \
+              -t "$REGISTRY/$image:latest" \
+              "$REGISTRY/$image:sha-$sha_short"
+          done
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+
+      - name: Publish Helm chart
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          chart_version="${version#v}"
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+          helm package helm/bamf --destination dist/ \
+            --version "$chart_version" --app-version "$version"
+
+          helm push "dist/bamf-${chart_version}.tgz" "oci://$REGISTRY"
+
+      - name: Build cross-platform Go binaries
+        run: scripts/build.sh binaries
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+
+          prev_tag=$(git describe --tags --abbrev=0 "${version}^" 2>/dev/null || echo "")
+
+          if [[ -n "$prev_tag" ]]; then
+            range="${prev_tag}..${version}"
+          else
+            range="$version"
+          fi
+
+          feats="" fixes="" docs="" refactors="" tests="" chores="" others=""
+
+          while IFS= read -r line; do
+            msg=$(echo "$line" | sed -E 's/^[a-z]+(\([^)]*\))?[!]?:[[:space:]]*//')
+
+            case "$line" in
+              feat:*|feat\(*)     feats+="- ${msg}"$'\n' ;;
+              fix:*|fix\(*)       fixes+="- ${msg}"$'\n' ;;
+              docs:*|docs\(*)     docs+="- ${msg}"$'\n' ;;
+              refactor:*|refactor\(*) refactors+="- ${msg}"$'\n' ;;
+              test:*|test\(*)     tests+="- ${msg}"$'\n' ;;
+              chore:*|chore\(*|ci:*|ci\(*) chores+="- ${msg}"$'\n' ;;
+              *)                  others+="- ${line}"$'\n' ;;
+            esac
+          done < <(git log --format='%s' "$range" 2>/dev/null)
+
+          notes=""
+          [[ -n "$feats" ]] && notes+="### Features"$'\n\n'"$feats"$'\n'
+          [[ -n "$fixes" ]] && notes+="### Bug Fixes"$'\n\n'"$fixes"$'\n'
+          [[ -n "$docs" ]] && notes+="### Documentation"$'\n\n'"$docs"$'\n'
+          [[ -n "$refactors" ]] && notes+="### Refactoring"$'\n\n'"$refactors"$'\n'
+          [[ -n "$tests" ]] && notes+="### Tests"$'\n\n'"$tests"$'\n'
+          [[ -n "$chores" ]] && notes+="### Maintenance"$'\n\n'"$chores"$'\n'
+          [[ -n "$others" ]] && notes+="### Other Changes"$'\n\n'"$others"$'\n'
+
+          if [[ -n "$prev_tag" ]]; then
+            notes+="**Full Changelog**: https://github.com/mattrobinsonsre/bamf/compare/${prev_tag}...${version}"$'\n'
+          fi
+
+          echo "$notes" > /tmp/release-notes.md
+
+      - name: Generate SBOMs
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+          for image in bamf-api bamf-bridge bamf-agent bamf-web bamf-proxy; do
+            echo "Generating SBOM for $image:$version"
+            syft "$REGISTRY/$image:$version" -o spdx-json="dist/sbom-${image}.spdx.json"
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          chart_version="${version#v}"
+
+          # Generate checksums for all release artifacts
+          (cd dist && sha256sum -- *.tgz *.spdx.json bamf-* 2>/dev/null > checksums.txt)
+
+          gh release create "$version" \
+            --title "$version" \
+            --notes-file /tmp/release-notes.md \
+            dist/bamf-${chart_version}.tgz \
+            dist/sbom-bamf-api.spdx.json \
+            dist/sbom-bamf-bridge.spdx.json \
+            dist/sbom-bamf-agent.spdx.json \
+            dist/sbom-bamf-web.spdx.json \
+            dist/sbom-bamf-proxy.spdx.json \
+            dist/checksums.txt \
+            dist/bamf-*
+
+  # ── Cleanup Tag on Failure ──────────────────────────────
+  cleanup-tag:
+    name: Cleanup Tag
+    needs: [prepare, build-images, scan-images, create-manifests, release]
+    if: |
+      always()
+      && needs.prepare.outputs.is_tag == 'true'
+      && (needs.build-images.result == 'failure' || needs.scan-images.result == 'failure' || needs.create-manifests.result == 'failure' || needs.release.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Delete tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          echo "Cleaning up failed release $version"
+
+          gh release delete "$version" --cleanup-tag --yes 2>/dev/null || true
+          git push origin ":refs/tags/$version" 2>/dev/null || true
+
+  # ── Gate ────────────────────────────────────────────────
+  ci-pass:
+    name: CI
+    if: always()
+    needs:
+      - prepare
+      - go-lint
+      - go-test
+      - go-build
+      - go-security
+      - python-lint
+      - python-test
+      - python-security
+      - web-lint
+      - web-audit
+      - helm-lint
+      - sast
+      - secret-scan
+      - codeql
+      - dependency-review
+      - build-images
+      - scan-images
+      - create-manifests
+      - release
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
-            echo "One or more jobs failed"
-            exit 1
-          fi
+          results=(
+            "${{ needs.prepare.result }}"
+            "${{ needs.go-lint.result }}"
+            "${{ needs.go-test.result }}"
+            "${{ needs.go-build.result }}"
+            "${{ needs.go-security.result }}"
+            "${{ needs.python-lint.result }}"
+            "${{ needs.python-test.result }}"
+            "${{ needs.python-security.result }}"
+            "${{ needs.web-lint.result }}"
+            "${{ needs.web-audit.result }}"
+            "${{ needs.helm-lint.result }}"
+            "${{ needs.sast.result }}"
+            "${{ needs.secret-scan.result }}"
+            "${{ needs.codeql.result }}"
+            "${{ needs.dependency-review.result }}"
+            "${{ needs.build-images.result }}"
+            "${{ needs.scan-images.result }}"
+            "${{ needs.create-manifests.result }}"
+            "${{ needs.release.result }}"
+          )
+
+          for r in "${results[@]}"; do
+            if [[ "$r" == "failure" ]]; then
+              echo "One or more jobs failed"
+              exit 1
+            fi
+          done
           echo "All checks passed"

@@ -142,17 +142,17 @@ export default function RecordingDetailPage() {
             <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
               <div className="flex items-center gap-2">
                 {recording.recording_type === 'terminal' ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded bg-green-900/30 text-green-400">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded-sm bg-green-900/30 text-green-400">
                     <Terminal size={14} />
                     Terminal Recording
                   </span>
                 ) : recording.recording_type === 'http' ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded bg-amber-900/30 text-amber-400">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded-sm bg-amber-900/30 text-amber-400">
                     <Globe size={14} />
                     HTTP Exchange
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded bg-blue-900/30 text-blue-400">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-sm rounded-sm bg-blue-900/30 text-blue-400">
                     <Database size={14} />
                     Database Queries
                   </span>

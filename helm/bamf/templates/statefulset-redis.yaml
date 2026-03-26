@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: redis
-          image: {{ .Values.redis.bundled.image.repository }}:{{ .Values.redis.bundled.image.tag }}
+          image: {{ include "bamf.image" (dict "imageValues" .Values.redis.bundled.image "appVersion" .Values.redis.bundled.image.tag "globalRegistry" .Values.global.imageRegistry) }}
           imagePullPolicy: {{ .Values.redis.bundled.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - name: tcp-redis

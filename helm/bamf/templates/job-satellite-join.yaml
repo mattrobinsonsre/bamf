@@ -1,0 +1,162 @@
+# Satellite join job — registers a remote satellite with the central API.
+# Only runs when satellite.enabled=true and api.enabled=false (remote satellite).
+# Helm pre-install hook: runs before the main deployment.
+{{- if and .Values.satellite.enabled .Values.satellite.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
+{{- $fullName := include "bamf.fullname" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullName }}-satellite-join
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: satellite-join
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "bamf.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: satellite-join
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $fullName }}-satellite-join
+      restartPolicy: OnFailure
+      containers:
+        - name: join
+          image: curlimages/curl:8.5.0
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              echo "Registering satellite '{{ .Values.satellite.name }}' with {{ .Values.satellite.apiUrl }}"
+
+              # Call the satellite join endpoint
+              RESPONSE=$(curl -sSf -X POST \
+                "{{ .Values.satellite.apiUrl }}/api/v1/satellites/join" \
+                -H "Content-Type: application/json" \
+                -d "{\"join_token\": \"${JOIN_TOKEN}\"}" \
+                --retry 3 --retry-delay 5 --retry-max-time 60 \
+                --max-time 30)
+
+              echo "Join response received, extracting tokens..."
+
+              # Extract tokens from JSON response using shell (no jq in curl image)
+              INTERNAL_TOKEN=$(echo "$RESPONSE" | sed -n 's/.*"internal_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+              BRIDGE_TOKEN=$(echo "$RESPONSE" | sed -n 's/.*"bridge_bootstrap_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+              CA_CERT=$(echo "$RESPONSE" | sed -n 's/.*"ca_certificate"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+              if [ -z "$INTERNAL_TOKEN" ] || [ -z "$BRIDGE_TOKEN" ]; then
+                echo "ERROR: Failed to extract tokens from join response"
+                echo "Response: $RESPONSE"
+                exit 1
+              fi
+
+              echo "Tokens extracted successfully."
+
+              # Create/update K8s secrets using the Kubernetes API
+              KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              KUBE_API="https://kubernetes.default.svc"
+              NAMESPACE="{{ .Release.Namespace }}"
+              CA_BUNDLE="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+              # Base64 encode the tokens
+              B64_INTERNAL=$(echo -n "$INTERNAL_TOKEN" | base64)
+              B64_BRIDGE=$(echo -n "$BRIDGE_TOKEN" | base64)
+
+              # Create proxy token secret
+              PROXY_SECRET_NAME="{{ $fullName }}-proxy-token"
+              curl -sSf -X PUT \
+                "$KUBE_API/api/v1/namespaces/$NAMESPACE/secrets/$PROXY_SECRET_NAME" \
+                --cacert "$CA_BUNDLE" \
+                -H "Authorization: Bearer $KUBE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"apiVersion\": \"v1\",
+                  \"kind\": \"Secret\",
+                  \"metadata\": {
+                    \"name\": \"$PROXY_SECRET_NAME\",
+                    \"namespace\": \"$NAMESPACE\"
+                  },
+                  \"type\": \"Opaque\",
+                  \"data\": {
+                    \"token\": \"$B64_INTERNAL\"
+                  }
+                }" || \
+              curl -sSf -X POST \
+                "$KUBE_API/api/v1/namespaces/$NAMESPACE/secrets" \
+                --cacert "$CA_BUNDLE" \
+                -H "Authorization: Bearer $KUBE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"apiVersion\": \"v1\",
+                  \"kind\": \"Secret\",
+                  \"metadata\": {
+                    \"name\": \"$PROXY_SECRET_NAME\",
+                    \"namespace\": \"$NAMESPACE\"
+                  },
+                  \"type\": \"Opaque\",
+                  \"data\": {
+                    \"token\": \"$B64_INTERNAL\"
+                  }
+                }"
+
+              echo "Proxy token secret created/updated."
+
+              # Create bridge bootstrap token secret
+              BRIDGE_SECRET_NAME="{{ $fullName }}-bridge-bootstrap"
+              curl -sSf -X PUT \
+                "$KUBE_API/api/v1/namespaces/$NAMESPACE/secrets/$BRIDGE_SECRET_NAME" \
+                --cacert "$CA_BUNDLE" \
+                -H "Authorization: Bearer $KUBE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"apiVersion\": \"v1\",
+                  \"kind\": \"Secret\",
+                  \"metadata\": {
+                    \"name\": \"$BRIDGE_SECRET_NAME\",
+                    \"namespace\": \"$NAMESPACE\"
+                  },
+                  \"type\": \"Opaque\",
+                  \"data\": {
+                    \"token\": \"$B64_BRIDGE\"
+                  }
+                }" || \
+              curl -sSf -X POST \
+                "$KUBE_API/api/v1/namespaces/$NAMESPACE/secrets" \
+                --cacert "$CA_BUNDLE" \
+                -H "Authorization: Bearer $KUBE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"apiVersion\": \"v1\",
+                  \"kind\": \"Secret\",
+                  \"metadata\": {
+                    \"name\": \"$BRIDGE_SECRET_NAME\",
+                    \"namespace\": \"$NAMESPACE\"
+                  },
+                  \"type\": \"Opaque\",
+                  \"data\": {
+                    \"token\": \"$B64_BRIDGE\"
+                  }
+                }"
+
+              echo "Bridge bootstrap token secret created/updated."
+              echo "Satellite '{{ .Values.satellite.name }}' registered successfully."
+          env:
+            - name: JOIN_TOKEN
+              value: {{ .Values.satellite.joinToken | quote }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+{{- end }}

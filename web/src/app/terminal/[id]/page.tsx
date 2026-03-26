@@ -107,7 +107,7 @@ export default function TerminalPage() {
         </button>
         <Terminal size={16} className="text-slate-400" />
         <span className="text-sm font-medium text-slate-200">{resourceName}</span>
-        <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded">
+        <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded-sm">
           {resourceType}
         </span>
         <div className="flex-1" />

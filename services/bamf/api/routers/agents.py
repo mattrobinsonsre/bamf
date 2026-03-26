@@ -343,13 +343,27 @@ async def agent_heartbeat(
             await set_agent_resources(r, agent_id_str, resource_infos, AGENT_TTL_SECONDS)
             await set_tunnel_hostnames(r, resource_infos, AGENT_TTL_SECONDS)
 
-            # Refresh relay bridge assignment TTL for agents with HTTP resources
+            # Refresh relay bridge assignment TTLs for agents with HTTP resources
             has_http = any(res.resource_type in ("http", "https") for res in body.resources)
             if has_http:
                 relay_bridge = await r.get(f"agent:{agent_id_str}:relay_bridge")
                 if relay_bridge:
                     # Refresh TTL so it stays alive as long as the agent is healthy
                     await r.expire(f"agent:{agent_id_str}:relay_bridge", AGENT_TTL_SECONDS)
+
+                # Also refresh per-satellite relay assignments
+                # Scan for agent:{id}:relay:* keys and refresh them
+                cursor = "0"
+                prefix = f"agent:{agent_id_str}:relay:"
+                while True:
+                    cursor, keys = await r.scan(cursor=cursor, match=f"{prefix}*", count=20)
+                    for key in keys:
+                        # Skip the global relay_bridge key (already handled)
+                        if key == f"agent:{agent_id_str}:relay_bridge":
+                            continue
+                        await r.expire(key, AGENT_TTL_SECONDS)
+                    if cursor == 0 or cursor == "0":
+                        break
 
         # Store cluster_internal flag so connect endpoint can route appropriately
         if body.cluster_internal:

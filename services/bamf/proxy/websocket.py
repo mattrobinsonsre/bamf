@@ -15,16 +15,15 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+import structlog
 import wsproto
 import wsproto.events
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from bamf.logging_config import get_logger
-
 if TYPE_CHECKING:
     pass
 
-logger = get_logger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def ws_handshake(
@@ -176,7 +175,9 @@ async def ws_relay(
             task.cancel()
             try:
                 await task
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+                pass  # Expected during shutdown
+            except Exception:
+                logger.debug("ws_relay: error awaiting cancelled task", exc_info=True)
     finally:
         writer.close()

@@ -7,7 +7,7 @@ import pytest
 import wsproto
 import wsproto.events
 
-from bamf.api.proxy.websocket import ws_handshake
+from bamf.proxy.websocket import ws_handshake
 
 
 class TestWsHandshake:

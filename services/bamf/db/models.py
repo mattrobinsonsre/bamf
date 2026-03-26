@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -206,6 +207,72 @@ class JoinToken(Base):
         DateTime(timezone=True), default=utc_now, nullable=False
     )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
+
+
+class SatelliteToken(Base):
+    """Join token for satellite registration.
+
+    Mirrors the JoinToken pattern. Each token is bound to a specific
+    satellite_name — the DNS-safe short name assigned to the satellite.
+    """
+
+    __tablename__ = "satellite_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid7
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(63), nullable=False)
+
+    # Satellite identity
+    satellite_name: Mapped[str] = mapped_column(String(63), nullable=False)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Limits
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = unlimited
+    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
+
+
+class Satellite(Base):
+    """Registered satellite deployment (proxy + bridge cluster).
+
+    Stores durable satellite identity. Bridges and proxies in the satellite
+    authenticate using the internal_token_hash and bridge_bootstrap_token_hash
+    respectively. Runtime state (bridge pools, relay connections) lives in Redis.
+    """
+
+    __tablename__ = "satellites"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=generate_uuid7
+    )
+    name: Mapped[str] = mapped_column(String(63), unique=True, nullable=False, index=True)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Auth tokens (SHA256 hashes)
+    internal_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bridge_bootstrap_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # GeoIP routing
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
 
 
 # No Bridge model — bridge state is ephemeral and lives entirely in Redis.

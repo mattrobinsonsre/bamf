@@ -1,0 +1,18 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bamf.fullname" . }}-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "bamf.proxy.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,33 @@
+{{- if and .Values.proxy.enabled .Values.proxy.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "bamf.fullname" . }}-proxy
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "bamf.fullname" . }}-proxy
+  minReplicas: {{ .Values.proxy.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.proxy.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.proxy.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.proxy.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.proxy.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.proxy.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}

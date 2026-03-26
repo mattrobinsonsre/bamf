@@ -190,7 +190,7 @@ export default function SessionsPage() {
                           <button
                             onClick={() => handleRevokeUser(email)}
                             disabled={submitting}
-                            className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded transition-colors"
+                            className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded-sm transition-colors"
                           >
                             {submitting ? 'Revoking...' : 'Confirm Revoke All?'}
                           </button>
@@ -198,7 +198,7 @@ export default function SessionsPage() {
                       ) : (
                         <button
                           onClick={() => setRevokingUser(email)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-sm transition-colors"
                         >
                           <Trash2 size={12} />
                           Revoke All

@@ -1,0 +1,50 @@
+# BAMF Proxy Service Dockerfile
+# Builds the standalone HTTP proxy (web app + kube proxy)
+# Smaller than Dockerfile.api — no SQLAlchemy, asyncpg, alembic, SAML, etc.
+
+FROM python:3.14-slim
+LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
+
+# Minimal system deps (no libxml2/xmlsec needed — proxy has no SAML)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install --no-cache-dir poetry==2.3.2
+
+# Set working directory
+WORKDIR /app
+
+# Copy proxy dependency files
+COPY services/bamf/proxy/pyproject.toml ./
+
+# Install dependencies
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --only main --no-root
+
+# Copy only the proxy package (not the full API)
+COPY services/bamf/proxy ./bamf/proxy
+COPY services/bamf/__init__.py ./bamf/__init__.py
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash bamf \
+    && chown -R bamf:bamf /app
+
+USER bamf
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    PORT=8001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Expose port
+EXPOSE 8001
+
+# Run the application
+CMD ["uvicorn", "bamf.proxy.app:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -18,16 +18,13 @@ const SCORE_COLORS = ['bg-red-500', 'bg-red-500', 'bg-yellow-500', 'bg-brand-500
 const SCORE_TEXT = ['text-red-400', 'text-red-400', 'text-yellow-400', 'text-brand-400', 'text-green-400']
 const MIN_SCORE = 3
 
+const emptyResult = { score: 0, warning: '', suggestions: [] as string[] }
+
 function usePasswordStrength(password: string) {
-  const [result, setResult] = useState<{ score: number; warning: string; suggestions: string[] }>({
-    score: 0, warning: '', suggestions: [],
-  })
+  const [result, setResult] = useState(emptyResult)
 
   useEffect(() => {
-    if (!password) {
-      setResult({ score: 0, warning: '', suggestions: [] })
-      return
-    }
+    if (!password) return
     let cancelled = false
     zxcvbnAsync(password).then((r) => {
       if (!cancelled) {
@@ -41,7 +38,7 @@ function usePasswordStrength(password: string) {
     return () => { cancelled = true }
   }, [password])
 
-  return result
+  return password ? result : emptyResult
 }
 
 function PasswordStrength({ password }: { password: string }) {
@@ -293,7 +290,7 @@ export default function UsersPage() {
                       <div className="flex items-center gap-1 ml-4">
                         <button
                           onClick={() => { setEditingUser(user.email); setShowCreate(false) }}
-                          className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded transition-colors"
+                          className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-sm transition-colors"
                           title="Reset password"
                         >
                           <KeyRound size={14} />
@@ -302,14 +299,14 @@ export default function UsersPage() {
                           <button
                             onClick={() => handleDelete(user.email)}
                             disabled={submitting}
-                            className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded transition-colors"
+                            className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded-sm transition-colors"
                           >
                             {submitting ? 'Deleting...' : 'Confirm Delete?'}
                           </button>
                         ) : (
                           <button
                             onClick={() => setDeletingUser(user.email)}
-                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-sm transition-colors"
                             title="Delete"
                           >
                             <Trash2 size={14} />
@@ -375,7 +372,7 @@ function UserForm({
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="user@example.com"
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           />
         </div>
         <div>
@@ -386,7 +383,7 @@ function UserForm({
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter a strong password"
             autoComplete="new-password"
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           />
           <PasswordStrength password={password} />
         </div>
@@ -446,7 +443,7 @@ function PasswordForm({
           required
           placeholder="Enter a strong password"
           autoComplete="new-password"
-          className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
         />
         <PasswordStrength password={password} />
       </div>

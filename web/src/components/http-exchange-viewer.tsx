@@ -67,7 +67,7 @@ function HeadersTable({ headers }: { headers: Record<string, string> }) {
     return <p className="text-xs text-slate-500 italic">No headers</p>
   }
   return (
-    <div className="border border-slate-700/50 rounded overflow-hidden">
+    <div className="border border-slate-700/50 rounded-sm overflow-hidden">
       <table className="w-full">
         <tbody className="divide-y divide-slate-800">
           {entries.map(([key, value]) => (
@@ -119,7 +119,7 @@ function BodySection({
           Body truncated (exceeded 256KB limit)
         </div>
       )}
-      <pre className="text-xs font-mono text-slate-200 bg-slate-900 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+      <pre className="text-xs font-mono text-slate-200 bg-slate-900 rounded-sm p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
         {formatted}
       </pre>
     </div>
@@ -142,11 +142,11 @@ export default function HttpExchangeViewer({ exchange }: HttpExchangeViewerProps
     <div className="space-y-6">
       {/* Summary bar */}
       <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-        <span className={`px-2 py-0.5 text-xs font-bold rounded ${METHOD_STYLES[request.method] || 'bg-slate-700 text-slate-300'}`}>
+        <span className={`px-2 py-0.5 text-xs font-bold rounded-sm ${METHOD_STYLES[request.method] || 'bg-slate-700 text-slate-300'}`}>
           {request.method}
         </span>
         <code className="text-sm text-slate-200 break-all">{fullPath}</code>
-        <span className={`px-2 py-0.5 text-xs font-bold rounded ${statusColor(response.status)}`}>
+        <span className={`px-2 py-0.5 text-xs font-bold rounded-sm ${statusColor(response.status)}`}>
           {response.status}
         </span>
         <span className="flex items-center gap-1 text-xs text-slate-400">

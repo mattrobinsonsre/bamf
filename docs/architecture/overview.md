@@ -28,15 +28,21 @@ development velocity and ecosystem richness are priorities.
       │   API Server     │◀──┘        │  Bridge          │
       │  Python/FastAPI  │            │  Go StatefulSet  │
       │  CA · RBAC · SSO │───────────▶│  tunnel relay    │
-      │  HTTP proxy      │            │  bridge-0..N     │
-      └────────┬─────────┘            └────────┬─────────┘
-               │                               │
-      ┌────────▼─────────┐            ┌────────▼─────────┐
-      │   Web UI (SPA)   │            │   Agents (Go)    │
-      │   Next.js/React  │            │   K8s or VM      │
-      └──────────────────┘            └────────┬─────────┘
-                                               │
-                                        Target Resources
+      │                  │            │  bridge-0..N     │
+      └───────┬──────────┘            └────────┬─────────┘
+              │                                │
+      ┌───────▼──────────┐            ┌────────▼─────────┐
+      │  Proxy Service   │            │   Agents (Go)    │
+      │  Python/FastAPI  │            │   K8s or VM      │
+      │  HTTP proxy,     │            └────────┬─────────┘
+      │  kube proxy,     │                     │
+      │  header rewrite  │              Target Resources
+      └───────┬──────────┘
+              │
+      ┌───────▼──────────┐
+      │   Web UI (SPA)   │
+      │   Next.js/React  │
+      └──────────────────┘
 ```
 
 ## Components
@@ -44,13 +50,27 @@ development velocity and ecosystem richness are priorities.
 ### API Server (Python / FastAPI)
 
 The control plane. Owns the internal CA, issues certificates, handles
-authentication (local + SSO), enforces RBAC, serves the REST API, and runs the
-HTTP proxy for web application access.
+authentication (local + SSO), enforces RBAC, and serves the REST API. Exposes
+internal endpoints for the proxy service to perform authorization, audit
+logging, and recording storage in a single round-trip.
 
 - Exposed via Traefik IngressRoute or Istio HTTPRoute (TLS termination with Let's Encrypt)
 - Stateless — any pod handles any request, scaled by HPA
 - Direct access to PostgreSQL and Redis
 - The only component with the CA private key
+
+### Proxy Service (Python / FastAPI)
+
+Standalone HTTP reverse proxy for web application access and Kubernetes API
+proxying. Handles per-request authentication, header rewriting, WebSocket relay,
+and audit logging. Communicates with the API exclusively via internal HTTP
+endpoints — no direct Redis or DB access.
+
+- Deployed as a separate process and Docker image (`bamf-proxy`)
+- Receives `*.tunnel.domain` and `/api/v1/kube/*` traffic via ingress routing
+- Calls `POST /api/v1/internal/proxy/authorize` on the API for auth+RBAC
+- Calls `POST /api/v1/internal/proxy/audit` (fire-and-forget) for audit events
+- Stateless — trivial HPA scaling, same as the API
 
 ### Bridge (Go)
 

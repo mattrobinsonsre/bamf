@@ -40,14 +40,23 @@ mkcert -install 2>/dev/null
 # Create cert directory
 mkdir -p "$CERT_DIR"
 
-# Generate certificates if they don't exist
+# Generate certificates if they don't exist or are missing satellite domains
+NEED_REGEN=false
 if [ ! -f "$CERT_DIR/cert.pem" ] || [ ! -f "$CERT_DIR/key.pem" ]; then
+    NEED_REGEN=true
+elif ! openssl x509 -in "$CERT_DIR/cert.pem" -noout -text 2>/dev/null | grep -q "local.tunnel.bamf.local"; then
+    echo "Regenerating certs (missing satellite domains)..."
+    NEED_REGEN=true
+fi
+if [ "$NEED_REGEN" = true ]; then
     echo "Generating TLS certificates for bamf.local..."
     cd "$CERT_DIR"
     mkcert -cert-file cert.pem -key-file key.pem \\
         "bamf.local" \\
         "*.bamf.local" \\
         "*.tunnel.bamf.local" \\
+        "*.local.tunnel.bamf.local" \\
+        "*.bridge.local.tunnel.bamf.local" \\
         "localhost" \\
         "127.0.0.1"
 fi
@@ -139,6 +148,16 @@ docker_build(
     },
 )
 
+# Proxy Service (standalone HTTP proxy)
+docker_build(
+    'bamf-proxy',
+    context='.',
+    dockerfile='docker/Dockerfile.proxy',
+    live_update=[
+        sync('./services/bamf/proxy', '/app/bamf/proxy'),
+    ],
+)
+
 # Kubamf (Kubernetes GUI)
 docker_build(
     'kubamf',
@@ -180,6 +199,11 @@ k8s_yaml(helm(
         'agent.image.repository=bamf-agent',
         'agent.image.tag=latest',
         'agent.image.pullPolicy=Never',
+        # Proxy service image overrides
+        'proxy.enabled=true',
+        'proxy.image.repository=bamf-proxy',
+        'proxy.image.tag=latest',
+        'proxy.image.pullPolicy=Never',
         # Kubamf (Kubernetes GUI)
         'kubamf.enabled=true',
         'kubamf.bamf.kubeResourceName=local-k8s',
@@ -198,6 +222,13 @@ k8s_resource(
     'bamf-api',
     labels=['backend'],
     resource_deps=['bamf-postgresql', 'setup-certificates'],
+)
+
+# Proxy (standalone HTTP proxy for web apps + kube)
+k8s_resource(
+    'bamf-proxy',
+    labels=['backend'],
+    resource_deps=['bamf-api'],
 )
 
 # Bridge (tunnel gateway — non-HTTP TCP ports exposed via LoadBalancer,
