@@ -1,15 +1,15 @@
-# Satellite join job — registers a remote satellite with the central API.
-# Only runs when satellite.enabled=true and api.enabled=false (remote satellite).
+# Outpost join job — registers a remote outpost with the central API.
+# Only runs when outpost.enabled=true and api.enabled=false (remote outpost).
 # Helm pre-install hook: runs before the main deployment.
-{{- if and .Values.satellite.enabled .Values.satellite.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
+{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $fullName }}-satellite-join
+  name: {{ $fullName }}-outpost-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: satellite-join
+    app.kubernetes.io/component: outpost-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "5"
@@ -21,13 +21,13 @@ spec:
     metadata:
       labels:
         {{- include "bamf.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: satellite-join
+        app.kubernetes.io/component: outpost-join
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ $fullName }}-satellite-join
+      serviceAccountName: {{ $fullName }}-outpost-join
       restartPolicy: OnFailure
       containers:
         - name: join
@@ -36,11 +36,11 @@ spec:
             - /bin/sh
             - -ec
             - |
-              echo "Registering satellite '{{ .Values.satellite.name }}' with {{ .Values.satellite.apiUrl }}"
+              echo "Registering outpost '{{ .Values.outpost.name }}' with {{ .Values.outpost.apiUrl }}"
 
-              # Call the satellite join endpoint
+              # Call the outpost join endpoint
               RESPONSE=$(curl -sSf -X POST \
-                "{{ .Values.satellite.apiUrl }}/api/v1/satellites/join" \
+                "{{ .Values.outpost.apiUrl }}/api/v1/outposts/join" \
                 -H "Content-Type: application/json" \
                 -d "{\"join_token\": \"${JOIN_TOKEN}\"}" \
                 --retry 3 --retry-delay 5 --retry-max-time 60 \
@@ -148,10 +148,10 @@ spec:
                 }"
 
               echo "Bridge bootstrap token secret created/updated."
-              echo "Satellite '{{ .Values.satellite.name }}' registered successfully."
+              echo "Outpost '{{ .Values.outpost.name }}' registered successfully."
           env:
             - name: JOIN_TOKEN
-              value: {{ .Values.satellite.joinToken | quote }}
+              value: {{ .Values.outpost.joinToken | quote }}
           resources:
             requests:
               cpu: 50m

@@ -119,7 +119,7 @@ async def connect_to_resource(
     """
     if request.reconnect_session_id:
         return await _handle_reconnect(request, db, r, current_user)
-    # Client IP for GeoIP satellite selection (TCP tunnels).
+    # Client IP for GeoIP outpost selection (TCP tunnels).
     client_ip = http_request.headers.get("x-forwarded-for", "").split(",")[0].strip()
     if not client_ip and http_request.client:
         client_ip = http_request.client.host
@@ -197,13 +197,13 @@ async def _handle_new_connection(
         _validate_protocol_override(request.protocol, original_resource_type)
         resource_type = request.protocol
 
-    # ── 5. Determine satellite for bridge selection ─────────────────
+    # ── 5. Determine outpost for bridge selection ───────────────────
     # Priority: resource pin > GeoIP > default
-    satellite_name = resource.satellite
-    if not satellite_name and client_ip:
-        satellite_name = await _geoip_select_satellite(db, client_ip)
-    if not satellite_name:
-        satellite_name = settings.default_satellite_name
+    outpost_name = resource.outpost
+    if not outpost_name and client_ip:
+        outpost_name = await _geoip_select_outpost(db, client_ip)
+    if not outpost_name:
+        outpost_name = settings.default_outpost_name
 
     session_id = secrets.token_urlsafe(24)
     return await _issue_session(
@@ -219,7 +219,7 @@ async def _handle_new_connection(
         session_ttl=SESSION_TTL_SECONDS,
         command="dial",
         audit_action="access_granted",
-        satellite_name=satellite_name,
+        outpost_name=outpost_name,
     )
 
 
@@ -273,7 +273,7 @@ async def _handle_reconnect(
     resource_type = session_data.get("protocol", "ssh")
     agent_id = session_data["agent_id"]
     old_bridge_id = session_data.get("bridge_id")
-    satellite_name = session_data.get("satellite_name")
+    outpost_name = session_data.get("outpost_name")
 
     # ── 2. Check agent is still online ────────────────────────────────
     agent_status = await r.get(f"agent:{agent_id}:status")
@@ -287,8 +287,8 @@ async def _handle_reconnect(
     # Decrement old bridge tunnel count (best-effort — bridge may be dead).
     if old_bridge_id:
         await r.zincrby("bridges:available", -1, old_bridge_id)
-        if satellite_name:
-            await r.zincrby(f"bridges:available:{satellite_name}", -1, old_bridge_id)
+        if outpost_name:
+            await r.zincrby(f"bridges:available:{outpost_name}", -1, old_bridge_id)
         await r.hincrby(f"bridge:{old_bridge_id}", "active_tunnels", -1)
 
     return await _issue_session(
@@ -303,7 +303,7 @@ async def _handle_reconnect(
         session_ttl=RECONNECT_TTL_SECONDS,
         command="redial",
         audit_action="session_reconnected",
-        satellite_name=satellite_name,
+        outpost_name=outpost_name,
     )
 
 
@@ -320,13 +320,13 @@ async def _select_bridge(
     prefer_low_ordinal: bool = False,
     target_tunnels_per_pod: int = 0,
     oversubscribe_factor: float = NON_MIGRATABLE_OVERSUBSCRIBE_FACTOR,
-    satellite_name: str | None = None,
+    outpost_name: str | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Select the best bridge, optionally excluding one.
 
-    When satellite_name is provided, selects from the per-satellite sorted
-    set (bridges:available:{satellite_name}). Falls back to the global
-    bridges:available set if no per-satellite bridges are found.
+    When outpost_name is provided, selects from the per-outpost sorted
+    set (bridges:available:{outpost_name}). Falls back to the global
+    bridges:available set if no per-outpost bridges are found.
 
     When prefer_low_ordinal is True (used for non-migratable ssh-audit sessions),
     the selector biases toward the lowest-ordinal bridge that is below the
@@ -337,11 +337,11 @@ async def _select_bridge(
     Raises HTTPException if no bridges are available.
     """
     # Fetch all candidates (withscores gives us tunnel counts).
-    # Try satellite-specific pool first, then global.
+    # Try outpost-specific pool first, then global.
     bridges_with_scores = None
-    if satellite_name:
+    if outpost_name:
         bridges_with_scores = await r.zrangebyscore(
-            f"bridges:available:{satellite_name}",
+            f"bridges:available:{outpost_name}",
             "-inf",
             "+inf",
             start=0,
@@ -407,7 +407,7 @@ async def _issue_session(
     session_ttl: int,
     command: str,
     audit_action: str,
-    satellite_name: str | None = None,
+    outpost_name: str | None = None,
 ) -> ConnectResponse:
     """Common logic for new connections and reconnects.
 
@@ -420,7 +420,7 @@ async def _issue_session(
         exclude_bridge_id,
         prefer_low_ordinal=resource_type in NON_MIGRATABLE_PROTOCOLS,
         target_tunnels_per_pod=settings.target_tunnels_per_pod,
-        satellite_name=satellite_name,
+        outpost_name=outpost_name,
     )
     bridge_hostname = bridge_info.get("hostname", "")
 
@@ -473,8 +473,8 @@ async def _issue_session(
     }
     if original_resource_type:
         session_info["original_resource_type"] = original_resource_type
-    if satellite_name:
-        session_info["satellite_name"] = satellite_name
+    if outpost_name:
+        session_info["outpost_name"] = outpost_name
     session_data = json.dumps(session_info)
     await r.setex(f"session:{session_id}", session_ttl, session_data)
 
@@ -483,9 +483,9 @@ async def _issue_session(
 
     # Increment new bridge tunnel count.
     await r.zincrby("bridges:available", 1, bridge_id)
-    sat = bridge_info.get("satellite")
-    if sat:
-        await r.zincrby(f"bridges:available:{sat}", 1, bridge_id)
+    outpost = bridge_info.get("outpost")
+    if outpost:
+        await r.zincrby(f"bridges:available:{outpost}", 1, bridge_id)
     await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", 1)
 
     # ── Notify agent via Redis pub/sub ────────────────────────────────
@@ -580,29 +580,29 @@ async def _issue_session(
     )
 
 
-async def _geoip_select_satellite(db: AsyncSession, client_ip: str) -> str | None:
-    """Select the nearest satellite to the client using GeoIP.
+async def _geoip_select_outpost(db: AsyncSession, client_ip: str) -> str | None:
+    """Select the nearest outpost to the client using GeoIP.
 
-    Queries active satellites from the database and uses haversine distance
+    Queries active outposts from the database and uses haversine distance
     to find the closest one to the client's IP geolocation.
     """
     from sqlalchemy import select as sa_select
 
-    from bamf.db.models import Satellite
-    from bamf.services.geoip import select_nearest_satellite
+    from bamf.db.models import Outpost
+    from bamf.services.geoip import select_nearest_outpost
 
     result = await db.execute(
-        sa_select(Satellite.name, Satellite.latitude, Satellite.longitude).where(
-            Satellite.is_active.is_(True),
-            Satellite.latitude.isnot(None),
-            Satellite.longitude.isnot(None),
+        sa_select(Outpost.name, Outpost.latitude, Outpost.longitude).where(
+            Outpost.is_active.is_(True),
+            Outpost.latitude.isnot(None),
+            Outpost.longitude.isnot(None),
         )
     )
-    satellites = [
+    outposts = [
         {"name": row.name, "latitude": row.latitude, "longitude": row.longitude}
         for row in result.all()
     ]
-    if not satellites:
+    if not outposts:
         return None
 
-    return await select_nearest_satellite(client_ip, satellites)
+    return await select_nearest_outpost(client_ip, outposts)

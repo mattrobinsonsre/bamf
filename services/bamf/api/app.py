@@ -33,11 +33,11 @@ from .routers.certificates import router as certificates_router
 from .routers.connect import router as connect_router
 from .routers.internal_bridges import router as internal_bridges_router
 from .routers.internal_proxy import router as internal_proxy_router
+from .routers.outpost_tokens import router as outpost_tokens_router
+from .routers.outposts import router as outposts_router
 from .routers.resources import router as resources_router
 from .routers.role_assignments import router as role_assignments_router
 from .routers.roles import router as roles_router
-from .routers.satellite_tokens import router as satellite_tokens_router
-from .routers.satellites import router as satellites_router
 from .routers.terminal import router as terminal_router
 from .routers.tokens import router as tokens_router
 from .routers.tunnels import router as tunnels_router
@@ -149,8 +149,8 @@ def create_application() -> FastAPI:
     # Kube router REMOVED — kube proxy traffic now handled by standalone proxy service
     app.include_router(resources_router, prefix=settings.api_prefix)
     app.include_router(role_assignments_router, prefix=settings.api_prefix)
-    app.include_router(satellite_tokens_router, prefix=settings.api_prefix)
-    app.include_router(satellites_router, prefix=settings.api_prefix)
+    app.include_router(outpost_tokens_router, prefix=settings.api_prefix)
+    app.include_router(outposts_router, prefix=settings.api_prefix)
     app.include_router(tokens_router, prefix=settings.api_prefix)
     app.include_router(terminal_router, prefix=settings.api_prefix)
     app.include_router(tunnels_router, prefix=settings.api_prefix)

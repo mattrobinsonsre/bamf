@@ -546,69 +546,69 @@ authentication. The security assumptions are:
 See [Agent Config Reference](../reference/agent-config.md#webhooks) and
 [Web Apps Guide](../guides/web-apps.md#webhooks).
 
-## Satellite Trust Boundary
+## Outpost Trust Boundary
 
-When deploying regional satellites (see [Satellite Deployments](satellite-deployments.md)),
-each satellite introduces a new trust boundary with its own security properties.
+When deploying regional outposts (see [Outpost Deployments](outpost-deployments.md)),
+each outpost introduces a new trust boundary with its own security properties.
 
-### Satellite Identity
+### Outpost Identity
 
-Each satellite authenticates to the central API using two tokens issued during
+Each outpost authenticates to the central API using two tokens issued during
 the join flow:
 
 | Token | Used by | Purpose |
 |-------|---------|---------|
-| Internal token (`sat_int_*`) | Proxy | Authenticates to API internal endpoints |
-| Bridge bootstrap token (`sat_brg_*`) | Bridge | Authenticates for bridge registration |
+| Internal token (`out_int_*`) | Proxy | Authenticates to API internal endpoints |
+| Bridge bootstrap token (`out_brg_*`) | Bridge | Authenticates for bridge registration |
 
-Tokens are stored as SHA-256 hashes in the `satellites` table. The plaintext
-tokens are stored in Kubernetes Secrets in the satellite's namespace only.
+Tokens are stored as SHA-256 hashes in the `outposts` table. The plaintext
+tokens are stored in Kubernetes Secrets in the outpost's namespace only.
 
-### If a satellite's internal token is compromised
+### If an outpost's internal token is compromised
 
 **Impact**: The attacker can call the API's internal proxy endpoints
-(`/internal/proxy/*`) as if they were the satellite's proxy. They can authorize
-sessions, log audit events, and store recordings — but scoped to the satellite's
+(`/internal/proxy/*`) as if they were the outpost's proxy. They can authorize
+sessions, log audit events, and store recordings — but scoped to the outpost's
 identity.
 
 **What they can't do**: Access any other API endpoints, the database, Redis,
-or the CA private key. Issue certificates. Impersonate other satellites.
+or the CA private key. Issue certificates. Impersonate other outposts.
 
-**Response**: Deactivate the satellite (`DELETE /api/v1/satellites/{id}`).
-This immediately rejects all internal token auth for that satellite. Re-join
+**Response**: Deactivate the outpost (`DELETE /api/v1/outposts/{id}`).
+This immediately rejects all internal token auth for that outpost. Re-join
 with a new token to generate new credentials.
 
-### If a satellite's bridge bootstrap token is compromised
+### If an outpost's bridge bootstrap token is compromised
 
-**Impact**: The attacker can register rogue bridge pods in that satellite's
+**Impact**: The attacker can register rogue bridge pods in that outpost's
 bridge pool. If the rogue bridge receives tunnel assignments, it can read
 tunnel traffic.
 
-**What they can't do**: Register bridges in other satellites. Issue
+**What they can't do**: Register bridges in other outposts. Issue
 certificates. Access the database.
 
-**Response**: Deactivate the satellite. The rogue bridge's Redis registration
+**Response**: Deactivate the outpost. The rogue bridge's Redis registration
 expires via TTL. Re-join to generate new tokens.
 
-### If a remote satellite cluster is compromised
+### If a remote outpost cluster is compromised
 
 **Impact**: The attacker can read all HTTP and TCP traffic flowing through
-that satellite. They can intercept web app proxy requests and tunnel
-connections routed through that satellite's bridges.
+that outpost. They can intercept web app proxy requests and tunnel
+connections routed through that outpost's bridges.
 
 **What they can't do**: Access the central API, database, or Redis. Issue
-certificates. Affect other satellites. Access resources routed through other
-satellites.
+certificates. Affect other outposts. Access resources routed through other
+outposts.
 
-**Response**: Deactivate the satellite. All proxy auth and bridge registration
-for that satellite stop immediately. Agents lose relay connections to the
-satellite's bridges but maintain connections to other satellites. Traffic
-reroutes to remaining satellites (via GeoDNS update or explicit hostname
+**Response**: Deactivate the outpost. All proxy auth and bridge registration
+for that outpost stop immediately. Agents lose relay connections to the
+outpost's bridges but maintain connections to other outposts. Traffic
+reroutes to remaining outposts (via GeoDNS update or explicit hostname
 change).
 
-### Satellite join token security
+### Outpost join token security
 
-Satellite join tokens (`bamf_sat_*`) follow the same security model as agent
+Outpost join tokens (`bamf_out_*`) follow the same security model as agent
 join tokens:
 
 - Short-lived (configurable expiration, typically 24h)
@@ -616,10 +616,10 @@ join tokens:
 - Revocable before expiry
 - Delete after successful join (best practice)
 
-A compromised join token lets the attacker register a satellite with the
+A compromised join token lets the attacker register an outpost with the
 token's assigned name. This is mitigated by:
-- Re-join regenerates all tokens (invalidating the old satellite)
-- The satellite name is immutable per token (attacker can't claim arbitrary names)
+- Re-join regenerates all tokens (invalidating the old outpost)
+- The outpost name is immutable per token (attacker can't claim arbitrary names)
 - Audit log records all join events with source IP
 
 ## Hardening Checklist

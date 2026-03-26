@@ -244,7 +244,7 @@ Validate configuration
 {{- if and (not .Values.redis.bundled.enabled) (not .Values.redis.external.enabled) -}}
 {{- fail "Either redis.bundled.enabled or redis.external.enabled must be true" -}}
 {{- end -}}
-{{- include "bamf.validateSatellite" . -}}
+{{- include "bamf.validateOutpost" . -}}
 {{- end -}}
 
 {{/*
@@ -265,45 +265,45 @@ Usage: {{ include "bamf.bridge.podName" (dict "root" . "ordinal" 0) }}
 {{/*
 Bridge SNI hostname for a given ordinal.
 gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
-When satellite.name is set:
-  {ordinal}.bridge.{satellite}.{tunnelDomain}
+When outpost.name is set:
+  {ordinal}.bridge.{outpost}.{tunnelDomain}
 Otherwise (backward compat):
   {ordinal}.bridge.{tunnelDomain}
 Usage: {{ include "bamf.bridge.sniHostname" (dict "root" . "ordinal" 0) }}
 */}}
 {{- define "bamf.bridge.sniHostname" -}}
-{{- if .root.Values.satellite.name -}}
-{{ .ordinal }}.bridge.{{ .root.Values.satellite.name }}.{{ .root.Values.gateway.tunnelDomain }}
+{{- if .root.Values.outpost.name -}}
+{{ .ordinal }}.bridge.{{ .root.Values.outpost.name }}.{{ .root.Values.gateway.tunnelDomain }}
 {{- else -}}
 {{ .ordinal }}.bridge.{{ .root.Values.gateway.tunnelDomain }}
 {{- end -}}
 {{- end }}
 
 {{/*
-Satellite tunnel domain — the base domain for this satellite's proxy.
+Outpost tunnel domain — the base domain for this outpost's proxy.
 gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
-When satellite.name is set: {satellite}.{tunnelDomain}
+When outpost.name is set: {outpost}.{tunnelDomain}
 Otherwise: {tunnelDomain} (unchanged)
 */}}
-{{- define "bamf.satellite.tunnelDomain" -}}
-{{- if .Values.satellite.name -}}
-{{ .Values.satellite.name }}.{{ .Values.gateway.tunnelDomain }}
+{{- define "bamf.outpost.tunnelDomain" -}}
+{{- if .Values.outpost.name -}}
+{{ .Values.outpost.name }}.{{ .Values.gateway.tunnelDomain }}
 {{- else -}}
 {{ .Values.gateway.tunnelDomain }}
 {{- end -}}
 {{- end }}
 
 {{/*
-Validate satellite configuration.
+Validate outpost configuration.
 Called from deployment templates to fail early on misconfiguration.
 */}}
-{{- define "bamf.validateSatellite" -}}
-{{- if .Values.satellite.enabled -}}
-  {{- if not .Values.satellite.name -}}
-    {{- fail "satellite.name is required when satellite.enabled=true" -}}
+{{- define "bamf.validateOutpost" -}}
+{{- if .Values.outpost.enabled -}}
+  {{- if not .Values.outpost.name -}}
+    {{- fail "outpost.name is required when outpost.enabled=true" -}}
   {{- end -}}
-  {{- if not (regexMatch "^[a-z][a-z0-9-]*$" .Values.satellite.name) -}}
-    {{- fail "satellite.name must match [a-z][a-z0-9-]* (DNS label)" -}}
+  {{- if not (regexMatch "^[a-z][a-z0-9-]*$" .Values.outpost.name) -}}
+    {{- fail "outpost.name must match [a-z][a-z0-9-]* (DNS label)" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

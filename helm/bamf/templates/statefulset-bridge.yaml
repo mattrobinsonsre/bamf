@@ -68,10 +68,10 @@ spec:
             - name: BAMF_HEALTH_ADDR
               value: ":8080"
             - name: BAMF_TUNNEL_DOMAIN
-              value: {{ include "bamf.satellite.tunnelDomain" . | quote }}
-            {{- if .Values.satellite.name }}
-            - name: BAMF_SATELLITE_NAME
-              value: {{ .Values.satellite.name | quote }}
+              value: {{ include "bamf.outpost.tunnelDomain" . | quote }}
+            {{- if .Values.outpost.name }}
+            - name: BAMF_OUTPOST_NAME
+              value: {{ .Values.outpost.name | quote }}
             {{- end }}
             # Pod name is predictable: {statefulset}-{ordinal}
             # Bridge extracts ordinal from pod name for bridge ID

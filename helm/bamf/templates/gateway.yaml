@@ -38,7 +38,7 @@ spec:
     - name: tunnel
       port: {{ .Values.gateway.ports.https | default 443 }}
       protocol: TLS
-      hostname: "*.bridge.{{ include "bamf.satellite.tunnelDomain" . }}"
+      hostname: "*.bridge.{{ include "bamf.outpost.tunnelDomain" . }}"
       tls:
         mode: Passthrough
       allowedRoutes:

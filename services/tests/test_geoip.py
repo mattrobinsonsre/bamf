@@ -1,7 +1,7 @@
-"""Tests for GeoIP-based satellite selection.
+"""Tests for GeoIP-based outpost selection.
 
 Tests the haversine distance calculation, IP address classification,
-and nearest-satellite selection logic.
+and nearest-outpost selection logic.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pytest
 from bamf.services.geoip import (
     geoip_lookup,
     haversine_distance,
-    select_nearest_satellite,
+    select_nearest_outpost,
 )
 
 # ── haversine_distance ───────────────────────────────────────────────────
@@ -102,23 +102,23 @@ class TestGeoipLookup:
         assert geoip_lookup("8.8.8.8") is None
 
 
-# ── select_nearest_satellite ─────────────────────────────────────────────
+# ── select_nearest_outpost ─────────────────────────────────────────────
 
 
-class TestSelectNearestSatellite:
+class TestSelectNearestOutpost:
     @pytest.mark.asyncio
     @patch("bamf.services.geoip.geoip_lookup")
     async def test_selects_nearest(self, mock_lookup):
         # Client in London
         mock_lookup.return_value = (51.5074, -0.1278)
 
-        satellites = [
+        outposts = [
             {"name": "us-east", "latitude": 40.7128, "longitude": -74.0060},
             {"name": "eu", "latitude": 53.3498, "longitude": -6.2603},
             {"name": "apac", "latitude": 35.6762, "longitude": 139.6503},
         ]
 
-        result = await select_nearest_satellite("8.8.8.8", satellites)
+        result = await select_nearest_outpost("8.8.8.8", outposts)
         assert result == "eu"
 
     @pytest.mark.asyncio
@@ -126,56 +126,56 @@ class TestSelectNearestSatellite:
     async def test_geoip_fails_returns_none(self, mock_lookup):
         mock_lookup.return_value = None
 
-        satellites = [
+        outposts = [
             {"name": "eu", "latitude": 53.3, "longitude": -6.2},
         ]
 
-        result = await select_nearest_satellite("10.0.0.1", satellites)
+        result = await select_nearest_outpost("10.0.0.1", outposts)
         assert result is None
 
     @pytest.mark.asyncio
     @patch("bamf.services.geoip.geoip_lookup")
-    async def test_empty_satellites_returns_none(self, mock_lookup):
+    async def test_empty_outposts_returns_none(self, mock_lookup):
         mock_lookup.return_value = (51.5, -0.1)
 
-        result = await select_nearest_satellite("8.8.8.8", [])
+        result = await select_nearest_outpost("8.8.8.8", [])
         assert result is None
 
     @pytest.mark.asyncio
     @patch("bamf.services.geoip.geoip_lookup")
-    async def test_satellites_without_coords_skipped(self, mock_lookup):
+    async def test_outposts_without_coords_skipped(self, mock_lookup):
         mock_lookup.return_value = (51.5, -0.1)
 
-        satellites = [
+        outposts = [
             {"name": "no-coords"},
             {"name": "eu", "latitude": 53.3, "longitude": -6.2},
             {"name": "partial", "latitude": 40.0},
         ]
 
-        result = await select_nearest_satellite("8.8.8.8", satellites)
+        result = await select_nearest_outpost("8.8.8.8", outposts)
         assert result == "eu"
 
     @pytest.mark.asyncio
     @patch("bamf.services.geoip.geoip_lookup")
-    async def test_all_satellites_without_coords_returns_none(self, mock_lookup):
+    async def test_all_outposts_without_coords_returns_none(self, mock_lookup):
         mock_lookup.return_value = (51.5, -0.1)
 
-        satellites = [
+        outposts = [
             {"name": "a"},
             {"name": "b", "latitude": None, "longitude": None},
         ]
 
-        result = await select_nearest_satellite("8.8.8.8", satellites)
+        result = await select_nearest_outpost("8.8.8.8", outposts)
         assert result is None
 
     @pytest.mark.asyncio
     @patch("bamf.services.geoip.geoip_lookup")
-    async def test_single_satellite(self, mock_lookup):
+    async def test_single_outpost(self, mock_lookup):
         mock_lookup.return_value = (51.5, -0.1)
 
-        satellites = [
+        outposts = [
             {"name": "only-one", "latitude": 35.0, "longitude": 139.0},
         ]
 
-        result = await select_nearest_satellite("8.8.8.8", satellites)
+        result = await select_nearest_outpost("8.8.8.8", outposts)
         assert result == "only-one"

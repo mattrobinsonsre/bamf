@@ -12,8 +12,8 @@ data:
   proxy-info: |
     service: bamf-proxy
     api_service: {{ include "bamf.fullname" . }}-api
-    tunnel_domain: {{ include "bamf.satellite.tunnelDomain" . | quote }}
-    {{- if .Values.satellite.name }}
-    satellite_name: {{ .Values.satellite.name | quote }}
+    tunnel_domain: {{ include "bamf.outpost.tunnelDomain" . | quote }}
+    {{- if .Values.outpost.name }}
+    outpost_name: {{ .Values.outpost.name | quote }}
     {{- end }}
 {{- end }}

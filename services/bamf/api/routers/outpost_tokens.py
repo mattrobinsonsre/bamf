@@ -1,6 +1,6 @@
-"""Satellite token management routes.
+"""Outpost token management routes.
 
-Satellite tokens are used for proxy+bridge cluster registration.
+Outpost tokens are used for proxy+bridge cluster registration.
 Only admins can create, revoke, and delete tokens. Admin and audit
 users can list and view tokens.
 """
@@ -16,42 +16,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import require_admin, require_admin_or_audit
 from bamf.api.models.common import CursorPage, PaginationParams, SuccessResponse
-from bamf.api.models.satellites import (
-    SatelliteTokenCreate,
-    SatelliteTokenCreateResponse,
-    SatelliteTokenResponse,
+from bamf.api.models.outposts import (
+    OutpostTokenCreate,
+    OutpostTokenCreateResponse,
+    OutpostTokenResponse,
 )
 from bamf.auth.sessions import Session
-from bamf.db.models import SatelliteToken
+from bamf.db.models import OutpostToken
 from bamf.db.session import get_db, get_db_read
 from bamf.logging_config import get_logger
 from bamf.services.audit_service import log_audit_event
 
-router = APIRouter(prefix="/satellite-tokens", tags=["satellite-tokens"])
+router = APIRouter(prefix="/outpost-tokens", tags=["outpost-tokens"])
 logger = get_logger(__name__)
 
 
-def generate_satellite_token() -> str:
-    """Generate a secure random satellite token.
+def generate_outpost_token() -> str:
+    """Generate a secure random outpost token.
 
-    Format: bamf_sat_<32 random hex chars> = 41 chars total.
-    The prefix distinguishes satellite tokens from agent tokens.
+    Format: bamf_out_<32 random hex chars> = 41 chars total.
+    The prefix distinguishes outpost tokens from agent tokens.
     """
-    return f"bamf_sat_{secrets.token_hex(16)}"
+    return f"bamf_out_{secrets.token_hex(16)}"
 
 
-@router.get("", response_model=CursorPage[SatelliteTokenResponse])
-async def list_satellite_tokens(
+@router.get("", response_model=CursorPage[OutpostTokenResponse])
+async def list_outpost_tokens(
     pagination: PaginationParams = Depends(),
     include_revoked: bool = False,
     db: AsyncSession = Depends(get_db_read),
     current_user: Session = Depends(require_admin_or_audit),
-) -> CursorPage[SatelliteTokenResponse]:
-    """List all satellite tokens."""
-    query = select(SatelliteToken).order_by(SatelliteToken.created_at.desc())
+) -> CursorPage[OutpostTokenResponse]:
+    """List all outpost tokens."""
+    query = select(OutpostToken).order_by(OutpostToken.created_at.desc())
 
     if not include_revoked:
-        query = query.where(SatelliteToken.is_revoked == False)  # noqa: E712
+        query = query.where(OutpostToken.is_revoked == False)  # noqa: E712
 
     query = query.limit(pagination.limit + 1)
 
@@ -59,7 +59,7 @@ async def list_satellite_tokens(
         import base64
 
         cursor_name = base64.b64decode(pagination.cursor).decode()
-        query = query.where(SatelliteToken.name < cursor_name)
+        query = query.where(OutpostToken.name < cursor_name)
 
     result = await db.execute(query)
     tokens = list(result.scalars().all())
@@ -68,7 +68,7 @@ async def list_satellite_tokens(
     if has_more:
         tokens = tokens[: pagination.limit]
 
-    items = [SatelliteTokenResponse.from_db(t) for t in tokens]
+    items = [OutpostTokenResponse.from_db(t) for t in tokens]
 
     next_cursor = None
     if has_more and tokens:
@@ -79,32 +79,32 @@ async def list_satellite_tokens(
     return CursorPage(items=items, next_cursor=next_cursor, has_more=has_more)
 
 
-@router.post("", response_model=SatelliteTokenCreateResponse, status_code=status.HTTP_201_CREATED)
-async def create_satellite_token(
-    body: SatelliteTokenCreate,
+@router.post("", response_model=OutpostTokenCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_outpost_token(
+    body: OutpostTokenCreate,
     db: AsyncSession = Depends(get_db),
     current_user: Session = Depends(require_admin),
-) -> SatelliteTokenCreateResponse:
-    """Create a new satellite join token.
+) -> OutpostTokenCreateResponse:
+    """Create a new outpost join token.
 
     The secret token value is returned only once at creation time.
     """
     # Check for duplicate name
-    existing = await db.execute(select(SatelliteToken).where(SatelliteToken.name == body.name))
+    existing = await db.execute(select(OutpostToken).where(OutpostToken.name == body.name))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Satellite token with name '{body.name}' already exists",
+            detail=f"Outpost token with name '{body.name}' already exists",
         )
 
     # Generate token and hash
-    raw_token = generate_satellite_token()
+    raw_token = generate_outpost_token()
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
-    token = SatelliteToken(
+    token = OutpostToken(
         token_hash=token_hash,
         name=body.name,
-        satellite_name=body.satellite_name,
+        outpost_name=body.outpost_name,
         region=body.region,
         expires_at=datetime.now(UTC) + timedelta(hours=body.expires_in_hours),
         max_uses=body.max_uses,
@@ -116,32 +116,32 @@ async def create_satellite_token(
     await db.refresh(token)
 
     logger.info(
-        "Satellite token created",
+        "Outpost token created",
         token_name=body.name,
-        satellite_name=body.satellite_name,
+        outpost_name=body.outpost_name,
         created_by=current_user.email,
     )
 
     await log_audit_event(
         db,
         event_type="admin",
-        action="satellite_token_created",
+        action="outpost_token_created",
         actor_type="user",
         actor_id=current_user.email,
-        target_type="satellite_token",
+        target_type="outpost_token",
         target_id=str(token.id),
         success=True,
         details={
             "token_name": body.name,
-            "satellite_name": body.satellite_name,
+            "outpost_name": body.outpost_name,
             "region": body.region,
         },
     )
 
-    return SatelliteTokenCreateResponse(
+    return OutpostTokenCreateResponse(
         id=token.id,
         name=token.name,
-        satellite_name=token.satellite_name,
+        outpost_name=token.outpost_name,
         region=token.region,
         expires_at=token.expires_at,
         max_uses=token.max_uses,
@@ -153,39 +153,39 @@ async def create_satellite_token(
     )
 
 
-@router.get("/{token_id}", response_model=SatelliteTokenResponse)
-async def get_satellite_token(
+@router.get("/{token_id}", response_model=OutpostTokenResponse)
+async def get_outpost_token(
     token_id: UUID,
     db: AsyncSession = Depends(get_db_read),
     current_user: Session = Depends(require_admin_or_audit),
-) -> SatelliteTokenResponse:
-    """Get a single satellite token by ID."""
-    result = await db.execute(select(SatelliteToken).where(SatelliteToken.id == token_id))
+) -> OutpostTokenResponse:
+    """Get a single outpost token by ID."""
+    result = await db.execute(select(OutpostToken).where(OutpostToken.id == token_id))
     token = result.scalar_one_or_none()
 
     if not token:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Satellite token not found",
+            detail="Outpost token not found",
         )
 
-    return SatelliteTokenResponse.from_db(token)
+    return OutpostTokenResponse.from_db(token)
 
 
 @router.delete("/{token_id}", response_model=SuccessResponse)
-async def revoke_satellite_token(
+async def revoke_outpost_token(
     token_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: Session = Depends(require_admin),
 ) -> SuccessResponse:
-    """Revoke a satellite token."""
-    result = await db.execute(select(SatelliteToken).where(SatelliteToken.id == token_id))
+    """Revoke an outpost token."""
+    result = await db.execute(select(OutpostToken).where(OutpostToken.id == token_id))
     token = result.scalar_one_or_none()
 
     if not token:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Satellite token not found",
+            detail="Outpost token not found",
         )
 
     if token.is_revoked:
@@ -198,7 +198,7 @@ async def revoke_satellite_token(
     await db.commit()
 
     logger.info(
-        "Satellite token revoked",
+        "Outpost token revoked",
         token_name=token.name,
         revoked_by=current_user.email,
     )
@@ -206,32 +206,32 @@ async def revoke_satellite_token(
     await log_audit_event(
         db,
         event_type="admin",
-        action="satellite_token_revoked",
+        action="outpost_token_revoked",
         actor_type="user",
         actor_id=current_user.email,
-        target_type="satellite_token",
+        target_type="outpost_token",
         target_id=str(token.id),
         success=True,
-        details={"token_name": token.name, "satellite_name": token.satellite_name},
+        details={"token_name": token.name, "outpost_name": token.outpost_name},
     )
 
-    return SuccessResponse(message=f"Satellite token '{token.name}' has been revoked")
+    return SuccessResponse(message=f"Outpost token '{token.name}' has been revoked")
 
 
 @router.post("/{token_name}/revoke", response_model=SuccessResponse)
-async def revoke_satellite_token_by_name(
+async def revoke_outpost_token_by_name(
     token_name: str,
     db: AsyncSession = Depends(get_db),
     current_user: Session = Depends(require_admin),
 ) -> SuccessResponse:
-    """Revoke a satellite token by name (CLI convenience)."""
-    result = await db.execute(select(SatelliteToken).where(SatelliteToken.name == token_name))
+    """Revoke an outpost token by name (CLI convenience)."""
+    result = await db.execute(select(OutpostToken).where(OutpostToken.name == token_name))
     token = result.scalar_one_or_none()
 
     if not token:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Satellite token not found: {token_name}",
+            detail=f"Outpost token not found: {token_name}",
         )
 
     if token.is_revoked:
@@ -244,7 +244,7 @@ async def revoke_satellite_token_by_name(
     await db.commit()
 
     logger.info(
-        "Satellite token revoked",
+        "Outpost token revoked",
         token_name=token.name,
         revoked_by=current_user.email,
     )
@@ -252,13 +252,13 @@ async def revoke_satellite_token_by_name(
     await log_audit_event(
         db,
         event_type="admin",
-        action="satellite_token_revoked",
+        action="outpost_token_revoked",
         actor_type="user",
         actor_id=current_user.email,
-        target_type="satellite_token",
+        target_type="outpost_token",
         target_id=str(token.id),
         success=True,
-        details={"token_name": token.name, "satellite_name": token.satellite_name},
+        details={"token_name": token.name, "outpost_name": token.outpost_name},
     )
 
-    return SuccessResponse(message=f"Satellite token '{token.name}' has been revoked")
+    return SuccessResponse(message=f"Outpost token '{token.name}' has been revoked")

@@ -1,7 +1,7 @@
-"""Tests for satellite token CRUD endpoints.
+"""Tests for outpost token CRUD endpoints.
 
-Tests /api/v1/satellite-tokens endpoints for creating, listing,
-revoking, and getting satellite join tokens.
+Tests /api/v1/outpost-tokens endpoints for creating, listing,
+revoking, and getting outpost join tokens.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import require_admin, require_admin_or_audit
-from bamf.api.routers.satellite_tokens import router
+from bamf.api.routers.outpost_tokens import router
 from bamf.auth.sessions import Session
 from bamf.db.session import get_db, get_db_read
 
@@ -45,8 +45,8 @@ AUDIT_SESSION = Session(
 
 
 @pytest.fixture
-def sat_token_app(db_session: AsyncSession):
-    """Minimal app with satellite-tokens router and auth overrides."""
+def outpost_token_app(db_session: AsyncSession):
+    """Minimal app with outpost-tokens router and auth overrides."""
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
@@ -67,9 +67,9 @@ def sat_token_app(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def sat_token_client(sat_token_app):
+async def outpost_token_client(outpost_token_app):
     async with AsyncClient(
-        transport=ASGITransport(app=sat_token_app),
+        transport=ASGITransport(app=outpost_token_app),
         base_url="http://test",
     ) as client:
         yield client
@@ -78,7 +78,7 @@ async def sat_token_client(sat_token_app):
 def _patch_audit_log():
     """Patch audit logging to no-op."""
     return patch(
-        "bamf.api.routers.satellite_tokens.log_audit_event",
+        "bamf.api.routers.outpost_tokens.log_audit_event",
         new_callable=AsyncMock,
     )
 
@@ -86,34 +86,34 @@ def _patch_audit_log():
 # ── Tests ─────────────────────────────────────────────────────────────────
 
 
-class TestCreateSatelliteToken:
+class TestCreateOutpostToken:
     @pytest.mark.asyncio
-    async def test_create_returns_token(self, sat_token_client, db_session):
+    async def test_create_returns_token(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            resp = await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "eu-prod",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "eu-prod"
-        assert data["satellite_name"] == "eu"
-        assert data["token"].startswith("bamf_sat_")
+        assert data["outpost_name"] == "eu"
+        assert data["token"].startswith("bamf_out_")
         assert data["is_revoked"] is False
         assert data["use_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_create_with_region_and_max_uses(self, sat_token_client, db_session):
+    async def test_create_with_region_and_max_uses(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            resp = await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "apac-token",
-                    "satellite_name": "apac",
+                    "outpost_name": "apac",
                     "region": "Asia Pacific (Tokyo)",
                     "expires_in_hours": 48,
                     "max_uses": 3,
@@ -125,48 +125,48 @@ class TestCreateSatelliteToken:
         assert data["max_uses"] == 3
 
     @pytest.mark.asyncio
-    async def test_create_duplicate_name_fails(self, sat_token_client, db_session):
+    async def test_create_duplicate_name_fails(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "dupe-test",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-            resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            resp = await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "dupe-test",
-                    "satellite_name": "us",
+                    "outpost_name": "us",
                     "expires_in_hours": 24,
                 },
             )
         assert resp.status_code == 409
 
 
-class TestListSatelliteTokens:
+class TestListOutpostTokens:
     @pytest.mark.asyncio
-    async def test_list_empty(self, sat_token_client):
-        resp = await sat_token_client.get("/api/v1/satellite-tokens")
+    async def test_list_empty(self, outpost_token_client):
+        resp = await outpost_token_client.get("/api/v1/outpost-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
         assert data["has_more"] is False
 
     @pytest.mark.asyncio
-    async def test_list_includes_created_token(self, sat_token_client, db_session):
+    async def test_list_includes_created_token(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "list-test",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-        resp = await sat_token_client.get("/api/v1/satellite-tokens")
+        resp = await outpost_token_client.get("/api/v1/outpost-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) >= 1
@@ -174,59 +174,59 @@ class TestListSatelliteTokens:
         assert "list-test" in names
 
 
-class TestRevokeSatelliteToken:
+class TestRevokeOutpostToken:
     @pytest.mark.asyncio
-    async def test_revoke_by_id(self, sat_token_client, db_session):
+    async def test_revoke_by_id(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            create_resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            create_resp = await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "revoke-test",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
         token_id = create_resp.json()["id"]
 
         with _patch_audit_log():
-            resp = await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
+            resp = await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
         assert resp.status_code == 200
         assert "revoked" in resp.json()["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_revoke_by_name(self, sat_token_client, db_session):
+    async def test_revoke_by_name(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "revoke-name-test",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-            resp = await sat_token_client.post("/api/v1/satellite-tokens/revoke-name-test/revoke")
+            resp = await outpost_token_client.post("/api/v1/outpost-tokens/revoke-name-test/revoke")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_revoke_already_revoked_fails(self, sat_token_client, db_session):
+    async def test_revoke_already_revoked_fails(self, outpost_token_client, db_session):
         with _patch_audit_log():
-            create_resp = await sat_token_client.post(
-                "/api/v1/satellite-tokens",
+            create_resp = await outpost_token_client.post(
+                "/api/v1/outpost-tokens",
                 json={
                     "name": "double-revoke",
-                    "satellite_name": "eu",
+                    "outpost_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
             token_id = create_resp.json()["id"]
-            await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
-            resp = await sat_token_client.delete(f"/api/v1/satellite-tokens/{token_id}")
+            await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
+            resp = await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_revoke_nonexistent_fails(self, sat_token_client):
+    async def test_revoke_nonexistent_fails(self, outpost_token_client):
         with _patch_audit_log():
-            resp = await sat_token_client.delete(
-                "/api/v1/satellite-tokens/00000000-0000-0000-0000-000000000000"
+            resp = await outpost_token_client.delete(
+                "/api/v1/outpost-tokens/00000000-0000-0000-0000-000000000000"
             )
         assert resp.status_code == 404

@@ -81,22 +81,22 @@ async def forward_to_bridge(
         return None
 
 
-async def assign_relay_bridge(r, agent_id: str, satellite_name: str | None = None) -> str | None:
+async def assign_relay_bridge(r, agent_id: str, outpost_name: str | None = None) -> str | None:
     """Assign a bridge for the agent's relay connection.
 
     Picks the least-loaded bridge from the sorted set and stores
     the assignment in Redis.
 
-    When satellite_name is provided, uses the per-satellite sorted set
-    (bridges:available:{satellite_name}) and stores the assignment in
-    agent:{id}:relay:{satellite_name}. Falls back to the global
+    When outpost_name is provided, uses the per-outpost sorted set
+    (bridges:available:{outpost_name}) and stores the assignment in
+    agent:{id}:relay:{outpost_name}. Falls back to the global
     bridges:available set for backward compatibility.
     """
-    # Try satellite-specific pool first, then global
+    # Try outpost-specific pool first, then global
     bridge_id = None
-    if satellite_name:
+    if outpost_name:
         bridges = await r.zrangebyscore(
-            f"bridges:available:{satellite_name}", "-inf", "+inf", start=0, num=1
+            f"bridges:available:{outpost_name}", "-inf", "+inf", start=0, num=1
         )
         if bridges:
             bridge_id = bridges[0]
@@ -108,15 +108,15 @@ async def assign_relay_bridge(r, agent_id: str, satellite_name: str | None = Non
         bridge_id = bridges[0]
 
     # Store assignment with agent TTL (refreshed on heartbeat)
-    if satellite_name:
-        await r.setex(f"agent:{agent_id}:relay:{satellite_name}", 180, bridge_id)
+    if outpost_name:
+        await r.setex(f"agent:{agent_id}:relay:{outpost_name}", 180, bridge_id)
     await r.setex(f"agent:{agent_id}:relay_bridge", 180, bridge_id)
 
     logger.info(
         "Assigned relay bridge",
         agent_id=agent_id,
         bridge_id=bridge_id,
-        satellite_name=satellite_name,
+        outpost_name=outpost_name,
     )
     return bridge_id
 
