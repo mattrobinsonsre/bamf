@@ -97,13 +97,13 @@ export default function Home() {
               placeholder="Search resources..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-700 rounded-lg bg-slate-800/50 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50"
+              className="w-full pl-9 pr-4 py-2 border border-slate-700 rounded-lg bg-slate-800/50 text-slate-200 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50"
             />
           </div>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-4 py-2 border border-slate-700 rounded-lg bg-slate-800/50 text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50"
+            className="px-4 py-2 border border-slate-700 rounded-lg bg-slate-800/50 text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50"
           >
             <option value="">All Types</option>
             {resourceTypes.map((type) => (
@@ -168,7 +168,7 @@ export default function Home() {
                       .map(([key, value]) => (
                       <span
                         key={key}
-                        className="px-2 py-0.5 text-xs bg-slate-700/50 text-slate-400 rounded"
+                        className="px-2 py-0.5 text-xs bg-slate-700/50 text-slate-400 rounded-sm"
                       >
                         {key}={value}
                       </span>

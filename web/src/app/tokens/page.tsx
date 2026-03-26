@@ -224,7 +224,7 @@ export default function TokensPage() {
                   setTokens([])
                   setLoading(true)
                 }}
-                className="rounded border-slate-600 bg-slate-700 text-brand-500 focus:ring-brand-500"
+                className="rounded-sm border-slate-600 bg-slate-700 text-brand-500 focus:ring-brand-500"
               />
               Show revoked
             </label>
@@ -262,12 +262,12 @@ export default function TokensPage() {
               Copy this token now — it will not be shown again.
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 p-2 bg-slate-900 rounded text-sm text-green-300 font-mono break-all">
+              <code className="flex-1 p-2 bg-slate-900 rounded-sm text-sm text-green-300 font-mono break-all">
                 {createdToken.token}
               </code>
               <button
                 onClick={copyToken}
-                className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded transition-colors"
+                className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-sm transition-colors"
                 title="Copy to clipboard"
               >
                 {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
@@ -290,7 +290,7 @@ export default function TokensPage() {
                   pattern="[a-z][a-z0-9-]*"
                   maxLength={63}
                   placeholder="production-agents"
-                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
@@ -302,7 +302,7 @@ export default function TokensPage() {
                   required
                   min={1}
                   max={8760}
-                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
@@ -313,7 +313,7 @@ export default function TokensPage() {
                   onChange={(e) => setFormMaxUses(e.target.value)}
                   min={1}
                   placeholder="Unlimited"
-                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -328,7 +328,7 @@ export default function TokensPage() {
                     placeholder="key"
                     value={label.key}
                     onChange={(e) => updateLabel(i, 'key', e.target.value)}
-                    className="w-32 px-2 py-1.5 border border-slate-600 rounded bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    className="w-32 px-2 py-1.5 border border-slate-600 rounded-sm bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-500"
                   />
                   <span className="text-slate-500">=</span>
                   <input
@@ -336,7 +336,7 @@ export default function TokensPage() {
                     placeholder="value"
                     value={label.value}
                     onChange={(e) => updateLabel(i, 'value', e.target.value)}
-                    className="flex-1 px-2 py-1.5 border border-slate-600 rounded bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    className="flex-1 px-2 py-1.5 border border-slate-600 rounded-sm bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-1 focus:ring-brand-500"
                   />
                   <button
                     type="button"
@@ -396,12 +396,12 @@ export default function TokensPage() {
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-slate-100">{token.name}</h3>
                       {token.is_revoked && (
-                        <span className="px-2 py-0.5 text-xs bg-red-900/30 text-red-400 rounded">
+                        <span className="px-2 py-0.5 text-xs bg-red-900/30 text-red-400 rounded-sm">
                           revoked
                         </span>
                       )}
                       {!token.is_revoked && isExpired(token.expires_at) && (
-                        <span className="px-2 py-0.5 text-xs bg-yellow-900/30 text-yellow-400 rounded">
+                        <span className="px-2 py-0.5 text-xs bg-yellow-900/30 text-yellow-400 rounded-sm">
                           expired
                         </span>
                       )}
@@ -420,7 +420,7 @@ export default function TokensPage() {
                       <div className="flex flex-wrap items-center gap-1 mt-2">
                         <Tag size={12} className="text-slate-500" />
                         {Object.entries(token.agent_labels).map(([k, v]) => (
-                          <span key={k} className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded">
+                          <span key={k} className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded-sm">
                             {k}={v}
                           </span>
                         ))}
@@ -433,14 +433,14 @@ export default function TokensPage() {
                         <button
                           onClick={() => handleRevoke(token.id)}
                           disabled={submitting}
-                          className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded-sm transition-colors"
                         >
                           {submitting ? 'Revoking...' : 'Confirm Revoke?'}
                         </button>
                       ) : (
                         <button
                           onClick={() => setRevokingToken(token.id)}
-                          className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+                          className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-sm transition-colors"
                           title="Revoke token"
                         >
                           <Trash2 size={14} />

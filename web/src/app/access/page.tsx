@@ -242,7 +242,7 @@ export default function AccessPage() {
                               {identity.roles.map((role) => (
                                 <span
                                   key={role}
-                                  className="px-2 py-0.5 text-xs rounded bg-brand-900/30 text-brand-400"
+                                  className="px-2 py-0.5 text-xs rounded-sm bg-brand-900/30 text-brand-400"
                                 >
                                   {role}
                                 </span>
@@ -255,7 +255,7 @@ export default function AccessPage() {
                         <div className="flex items-center gap-1 ml-4">
                           <button
                             onClick={() => { setEditingKey(key); setShowAssign(false); setDeletingKey(null) }}
-                            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-sm transition-colors"
                             title="Edit roles"
                           >
                             <Pencil size={14} />
@@ -265,14 +265,14 @@ export default function AccessPage() {
                               <button
                                 onClick={() => handleRemoveAll(identity.provider_name, identity.email)}
                                 disabled={submitting}
-                                className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded transition-colors"
+                                className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white rounded-sm transition-colors"
                               >
                                 {submitting ? 'Removing...' : 'Confirm Remove?'}
                               </button>
                             ) : (
                               <button
                                 onClick={() => setDeletingKey(key)}
-                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded transition-colors"
+                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-sm transition-colors"
                                 title="Remove all roles"
                               >
                                 <Trash2 size={14} />
@@ -439,7 +439,7 @@ function NewAssignmentForm({
           <select
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           >
             {providers.map((p) => (
               <option key={p} value={p}>{p}</option>
@@ -455,7 +455,7 @@ function NewAssignmentForm({
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="user@example.com"
-            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
           />
           <datalist id="email-suggestions">
             {emailsForProvider.map((e) => (

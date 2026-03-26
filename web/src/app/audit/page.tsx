@@ -187,7 +187,7 @@ export default function AuditPage() {
             <select
               value={eventTypeFilter}
               onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
             >
               <option value="">All Types</option>
               <option value="auth">Auth</option>
@@ -199,14 +199,14 @@ export default function AuditPage() {
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
               placeholder="Action (e.g., login, access_granted)"
-              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
             />
             <input
               type="text"
               value={actorFilter}
               onChange={(e) => setActorFilter(e.target.value)}
               placeholder="Actor (e.g., admin@example.com)"
-              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500"
             />
             <button
               onClick={handleFilter}
@@ -254,7 +254,7 @@ export default function AuditPage() {
                       {formatRelative(entry.timestamp)}
                     </div>
                     <div className="col-span-1">
-                      <span className={`px-2 py-0.5 text-xs rounded ${EVENT_TYPE_STYLES[entry.event_type] || 'bg-slate-700 text-slate-300'}`}>
+                      <span className={`px-2 py-0.5 text-xs rounded-sm ${EVENT_TYPE_STYLES[entry.event_type] || 'bg-slate-700 text-slate-300'}`}>
                         {entry.event_type}
                       </span>
                     </div>
@@ -282,7 +282,7 @@ export default function AuditPage() {
                   <div className="md:hidden space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-xs rounded ${EVENT_TYPE_STYLES[entry.event_type] || 'bg-slate-700 text-slate-300'}`}>
+                        <span className={`px-2 py-0.5 text-xs rounded-sm ${EVENT_TYPE_STYLES[entry.event_type] || 'bg-slate-700 text-slate-300'}`}>
                           {entry.event_type}
                         </span>
                         <span className="text-sm text-slate-200">
@@ -352,7 +352,7 @@ export default function AuditPage() {
                     {Object.keys(entry.details).length > 0 && (
                       <div>
                         <span className="text-slate-500">Details:</span>
-                        <pre className="mt-1 p-2 bg-slate-800 rounded text-xs text-slate-300 overflow-x-auto">
+                        <pre className="mt-1 p-2 bg-slate-800 rounded-sm text-xs text-slate-300 overflow-x-auto">
                           {JSON.stringify(entry.details, null, 2)}
                         </pre>
                       </div>

@@ -219,7 +219,7 @@ function LoginContent() {
                       required
                       autoComplete="username"
                       autoFocus
-                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -232,7 +232,7 @@ function LoginContent() {
                       type="password"
                       required
                       autoComplete="current-password"
-                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                     />
                   </div>
                   <button
@@ -257,7 +257,7 @@ function LoginContent() {
                       required
                       autoComplete="username"
                       autoFocus
-                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -271,7 +271,7 @@ function LoginContent() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       autoComplete="current-password"
-                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-slate-600 rounded-lg bg-slate-700 text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                     />
                   </div>
                   <button

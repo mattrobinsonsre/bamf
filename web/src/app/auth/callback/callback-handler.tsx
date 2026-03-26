@@ -1,46 +1,52 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { setAuth } from '@/lib/auth'
 
+interface CallbackState {
+  error: string
+  code: string
+  verifier: string
+}
+
+function validateCallback(): CallbackState {
+  if (typeof window === 'undefined') return { error: '', code: '', verifier: '' }
+
+  const params = new URLSearchParams(window.location.search)
+
+  const errorParam = params.get('error')
+  if (errorParam) return { error: params.get('error_description') || errorParam, code: '', verifier: '' }
+
+  const code = params.get('code')
+  const returnedState = params.get('state')
+  if (!code || !returnedState) return { error: 'Missing authorization code or state', code: '', verifier: '' }
+
+  const savedState = sessionStorage.getItem('bamf_auth_state')
+  if (!savedState || returnedState !== savedState) {
+    return { error: 'State mismatch — possible CSRF attack', code: '', verifier: '' }
+  }
+
+  const verifier = sessionStorage.getItem('bamf_pkce_verifier')
+  if (!verifier) {
+    return { error: 'Missing PKCE verifier — please try logging in again', code: '', verifier: '' }
+  }
+
+  return { error: '', code, verifier }
+}
+
 export default function CallbackHandler() {
   const router = useRouter()
-  const [error, setError] = useState('')
+  const initial = useMemo(() => validateCallback(), [])
+  const [error, setError] = useState(initial.error)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const code = params.get('code')
-    const returnedState = params.get('state')
-    const errorParam = params.get('error')
-
-    if (errorParam) {
-      setError(params.get('error_description') || errorParam)
-      return
-    }
-
-    if (!code || !returnedState) {
-      setError('Missing authorization code or state')
-      return
-    }
-
-    const savedState = sessionStorage.getItem('bamf_auth_state')
-    const verifier = sessionStorage.getItem('bamf_pkce_verifier')
-
-    if (!savedState || returnedState !== savedState) {
-      setError('State mismatch — possible CSRF attack')
-      return
-    }
-
-    if (!verifier) {
-      setError('Missing PKCE verifier — please try logging in again')
-      return
-    }
+    if (initial.error || !initial.code || !initial.verifier) return
 
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
-      code,
-      code_verifier: verifier,
+      code: initial.code,
+      code_verifier: initial.verifier,
     })
 
     fetch('/api/v1/auth/token', {
@@ -59,7 +65,6 @@ export default function CallbackHandler() {
         setAuth(data.session_token, data.email, data.roles, data.expires_at)
         sessionStorage.removeItem('bamf_pkce_verifier')
         sessionStorage.removeItem('bamf_auth_state')
-        // Redirect to the page the user was on before login, if stored
         const redirect = sessionStorage.getItem('bamf_redirect_after_login')
         sessionStorage.removeItem('bamf_redirect_after_login')
         if (redirect) {
@@ -71,7 +76,7 @@ export default function CallbackHandler() {
       .catch((err) => {
         setError(err.message)
       })
-  }, [router])
+  }, [router, initial])
 
   if (error) {
     return (
