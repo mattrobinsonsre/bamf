@@ -12,6 +12,16 @@ spec:
   hostnames:
     - {{ .Values.gateway.hostname | quote }}
   rules:
+    {{- if .Values.proxy.enabled }}
+    # Kube proxy routes go to proxy service (must come before general /api)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/kube
+      backendRefs:
+        - name: {{ include "bamf.fullname" . }}-proxy
+          port: 8001
+    {{- end }}
     # API routes
     - matches:
         - path:

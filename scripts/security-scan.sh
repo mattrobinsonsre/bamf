@@ -15,8 +15,9 @@ scan_go() {
 scan_python() {
   info "Running pip-audit (Python vulnerability scanner)..."
   ensure_test_image
+  # --ignore-vuln: pygments 2.19.2 CVE-2026-4539 has no fix version available
   docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm \
-    --entrypoint sh test -c "pip install --quiet pip-audit && pip-audit"
+    --entrypoint sh test -c "pip install --quiet pip-audit && pip-audit --ignore-vuln CVE-2026-4539"
   success "pip-audit passed — no known vulnerabilities"
 }
 

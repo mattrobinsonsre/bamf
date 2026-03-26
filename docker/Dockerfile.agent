@@ -1,7 +1,7 @@
 # BAMF Agent Dockerfile
 # Builds the Go agent binary
 
-FROM golang:1.26.0-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install git for go mod download
 RUN apk add --no-cache git
@@ -32,6 +32,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 
 # Final image
 FROM scratch
+LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
 # Copy CA certificates for TLS
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/

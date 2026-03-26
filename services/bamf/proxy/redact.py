@@ -134,7 +134,7 @@ def _redact_json(body: str) -> str:
         data = json.loads(body)
         redacted = _redact_value(data)
         return json.dumps(redacted)
-    except (json.JSONDecodeError, TypeError, ValueError):
+    except json.JSONDecodeError, TypeError, ValueError:
         return body
 
 

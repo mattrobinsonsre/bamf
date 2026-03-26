@@ -260,6 +260,29 @@ class Settings(BaseSettings):
         description="Target tunnel count per bridge pod for HPA scaling. 0 disables low-ordinal bias.",
     )
 
+    # Proxy internal token — shared secret for proxy→API internal endpoints.
+    # The standalone proxy service sends this in Authorization: Bearer <token>.
+    proxy_internal_token: str | None = Field(
+        default=None,
+        description="Shared secret for proxy→API internal auth. Set via BAMF_PROXY_INTERNAL_TOKEN.",
+    )
+
+    # Default satellite name — used for the co-located proxy/bridge deployment.
+    # When a co-located proxy authenticates via proxy_internal_token (env var),
+    # this name identifies which satellite it belongs to.
+    default_satellite_name: str | None = Field(
+        default=None,
+        description="Satellite name for the co-located proxy/bridge. "
+        "Set via BAMF_DEFAULT_SATELLITE_NAME.",
+    )
+
+    # GeoIP database path (MaxMind GeoLite2-City) for TCP tunnel satellite selection.
+    # Optional — when absent, satellite selection falls back to default_satellite_name.
+    geoip_database_path: str = Field(
+        default="/usr/share/GeoIP/GeoLite2-City.mmdb",
+        description="Path to MaxMind GeoLite2-City database file.",
+    )
+
     # Kubernetes namespace (for constructing in-cluster service FQDNs)
     kubernetes_namespace: str = Field(
         default="",

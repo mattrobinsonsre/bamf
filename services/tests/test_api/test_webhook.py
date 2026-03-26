@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from bamf.api.proxy.handler import _match_webhook
+from bamf.api.routers.internal_proxy import _match_webhook
 
 
 @dataclass

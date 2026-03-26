@@ -11,14 +11,19 @@ spec:
     - name: {{ include "bamf.fullname" . }}
       sectionName: https
   hostnames:
-    - "*.{{ .Values.gateway.tunnelDomain }}"
+    - "*.{{ include "bamf.satellite.tunnelDomain" . }}"
   rules:
-    # All web app proxy traffic goes to API service (proxy routes handle it)
+    # All web app proxy traffic goes to proxy service (or API if proxy disabled)
     - matches:
         - path:
             type: PathPrefix
             value: /
       backendRefs:
+        {{- if .Values.proxy.enabled }}
+        - name: {{ include "bamf.fullname" . }}-proxy
+          port: 8001
+        {{- else }}
         - name: {{ include "bamf.fullname" . }}-api
           port: 8000
+        {{- end }}
 {{- end }}

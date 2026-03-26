@@ -125,7 +125,10 @@ build_images_local() {
   docker build -f "$REPO_ROOT/docker/Dockerfile.web" \
     -t "bamf-web:${VERSION}" "$REPO_ROOT"
 
-  success "Local images built: bamf-{api,bridge,agent,web}:${VERSION}"
+  docker build -f "$REPO_ROOT/docker/Dockerfile.proxy" \
+    -t "bamf-proxy:${VERSION}" "$REPO_ROOT"
+
+  success "Local images built: bamf-{api,bridge,agent,web,proxy}:${VERSION}"
 }
 
 build_images_multiarch() {
@@ -176,6 +179,14 @@ build_images_multiarch() {
   info "  bamf-agent..."
   docker buildx build -f "$REPO_ROOT/docker/Dockerfile.release" \
     --build-arg BINARY=bamf-agent \
+    --platform linux/amd64,linux/arm64 \
+    $tags --push "$REPO_ROOT"
+
+  # Proxy (Python — arch-independent build)
+  tags="-t ${REGISTRY}/bamf-proxy:${VERSION}"
+  [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && tags="$tags -t ${REGISTRY}/bamf-proxy:latest"
+  info "  bamf-proxy..."
+  docker buildx build -f "$REPO_ROOT/docker/Dockerfile.proxy" \
     --platform linux/amd64,linux/arm64 \
     $tags --push "$REPO_ROOT"
 

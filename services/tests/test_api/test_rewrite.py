@@ -1,6 +1,6 @@
 """Tests for the HTTP proxy header rewriting module."""
 
-from bamf.api.proxy.rewrite import (
+from bamf.proxy.rewrite import (
     rewrite_request_headers,
     rewrite_response_headers,
     rewrite_set_cookie,

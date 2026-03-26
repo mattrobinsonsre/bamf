@@ -92,26 +92,51 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Get the image tag, defaulting to appVersion
+Construct a container image reference with optional global registry prefix.
+Usage: {{ include "bamf.image" (dict "imageValues" .Values.api.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) }}
+
+When global.imageRegistry is set (e.g., "123456789.dkr.ecr.us-east-1.amazonaws.com"),
+the image becomes "registry/repo:tag" instead of "repo:tag".
+*/}}
+{{- define "bamf.image" -}}
+{{- $tag := default .appVersion .imageValues.tag -}}
+{{- $repo := .imageValues.repository -}}
+{{- if .globalRegistry -}}
+{{- printf "%s/%s:%s" .globalRegistry $repo $tag -}}
+{{- else -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Component image helpers — convenience wrappers around bamf.image.
 */}}
 {{- define "bamf.api.image" -}}
-{{- $tag := default .Chart.AppVersion .Values.api.image.tag -}}
-{{- printf "%s:%s" .Values.api.image.repository $tag -}}
+{{- include "bamf.image" (dict "imageValues" .Values.api.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
 {{- end }}
 
 {{- define "bamf.bridge.image" -}}
-{{- $tag := default .Chart.AppVersion .Values.bridge.image.tag -}}
-{{- printf "%s:%s" .Values.bridge.image.repository $tag -}}
+{{- include "bamf.image" (dict "imageValues" .Values.bridge.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
 {{- end }}
 
 {{- define "bamf.web.image" -}}
-{{- $tag := default .Chart.AppVersion .Values.web.image.tag -}}
-{{- printf "%s:%s" .Values.web.image.repository $tag -}}
+{{- include "bamf.image" (dict "imageValues" .Values.web.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
 {{- end }}
 
 {{- define "bamf.agent.image" -}}
-{{- $tag := default .Chart.AppVersion .Values.agent.image.tag -}}
-{{- printf "%s:%s" .Values.agent.image.repository $tag -}}
+{{- include "bamf.image" (dict "imageValues" .Values.agent.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
+{{- end }}
+
+{{- define "bamf.proxy.image" -}}
+{{- include "bamf.image" (dict "imageValues" .Values.proxy.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
+{{- end }}
+
+{{/*
+Proxy selector labels
+*/}}
+{{- define "bamf.proxy.selectorLabels" -}}
+{{ include "bamf.selectorLabels" . }}
+app.kubernetes.io/component: proxy
 {{- end }}
 
 {{/*
@@ -219,6 +244,7 @@ Validate configuration
 {{- if and (not .Values.redis.bundled.enabled) (not .Values.redis.external.enabled) -}}
 {{- fail "Either redis.bundled.enabled or redis.external.enabled must be true" -}}
 {{- end -}}
+{{- include "bamf.validateSatellite" . -}}
 {{- end -}}
 
 {{/*
@@ -237,9 +263,47 @@ Usage: {{ include "bamf.bridge.podName" (dict "root" . "ordinal" 0) }}
 {{- end }}
 
 {{/*
-Bridge SNI hostname for a given ordinal
+Bridge SNI hostname for a given ordinal.
+gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
+When satellite.name is set:
+  {ordinal}.bridge.{satellite}.{tunnelDomain}
+Otherwise (backward compat):
+  {ordinal}.bridge.{tunnelDomain}
 Usage: {{ include "bamf.bridge.sniHostname" (dict "root" . "ordinal" 0) }}
 */}}
 {{- define "bamf.bridge.sniHostname" -}}
+{{- if .root.Values.satellite.name -}}
+{{ .ordinal }}.bridge.{{ .root.Values.satellite.name }}.{{ .root.Values.gateway.tunnelDomain }}
+{{- else -}}
 {{ .ordinal }}.bridge.{{ .root.Values.gateway.tunnelDomain }}
+{{- end -}}
 {{- end }}
+
+{{/*
+Satellite tunnel domain — the base domain for this satellite's proxy.
+gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
+When satellite.name is set: {satellite}.{tunnelDomain}
+Otherwise: {tunnelDomain} (unchanged)
+*/}}
+{{- define "bamf.satellite.tunnelDomain" -}}
+{{- if .Values.satellite.name -}}
+{{ .Values.satellite.name }}.{{ .Values.gateway.tunnelDomain }}
+{{- else -}}
+{{ .Values.gateway.tunnelDomain }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Validate satellite configuration.
+Called from deployment templates to fail early on misconfiguration.
+*/}}
+{{- define "bamf.validateSatellite" -}}
+{{- if .Values.satellite.enabled -}}
+  {{- if not .Values.satellite.name -}}
+    {{- fail "satellite.name is required when satellite.enabled=true" -}}
+  {{- end -}}
+  {{- if not (regexMatch "^[a-z][a-z0-9-]*$" .Values.satellite.name) -}}
+    {{- fail "satellite.name must match [a-z][a-z0-9-]* (DNS label)" -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}

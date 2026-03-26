@@ -3,7 +3,6 @@
 {{- $fullName := include "bamf.fullname" . -}}
 {{- $labels := include "bamf.labels" . -}}
 {{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
-{{- $tunnelDomain := .Values.gateway.tunnelDomain -}}
 {{- $tunnelPort := int .Values.bridge.tunnelPort -}}
 
 # TLSRoutes for SNI-based routing to individual bridge pods
@@ -28,7 +27,7 @@ spec:
     - name: {{ $fullName }}
       sectionName: tunnel
   hostnames:
-    - "{{ $i }}.bridge.{{ $tunnelDomain }}"
+    - {{ include "bamf.bridge.sniHostname" (dict "root" $ "ordinal" $i) | quote }}
   rules:
     - backendRefs:
         - name: {{ $fullName }}-bridge-{{ $i }}

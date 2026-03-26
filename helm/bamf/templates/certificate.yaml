@@ -19,6 +19,7 @@ spec:
     - {{ .Values.ingress.external.hostname }}
     {{- end }}
     {{- if .Values.gateway.tunnelDomain }}
-    - "*.{{ .Values.gateway.tunnelDomain }}"
+    - "*.{{ include "bamf.satellite.tunnelDomain" . }}"
+    - "*.bridge.{{ include "bamf.satellite.tunnelDomain" . }}"
     {{- end }}
 {{- end }}

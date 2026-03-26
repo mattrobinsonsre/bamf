@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "bamf-proxy"
+description = "BAMF standalone HTTP proxy service"
+version = "0.0.0"
+authors = ["Matt Robinson <mattrobinsonsre@gmail.com>"]
+license = "GPL-3.0"
+readme = "README.md"
+packages = [{include = "bamf", from = "../../services"}]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+fastapi = ">=0.115.0"
+uvicorn = {extras = ["standard"], version = ">=0.34.0"}
+httpx = ">=0.28.0"
+structlog = ">=24.4.0"
+pydantic = ">=2.10.0"
+pydantic-settings = ">=2.7.0"
+wsproto = ">=1.2.0"
+pyyaml = ">=6.0"
+
+[tool.poetry.scripts]
+bamf-proxy = "uvicorn bamf.proxy.app:app --host 0.0.0.0 --port 8001"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

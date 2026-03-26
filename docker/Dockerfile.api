@@ -2,6 +2,7 @@
 # Builds the Python FastAPI application
 
 FROM python:3.14-slim
+LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-RUN pip install --no-cache-dir poetry==1.8.4
+RUN pip install --no-cache-dir poetry==2.3.2
 
 # Set working directory
 WORKDIR /app
@@ -20,7 +21,7 @@ COPY services/pyproject.toml services/poetry.lock* ./
 
 # Install dependencies
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --only main
+    && poetry install --no-interaction --no-ansi --only main --no-root
 
 # Copy application code
 COPY services/bamf ./bamf

@@ -3,7 +3,7 @@
 {{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
 {{- $fullName := include "bamf.fullname" . }}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
-{{- $tunnelDomainEscaped := .Values.gateway.tunnelDomain | replace "." "\\." }}
+{{- $tunnelDomainEscaped := include "bamf.satellite.tunnelDomain" . | replace "." "\\." }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -18,7 +18,7 @@ spec:
   entryPoints:
     - {{ $entryPoint }}
   routes:
-    # All web app proxy traffic goes to API service (proxy routes handle it)
+    # All web app proxy traffic goes to proxy service (or API if proxy disabled)
     # HostRegexp uses Traefik v3 raw Go regex syntax
     - match: HostRegexp(`^.+\.{{ $tunnelDomainEscaped }}$`)
       kind: Rule
@@ -28,8 +28,13 @@ spec:
           namespace: {{ .Release.Namespace }}
       {{- end }}
       services:
+        {{- if .Values.proxy.enabled }}
+        - name: {{ $fullName }}-proxy
+          port: 8001
+        {{- else }}
         - name: {{ $fullName }}-api
           port: 8000
+        {{- end }}
   tls:
     secretName: {{ .Values.tls.existingSecret | default (printf "%s-tls" $fullName) }}
     options:

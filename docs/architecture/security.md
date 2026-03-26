@@ -52,13 +52,21 @@ surface.
          │                           │
          ▼                           ▼
 ┌─────────────────────┐  ┌──────────────────────────────┐
-│  BOUNDARY 3: Data   │  │  BOUNDARY 4: Agent           │
-│  PostgreSQL + Redis  │  │  Runs alongside targets.     │
-│  Only API connects.  │  │  Has network access to       │
-│  Bridge/Agent/CLI    │  │  target resources. Cert      │
-│  never touch DB.     │  │  identifies agent. Scoped    │
-│                      │  │  to configured resources.    │
-└──────────────────────┘  └──────────────────────────────┘
+│  BOUNDARY 1b: Proxy │  │  BOUNDARY 4: Agent           │
+│  Separate service.  │  │  Runs alongside targets.     │
+│  No DB/Redis access.│  │  Has network access to       │
+│  Calls API internal │  │  target resources. Cert      │
+│  endpoints only.    │  │  identifies agent. Scoped    │
+│  Shared secret auth.│  │  to configured resources.    │
+└─────────────────────┘  │                              │
+                         └──────────────────────────────┘
+┌──────────────────────┐
+│  BOUNDARY 3: Data    │
+│  PostgreSQL + Redis   │
+│  Only API connects.   │
+│  Proxy/Bridge/Agent/  │
+│  CLI never touch DB.  │
+└──────────────────────┘
 ```
 
 ### Boundary 1: API Server
@@ -81,6 +89,28 @@ audit history, and impersonate any user. This is the highest-value target.
   blast radius (the API never sees the raw key)
 - Audit logs are append-only (no API endpoint to delete them)
 - Rate limiting on all endpoints
+
+### Boundary 1b: Proxy Service
+
+The proxy is a standalone FastAPI service that handles HTTP reverse proxying
+(web app access and Kubernetes API proxy). It has **no direct access to
+PostgreSQL or Redis** — it communicates with the API exclusively via internal
+HTTP endpoints (`/api/v1/internal/proxy/*`), authenticated with a shared secret
+(`Authorization: Bearer <internal_token>`).
+
+**If the proxy is compromised**: The attacker can read and modify HTTP traffic
+flowing through the proxy (web app requests, Kubernetes API calls). They can
+call the API's internal proxy endpoints using the shared secret, which allows
+them to authorize requests, log audit events, and store recordings — but cannot
+access any other API endpoints, the database, or Redis directly.
+
+**Mitigations**:
+- The internal token grants access only to `/internal/proxy/*` endpoints, not
+  the full API
+- The proxy has no CA key, no database credentials, and no Redis connection
+- Network policies can restrict the proxy to only reach the API service
+- Proxy pods are stateless — no persistent data to exfiltrate
+- The shared secret is mounted from a Kubernetes Secret, not hardcoded
 
 ### Boundary 2: Bridge
 
@@ -106,8 +136,9 @@ tunnels on that one pod.
 ### Boundary 3: Data Layer
 
 PostgreSQL stores identity and audit history. Redis stores runtime state.
-**Only the API connects to either.** Bridges, agents, and CLI never touch
-the data layer.
+**Only the API connects to either.** The proxy, bridges, agents, and CLI never
+touch the data layer. The proxy communicates with the API via internal HTTP
+endpoints authenticated by a shared secret.
 
 **If PostgreSQL is compromised**: The attacker gets user records (bcrypt-hashed
 passwords for local users), role definitions, audit history, session recordings,
@@ -268,25 +299,26 @@ psql → CLI → [TLS: BAMF CA] → Bridge → [TLS: BAMF CA] → Agent → Post
 ### HTTP Proxy (Web App, Kubernetes)
 
 ```
-Browser → [HTTPS: Let's Encrypt] → API → [internal HTTP] → Bridge → [gRPC] → Agent → Target
-          ^                         ^                                          ^
-          Session cookie            RBAC check                                 Forwards
-          (browser auth)            per request                                HTTP request
+Browser → [HTTPS: Let's Encrypt] → Proxy → [internal HTTP] → API (authorize) → Proxy → Bridge → Agent → Target
+          ^                          ^        ^                                  ^
+          Session cookie             Rewrites  Single round-trip                 Forwards to
+          (browser auth)             headers   auth + RBAC check                 bridge relay
 ```
 
 - Browser authenticates via session cookie (set after SSO login)
-- API evaluates RBAC on every HTTP request
-- API rewrites headers (Host, Origin, CORS, cookies) for transparent proxying
-- Internal API→Bridge communication is over cluster network (no public exposure)
+- Proxy calls API's internal authorize endpoint for auth + RBAC (single round-trip)
+- Proxy rewrites headers (Host, Origin, CORS, cookies) for transparent proxying
+- Proxy forwards to bridge's internal relay endpoint
+- Internal Proxy→API and Proxy→Bridge communication is over cluster network
 - Agent forwards to target over internal network
 
 ### Kubernetes API Access
 
 ```
-kubectl → [HTTPS] → API → [internal] → Bridge → [gRPC] → Agent → [HTTPS + Impersonation] → K8s API
-                     ^                                     ^
-                     Resolves k8s_groups                   Sets Impersonate-User
-                     from BAMF roles                       and Impersonate-Group
+kubectl → [HTTPS] → Proxy → API (authorize) → Proxy → Bridge → Agent → [HTTPS + Impersonation] → K8s API
+                     ^        ^                                  ^
+                     Kube     Resolves k8s_groups                Sets Impersonate-User
+                     proxy    from BAMF roles                    and Impersonate-Group
 ```
 
 - BAMF controls **who can reach the cluster** (authentication + RBAC)
@@ -457,7 +489,8 @@ was last). There is no practical reason to default to TLS 1.2.
 | Traffic | Ingress Path | TLS |
 |---------|-------------|-----|
 | API / Web UI | HTTPRoute or IngressRoute | Let's Encrypt (terminated) |
-| Web app proxy | HTTPRoute or IngressRoute (wildcard) | Let's Encrypt (terminated) |
+| Web app proxy | HTTPRoute or IngressRoute (wildcard) → Proxy | Let's Encrypt (terminated) |
+| Kube proxy | HTTPRoute or IngressRoute (`/api/v1/kube/*`) → Proxy | Let's Encrypt (terminated) |
 | Tunnels | TLSRoute or IngressRouteTCP | BAMF CA (passthrough) |
 
 ### Internal Access
@@ -466,7 +499,8 @@ was last). There is no practical reason to default to TLS 1.2.
 |---------|------|-----|
 | API → PostgreSQL | Cluster network | Optional (sslmode) |
 | API → Redis | Cluster network | Optional |
-| API → Bridge (relay) | Cluster network | None (internal) |
+| Proxy → API (internal endpoints) | Cluster network | None (shared secret auth) |
+| Proxy → Bridge (relay) | Cluster network | None (internal) |
 
 Internal traffic is protected by Kubernetes network policies. Istio service
 mesh can be enabled for internal mTLS if required.
@@ -512,6 +546,82 @@ authentication. The security assumptions are:
 See [Agent Config Reference](../reference/agent-config.md#webhooks) and
 [Web Apps Guide](../guides/web-apps.md#webhooks).
 
+## Satellite Trust Boundary
+
+When deploying regional satellites (see [Satellite Deployments](satellite-deployments.md)),
+each satellite introduces a new trust boundary with its own security properties.
+
+### Satellite Identity
+
+Each satellite authenticates to the central API using two tokens issued during
+the join flow:
+
+| Token | Used by | Purpose |
+|-------|---------|---------|
+| Internal token (`sat_int_*`) | Proxy | Authenticates to API internal endpoints |
+| Bridge bootstrap token (`sat_brg_*`) | Bridge | Authenticates for bridge registration |
+
+Tokens are stored as SHA-256 hashes in the `satellites` table. The plaintext
+tokens are stored in Kubernetes Secrets in the satellite's namespace only.
+
+### If a satellite's internal token is compromised
+
+**Impact**: The attacker can call the API's internal proxy endpoints
+(`/internal/proxy/*`) as if they were the satellite's proxy. They can authorize
+sessions, log audit events, and store recordings — but scoped to the satellite's
+identity.
+
+**What they can't do**: Access any other API endpoints, the database, Redis,
+or the CA private key. Issue certificates. Impersonate other satellites.
+
+**Response**: Deactivate the satellite (`DELETE /api/v1/satellites/{id}`).
+This immediately rejects all internal token auth for that satellite. Re-join
+with a new token to generate new credentials.
+
+### If a satellite's bridge bootstrap token is compromised
+
+**Impact**: The attacker can register rogue bridge pods in that satellite's
+bridge pool. If the rogue bridge receives tunnel assignments, it can read
+tunnel traffic.
+
+**What they can't do**: Register bridges in other satellites. Issue
+certificates. Access the database.
+
+**Response**: Deactivate the satellite. The rogue bridge's Redis registration
+expires via TTL. Re-join to generate new tokens.
+
+### If a remote satellite cluster is compromised
+
+**Impact**: The attacker can read all HTTP and TCP traffic flowing through
+that satellite. They can intercept web app proxy requests and tunnel
+connections routed through that satellite's bridges.
+
+**What they can't do**: Access the central API, database, or Redis. Issue
+certificates. Affect other satellites. Access resources routed through other
+satellites.
+
+**Response**: Deactivate the satellite. All proxy auth and bridge registration
+for that satellite stop immediately. Agents lose relay connections to the
+satellite's bridges but maintain connections to other satellites. Traffic
+reroutes to remaining satellites (via GeoDNS update or explicit hostname
+change).
+
+### Satellite join token security
+
+Satellite join tokens (`bamf_sat_*`) follow the same security model as agent
+join tokens:
+
+- Short-lived (configurable expiration, typically 24h)
+- Optional `max_uses` limit (e.g., single-use tokens)
+- Revocable before expiry
+- Delete after successful join (best practice)
+
+A compromised join token lets the attacker register a satellite with the
+token's assigned name. This is mitigated by:
+- Re-join regenerates all tokens (invalidating the old satellite)
+- The satellite name is immutable per token (attacker can't claim arbitrary names)
+- Audit log records all join events with source IP
+
 ## Hardening Checklist
 
 - [x] TLS 1.3 on ingress and internal mTLS (default since v0.4.0)
@@ -554,14 +664,14 @@ gmake pentest-sast
 
 ### Container Image Scanning (Trivy)
 
-Scans all four BAMF container images for OS package and language dependency CVEs
+Scans all five BAMF container images for OS package and language dependency CVEs
 at HIGH and CRITICAL severity. Accepted CVEs can be added to
 `pentest/trivy/.trivyignore` with a justification comment.
 
 ```zsh
 gmake images       # build images first
 gmake pentest-images
-# Output: reports/pentest/trivy-{bamf-api,bamf-bridge,bamf-agent,bamf-web}.json
+# Output: reports/pentest/trivy-{bamf-api,bamf-proxy,bamf-bridge,bamf-agent,bamf-web}.json
 ```
 
 ### DAST (Nuclei)
