@@ -24,17 +24,15 @@ from bamf.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Lazy-loaded MaxMind reader (None = not yet attempted, False = unavailable)
-_reader: object = None
+# Lazy-loaded MaxMind reader state.  Using a dict avoids ``global`` and lets
+# us distinguish "not yet attempted" (key absent) from "unavailable" (None).
+_geoip_state: dict[str, object] = {}
 
 
 def _get_reader():
     """Return a geoip2 DatabaseReader, or None if unavailable."""
-    global _reader
-    if _reader is False:
-        return None
-    if _reader is not None:
-        return _reader
+    if "reader" in _geoip_state:
+        return _geoip_state["reader"]
 
     try:
         import geoip2.database  # type: ignore[import-untyped]
@@ -42,11 +40,12 @@ def _get_reader():
         from bamf.config import settings
 
         path = settings.geoip_database_path
-        _reader = geoip2.database.Reader(path)
+        reader = geoip2.database.Reader(path)
         logger.info("GeoIP database loaded", path=path)
-        return _reader
+        _geoip_state["reader"] = reader
+        return reader
     except Exception:  # noqa: BLE001 — graceful fallback when geoip2/database missing
-        _reader = False
+        _geoip_state["reader"] = None
         logger.debug("GeoIP database not available — satellite selection will use defaults")
         return None
 

@@ -47,7 +47,6 @@ function statusColor(status: number): string {
 }
 
 function formatBody(body: string | null, headers: Record<string, string>): string {
-  if (body === null) return ''
   if (!body) return ''
 
   const ct = (headers['content-type'] || headers['Content-Type'] || '').toLowerCase()

@@ -110,7 +110,8 @@ class TestWsHandshake:
             b"\r\n"
         )
 
-        await task
+        ws_conn, negotiated = await task
+        assert ws_conn is not None
         assert b"Sec-WebSocket-Protocol: proto-a, proto-b" in raw
 
     @pytest.mark.asyncio
@@ -178,7 +179,8 @@ class TestWsHandshake:
             b"\r\n"
         )
 
-        await task
+        ws_conn, _ = await task
+        assert ws_conn is not None
 
         assert b"Host: target:3000" in raw
         assert b"X-Bamf-Target: http://target:3000" in raw

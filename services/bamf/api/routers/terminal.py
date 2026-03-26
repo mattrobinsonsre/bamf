@@ -281,7 +281,7 @@ async def _terminal_relay(websocket: WebSocket, session_id: str, resource_type: 
         try:
             await writer.wait_closed()
         except Exception:
-            pass
+            logger.debug("writer.wait_closed raised during cleanup")
 
 
 async def _send_credentials_to_bridge(
@@ -382,11 +382,11 @@ async def _relay_loop(
                             writer.write(_write_frame(FRAME_RESIZE, payload))
                             await writer.drain()
                     except (json.JSONDecodeError, KeyError, ValueError):
-                        pass
+                        logger.debug("Ignoring malformed resize control message")
         except WebSocketDisconnect:
-            pass
+            logger.debug("WebSocket disconnected in ws_to_bridge")
         except Exception:
-            pass
+            logger.debug("ws_to_bridge relay ended", exc_info=True)
 
     async def bridge_to_ws():
         """Read frames from bridge, write to WebSocket."""
@@ -403,11 +403,11 @@ async def _relay_loop(
                     status_msg = payload.decode("utf-8")
                     await websocket.send_text(json.dumps({"type": "status", "status": status_msg}))
         except asyncio.IncompleteReadError:
-            pass
+            logger.debug("Bridge stream ended in bridge_to_ws")
         except WebSocketDisconnect:
-            pass
+            logger.debug("WebSocket disconnected in bridge_to_ws")
         except Exception:
-            pass
+            logger.debug("bridge_to_ws relay ended", exc_info=True)
 
     # Run both directions concurrently; when either finishes, cancel the other
     ws_task = asyncio.create_task(ws_to_bridge())
@@ -422,7 +422,7 @@ async def _relay_loop(
             try:
                 await task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Relay task cancelled during cleanup")
     except Exception:
         ws_task.cancel()
         bridge_task.cancel()

@@ -187,8 +187,6 @@ export default function WebTerminal({
       // Import xterm CSS
       await import('@xterm/xterm/css/xterm.css')
 
-      if (!mounted || !termRef.current) return
-
       const fitAddon = new FitAddon()
       fitAddonRef.current = fitAddon
 

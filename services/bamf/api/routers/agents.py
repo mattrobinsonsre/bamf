@@ -716,7 +716,7 @@ async def agent_events(
                         elif cmd == "revoke":
                             event_type = "revoke"
                     except (json.JSONDecodeError, TypeError):
-                        pass
+                        logger.debug("Failed to parse SSE event type")
                     yield f"event: {event_type}\ndata: {data}\n\n"
                     keepalive_counter = 0
                 else:

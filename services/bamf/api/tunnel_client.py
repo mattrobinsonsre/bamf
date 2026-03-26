@@ -80,8 +80,8 @@ async def dial_bridge(
             try:
                 p.unlink(missing_ok=True)
             except OSError:
-                pass
+                logger.debug("Failed to remove temp file %s", p)
         try:
             Path(tmpdir).rmdir()
         except OSError:
-            pass
+            logger.debug("Failed to remove temp dir %s", tmpdir)

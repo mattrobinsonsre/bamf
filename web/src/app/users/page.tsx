@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, KeyRound, Trash2 } from 'lucide-react'
 import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core'

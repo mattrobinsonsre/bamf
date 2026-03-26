@@ -63,7 +63,7 @@ async def register_instance(
                 }
             )
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.debug("Failed to parse existing agent instance entry")
 
     await r.hset(key, instance_id, entry)
     await r.expire(key, agent_ttl)
