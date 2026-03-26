@@ -445,7 +445,7 @@ postgresql:
     auth:
       database: bamf
       username: bamf
-      password: ""  # Required when bundled
+      password: "changeme"  # Override in values-local.yaml or --set
     resources:
       requests:
         cpu: 250m

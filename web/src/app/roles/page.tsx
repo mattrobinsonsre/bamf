@@ -26,10 +26,6 @@ interface LabelRow {
   values: string
 }
 
-function emptyPermissions(): PermissionsBlock {
-  return { labels: {}, names: [] }
-}
-
 function permissionsToLabelRows(p: PermissionsBlock): LabelRow[] {
   const rows = Object.entries(p.labels).map(([key, values]) => ({
     key,

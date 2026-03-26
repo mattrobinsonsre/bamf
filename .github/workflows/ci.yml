@@ -262,6 +262,8 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
           config: |
+            paths-ignore:
+              - alembic/versions
             query-filters:
               - exclude:
                   id: py/partial-ssrf

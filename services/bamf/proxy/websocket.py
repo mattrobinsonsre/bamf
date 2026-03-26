@@ -138,7 +138,7 @@ async def ws_relay(
                 writer.write(data)
                 await writer.drain()
             except Exception:
-                pass
+                logger.debug("Failed to send WebSocket close frame")
 
     async def bridge_to_browser() -> None:
         """Read raw bytes from TCP, decode wsproto events, send to ASGI."""
