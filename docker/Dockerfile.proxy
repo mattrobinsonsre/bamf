@@ -3,6 +3,7 @@
 # Smaller than Dockerfile.api — no SQLAlchemy, asyncpg, alembic, SAML, etc.
 
 FROM python:3.14-slim
+LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
 # Minimal system deps (no libxml2/xmlsec needed — proxy has no SAML)
 RUN apt-get update && apt-get install -y --no-install-recommends \

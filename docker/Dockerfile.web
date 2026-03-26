@@ -20,6 +20,7 @@ RUN npm run build
 
 # Production image — standalone mode (minimal, no full node_modules)
 FROM node:25-alpine
+LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
 WORKDIR /app
 
