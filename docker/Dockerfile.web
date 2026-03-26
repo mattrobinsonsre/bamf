@@ -22,6 +22,9 @@ RUN npm run build
 FROM node:25-alpine
 LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
+# Patch OS-level CVEs (e.g. zlib CVE-2026-22184)
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 
 # Copy standalone server (includes only required node_modules)

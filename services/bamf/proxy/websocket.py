@@ -175,7 +175,9 @@ async def ws_relay(
             task.cancel()
             try:
                 await task
-            except asyncio.CancelledError, Exception:
-                pass
+            except asyncio.CancelledError:
+                pass  # Expected during shutdown
+            except Exception:
+                logger.debug("ws_relay: error awaiting cancelled task", exc_info=True)
     finally:
         writer.close()
