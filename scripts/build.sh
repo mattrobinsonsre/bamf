@@ -22,7 +22,8 @@ done
 # ── Build Go binaries for all platforms ───────────────────
 build_binaries() {
   info "Cross-compiling Go binaries..."
-  rm -rf "$REPO_ROOT/dist"
+  # Remove only Go binaries from previous builds (preserve Helm chart .tgz)
+  find "$REPO_ROOT/dist" -maxdepth 1 -name 'bamf-*' -not -name '*.tgz' -delete 2>/dev/null || true
   mkdir -p "$REPO_ROOT/dist"
 
   docker_go bash -c '

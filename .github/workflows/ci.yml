@@ -546,16 +546,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x
           version="${{ needs.prepare.outputs.version }}"
           chart_version="${version#v}"
 
           # Generate checksums for all release artifacts
-          # Use bamf-*-* to match Go binaries (bamf-linux-amd64, etc.)
-          # without matching the Helm chart (bamf-X.Y.Z.tgz)
           (cd dist && sha256sum -- *.tgz *.spdx.json bamf-*-* > checksums.txt)
-
-          ls -la dist/
 
           gh release create "$version" \
             --title "$version" \
