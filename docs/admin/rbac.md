@@ -130,17 +130,18 @@ IDP group "bamf:sre"    →  BAMF role "sre"
 Use `claimsToRoles` in the Helm SSO configuration:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      auth0:
-        claimsToRoles:
-          - claim: https://bamf.myorg.com/groups
-            value: platform-eng
-            roles: [sre, developer]
-          - claim: https://bamf.myorg.com/groups
-            value: developers
-            roles: [developer]
+core:
+  auth:
+    sso:
+      oidc:
+        auth0:
+          claimsToRoles:
+            - claim: https://bamf.myorg.com/groups
+              value: platform-eng
+              roles: [sre, developer]
+            - claim: https://bamf.myorg.com/groups
+              value: developers
+              roles: [developer]
 ```
 
 ### Dual-Source Role Model

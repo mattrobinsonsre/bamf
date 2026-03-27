@@ -1,4 +1,4 @@
-{{- if .Values.web.standalone }}
+{{- if .Values.core.web.standalone }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,12 +6,12 @@ metadata:
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: web
-  {{- with .Values.web.service.annotations }}
+  {{- with .Values.core.web.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  type: {{ .Values.web.service.type | default "ClusterIP" }}
+  type: {{ .Values.core.web.service.type | default "ClusterIP" }}
   ports:
     - port: 3000
       targetPort: http

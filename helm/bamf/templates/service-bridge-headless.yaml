@@ -1,3 +1,4 @@
+{{- if .Values.outpost.enabled }}
 # Headless service for StatefulSet DNS resolution
 # Provides DNS entries: {pod-name}.{service-name}.{namespace}.svc.cluster.local
 apiVersion: v1
@@ -7,7 +8,7 @@ metadata:
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: bridge
-  {{- with .Values.bridge.headlessService.annotations }}
+  {{- with .Values.outpost.bridge.headlessService.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -17,10 +18,11 @@ spec:
     {{- include "bamf.bridge.selectorLabels" . | nindent 4 }}
   ports:
     - name: tunnel
-      port: {{ .Values.bridge.tunnelPort }}
+      port: {{ .Values.outpost.bridge.tunnelPort }}
       targetPort: tunnel
       protocol: TCP
     - name: health
       port: 8080
       targetPort: health
       protocol: TCP
+{{- end }}

@@ -31,11 +31,11 @@ helm install bamf oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf \
   --set gateway.hostname=bamf.example.com \
   --set gateway.tunnelDomain=tunnel.bamf.example.com \
-  --set auth.local.enabled=true \
-  --set postgresql.bundled.enabled=true \
-  --set redis.bundled.enabled=true \
-  --set bootstrap.adminEmail=admin \
-  --set bootstrap.adminPassword=admin
+  --set core.auth.local.enabled=true \
+  --set core.postgresql.bundled.enabled=true \
+  --set core.redis.bundled.enabled=true \
+  --set core.bootstrap.adminEmail=admin \
+  --set core.bootstrap.adminPassword=admin
 ```
 
 > **Note:** Bundled PostgreSQL and Redis are single-replica with no replication
@@ -69,7 +69,7 @@ Create DNS records:
 ## 3. Log In
 
 Open `https://bamf.example.com` in your browser. The bootstrap job (triggered by
-the `bootstrap.*` values above) creates the initial admin account:
+the `core.bootstrap.*` values above) creates the initial admin account:
 
 - **Email**: `admin`
 - **Password**: `admin`

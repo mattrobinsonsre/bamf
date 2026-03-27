@@ -1,5 +1,5 @@
 # Web app proxy routing: docs/guides/web-apps.md
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.tunnelDomain }}
+{{- if and .Values.outpost.enabled .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.tunnelDomain }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -19,7 +19,7 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        {{- if .Values.proxy.enabled }}
+        {{- if .Values.outpost.enabled }}
         - name: {{ include "bamf.fullname" . }}-proxy
           port: 8001
         {{- else }}

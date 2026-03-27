@@ -62,9 +62,10 @@ All components use structured JSON logging in production:
 Configure via Helm:
 
 ```yaml
-api:
-  config:
-    log_level: info  # error, warning, info, debug
+core:
+  api:
+    config:
+      log_level: info  # error, warning, info, debug
 ```
 
 ### Request Tracing

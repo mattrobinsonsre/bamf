@@ -192,10 +192,10 @@ helm install bamf oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf --create-namespace \
   --set gateway.hostname=bamf.example.com \
   --set gateway.tunnelDomain=tunnel.bamf.example.com \
-  --set postgresql.bundled.enabled=true \
-  --set redis.bundled.enabled=true \
-  --set bootstrap.adminEmail=admin \
-  --set bootstrap.adminPassword=changeme
+  --set core.postgresql.bundled.enabled=true \
+  --set core.redis.bundled.enabled=true \
+  --set core.bootstrap.adminEmail=admin \
+  --set core.bootstrap.adminPassword=changeme
 ```
 
 See [Deployment Guide](docs/admin/deployment.md) for production configuration.

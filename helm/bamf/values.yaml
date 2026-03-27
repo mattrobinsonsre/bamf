@@ -10,210 +10,459 @@ global:
   imageRegistry: ""
   imagePullSecrets: []
 
-# ── API Server (Python/FastAPI) ───────────────────────────────────────────────
-api:
-  replicas: 2
+# ── Core (control plane) ────────────────────────────────────────────────────
+# API + Web UI + PostgreSQL + Redis + migrations + CA + bootstrap.
+# Disable for remote outpost-only deployments.
+core:
+  enabled: true
 
-  image:
-    repository: ghcr.io/mattrobinsonsre/bamf-api
-    tag: ""  # Defaults to appVersion
-    pullPolicy: IfNotPresent
+  # ── API Server (Python/FastAPI) ─────────────────────────────────────────────
+  api:
+    replicas: 2
 
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: "1"
-      memory: 1Gi
+    image:
+      repository: ghcr.io/mattrobinsonsre/bamf-api
+      tag: ""  # Defaults to appVersion
+      pullPolicy: IfNotPresent
 
-  autoscaling:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+    pdb:
+      enabled: true
+      minAvailable: 1
+
+    # Configuration mounted as /etc/bamf/config.yaml
+    config:
+      log_level: info
+      certificates:
+        user_ttl_hours: 12
+        agent_ttl_hours: 8760
+        bridge_ttl_hours: 24
+      audit:
+        retention_days: 90
+      # CORS — only origins listed here can make cross-origin requests.
+      # Empty list (default) means CORS middleware is disabled (same-origin only).
+      # Set to your BAMF hostname for production.
+      cors:
+        allow_origins: []
+        # allow_origins:
+        #   - https://bamf.example.com
+
+    # Pod termination settings for graceful shutdown
+    terminationGracePeriodSeconds: 120
+
+    # Spot instance handling
+    preStopSleepSeconds: 15
+
+    podAnnotations: {}
+    podLabels: {}
+    priorityClassName: ""
+    topologySpreadConstraints: []
+    podSecurityContext: {}
+    securityContext: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+    # Extra env vars, volumes, and init containers for the API pod
+    extraEnv: []
+    extraEnvFrom: []
+    extraVolumes: []
+    extraVolumeMounts: []
+    extraInitContainers: []
+
+    service:
+      type: ClusterIP
+      annotations: {}
+
+    serviceAccount:
+      create: true
+      name: ""
+      annotations: {}
+
+  # ── Web UI ──────────────────────────────────────────────────────────────────
+  web:
+    # Set to true to deploy web UI as standalone pods
+    # When false, web UI is served by the bridge
+    standalone: false
+
+    replicas: 2
+
+    image:
+      repository: ghcr.io/mattrobinsonsre/bamf-web
+      tag: ""
+      pullPolicy: IfNotPresent
+
+    podAnnotations: {}
+    podLabels: {}
+    priorityClassName: ""
+    topologySpreadConstraints: []
+    podSecurityContext: {}
+    securityContext: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    terminationGracePeriodSeconds: 60
+    preStopSleepSeconds: 5
+
+    livenessProbe: {}
+    readinessProbe: {}
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+    extraEnv: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+    service:
+      type: ClusterIP
+      annotations: {}
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  # Production: use external PostgreSQL (RDS, Aurora, Cloud SQL, etc.)
+  # Bundled mode is for dev/staging only.
+  postgresql:
+    bundled:
+      enabled: false
+      image:
+        repository: public.ecr.aws/docker/library/postgres
+        tag: "16-alpine"
+        pullPolicy: IfNotPresent
+      auth:
+        database: bamf
+        username: bamf
+        password: "changeme"  # Override in values-local.yaml or --set
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      persistence:
+        size: 20Gi
+        storageClass: ""
+
+    external:
+      enabled: true
+      host: ""  # Required when enabled
+      port: 5432
+      database: bamf
+      username: bamf
+      sslmode: require
+
+      # Credential options (choose one):
+      # 1. Inline password (creates K8s Secret)
+      # password: ""
+
+      # 2. Pre-existing K8s Secret
+      existingSecret: ""
+      existingSecretKey: password
+
+      # 3. ExternalSecrets operator
+      externalSecret:
+        enabled: false
+        secretStoreRef:
+          name: ""
+          kind: ClusterSecretStore
+        remoteRef:
+          key: ""
+          property: password
+
+      # Read replica — optional, routes read-only queries to a separate endpoint.
+      # When disabled (default), all reads go to the primary. Fields that are not
+      # set inherit from the parent external block (username, port, database, sslmode).
+      readReplica:
+        enabled: false
+        host: ""  # Required when enabled (e.g., bamf-db-ro.cluster-xxx.rds.amazonaws.com)
+        port: ""  # Inherits from external.port if empty
+        database: ""  # Inherits from external.database if empty
+        username: ""  # Inherits from external.username if empty
+        sslmode: ""  # Inherits from external.sslmode if empty
+
+        # Credential options (choose one — same pattern as primary):
+        # password: ""          # Inline (creates K8s Secret)
+        existingSecret: ""      # Pre-existing K8s Secret
+        existingSecretKey: password
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  # Production: use external Redis (ElastiCache, Memorystore, etc.)
+  # Bundled mode is for dev/staging only.
+  redis:
+    bundled:
+      enabled: false
+      image:
+        repository: public.ecr.aws/docker/library/redis
+        tag: "7-alpine"
+        pullPolicy: IfNotPresent
+      auth:
+        enabled: false
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+      persistence:
+        size: 8Gi
+        storageClass: ""
+
+    external:
+      enabled: true
+      host: ""  # Required when enabled
+      port: 6379
+      existingSecret: ""
+      existingSecretKey: password
+
+  # ── SSO / Authentication ────────────────────────────────────────────────────
+  auth:
+    # Local authentication
+    local:
+      enabled: true
+
+    # SSO configuration
+    sso:
+      defaultProvider: ""
+
+      # OIDC providers — map keyed by provider name.
+      # Each key becomes the provider name in BAMF (e.g., "auth0", "okta").
+      # Example:
+      #   oidc:
+      #     auth0:
+      #       enabled: true
+      #       displayName: "Corporate SSO"
+      #       issuerUrl: https://myorg.us.auth0.com/
+      #       clientId: YOUR_CLIENT_ID
+      #       audience: https://bamf.example.com/api
+      #       existingSecret: bamf-auth0
+      #     okta:
+      #       enabled: true
+      #       displayName: "Okta"
+      #       issuerUrl: https://myorg.okta.com/oauth2/default  # Must use Custom AS
+      #       clientId: YOUR_CLIENT_ID
+      #       scopes: [openid, profile, email, groups]
+      #       groupsClaim: groups
+      #       existingSecret: bamf-okta
+      oidc: {}
+      #   provider-name:
+      #     enabled: false
+      #     displayName: ""          # Human-readable label for login UI
+      #     issuerUrl: ""            # OIDC issuer URL (must serve .well-known/openid-configuration)
+      #     clientId: ""
+      #     audience: ""             # API identifier for application-scoped permissions (Auth0)
+      #     scopes: []               # Override default [openid, profile, email]
+      #     groupsClaim: ""          # Claim name for groups/roles (default: "groups")
+      #     rolePrefixes: []         # Prefixes to strip from group names (default: ["bamf:", "bamf-"])
+      #     # Client secret from K8s Secret (never in ConfigMap)
+      #     existingSecret: ""       # If empty, defaults to {fullname}-{provider-name}
+      #     existingSecretKey: client_secret
+
+  # ── Bootstrap ───────────────────────────────────────────────────────────────
+  # Creates an initial admin user and agent join token on first install.
+  # Only used for local dev or initial setup; disable for production once
+  # admin users are created via SSO.
+  # bootstrap:
+  #   adminEmail: admin@example.com
+  #   adminPassword: ""  # Required when enabled
+  #   joinToken: ""      # Optional: pre-create a join token for agents
+
+  # ── Migrations ──────────────────────────────────────────────────────────────
+  migrations:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    podAnnotations: {}
+    nodeSelector: {}
+    tolerations: []
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
 
-  pdb:
-    enabled: true
-    minAvailable: 1
+# ── Outpost (data plane) ────────────────────────────────────────────────────
+# Proxy + Bridge + tunnel ingress routes.
+# Every proxy+bridge combination is an outpost. The co-located deployment
+# (with API) is just an outpost that shares a cluster with the API.
+outpost:
+  # Enable outpost components (proxy + bridge).
+  # When true, outpost.name is required.
+  enabled: true
 
-  # Configuration mounted as /etc/bamf/config.yaml
-  config:
-    log_level: info
-    certificates:
-      user_ttl_hours: 12
-      agent_ttl_hours: 8760
-      bridge_ttl_hours: 24
-    audit:
-      retention_days: 90
-    # CORS — only origins listed here can make cross-origin requests.
-    # Empty list (default) means CORS middleware is disabled (same-origin only).
-    # Set to your BAMF hostname for production.
-    cors:
-      allow_origins: []
-      # allow_origins:
-      #   - https://bamf.example.com
+  # DNS-safe short name for this outpost (e.g., "us-east", "eu", "apac").
+  # Used as a hostname prefix: *.{name}.tunnel.{domain}
+  # Must match [a-z][a-z0-9-]*, max 63 characters.
+  name: "default"
 
-  # Pod termination settings for graceful shutdown
-  terminationGracePeriodSeconds: 120
+  # For remote outposts (core is not co-located):
+  # Join token from `POST /api/v1/outpost-tokens`
+  joinToken: ""
+  # Central API URL (required when outpost is remote)
+  apiUrl: ""
 
-  # Spot instance handling
-  preStopSleepSeconds: 15
+  # GeoDNS — optional convenience layer for shared *.tunnel.{domain} hostname.
+  # When enabled, the proxy accepts requests on both *.{outpost}.tunnel.{domain}
+  # and *.tunnel.{domain}. Does NOT manage DNS records.
+  geodns:
+    enabled: false
 
-  podAnnotations: {}
-  podLabels: {}
-  priorityClassName: ""
-  topologySpreadConstraints: []
-  podSecurityContext: {}
-  securityContext: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
+  # ── Proxy Service (standalone HTTP proxy) ───────────────────────────────────
+  # Handles web app proxying (*.tunnel.domain) and Kubernetes API proxying
+  # (/api/v1/kube/*). Communicates with the API exclusively via internal HTTP.
+  proxy:
+    replicas: 2
 
-  # Extra env vars, volumes, and init containers for the API pod
-  extraEnv: []
-  extraEnvFrom: []
-  extraVolumes: []
-  extraVolumeMounts: []
-  extraInitContainers: []
+    image:
+      repository: ghcr.io/mattrobinsonsre/bamf-proxy
+      tag: ""  # Defaults to appVersion
+      pullPolicy: IfNotPresent
 
-  service:
-    type: ClusterIP
-    annotations: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
 
-  serviceAccount:
-    create: true
-    name: ""
-    annotations: {}
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
 
-# ── Bridge Server (Go TCP tunnel gateway) ────────────────────────────────────
-bridge:
-  replicas: 2
+    pdb:
+      enabled: true
+      minAvailable: 1
 
-  image:
-    repository: ghcr.io/mattrobinsonsre/bamf-bridge
-    tag: ""
-    pullPolicy: IfNotPresent
+    # Shared secret for proxy→API internal auth.
+    # Auto-generated and stored in a K8s Secret if empty.
+    internalToken: ""
 
-  resources:
-    requests:
-      cpu: "1"
-      memory: 1Gi
-    limits:
-      cpu: "2"
-      memory: 1Gi
+    logLevel: info
+    jsonLogs: "true"
+    preStopSleepSeconds: 15
+    terminationGracePeriodSeconds: 120
 
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 20
-    targetCPUUtilizationPercentage: 70
-    # Target tunnel count per pod — primary scaling signal via prometheus-adapter.
-    # When set (>0), HPA scales on bamf_bridge_active_tunnels custom metric.
-    # Also controls the oversubscription threshold for non-migratable session placement.
-    # Requires prometheus-adapter in the cluster to expose custom metrics API.
-    targetTunnelsPerPod: 50
-    # Oversubscription factor for non-migratable sessions (ssh-audit).
-    # Low-ordinal bridges accept up to this × targetTunnelsPerPod tunnels before
-    # the selector spills ssh-audit sessions to higher ordinals.
-    nonMigratableOversubscribeFactor: 1.5
+    podAnnotations: {}
+    podLabels: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    extraEnv: []
 
-  pdb:
-    enabled: true
-    minAvailable: 1
+    # For outpost deployments, override the API URL to point at a remote central API.
+    # apiUrl: https://bamf.example.com
 
-  service:
-    type: LoadBalancer
-    annotations: {}
+  # ── Bridge Server (Go TCP tunnel gateway) ───────────────────────────────────
+  bridge:
+    replicas: 2
 
-  headlessService:
-    annotations: {}
+    image:
+      repository: ghcr.io/mattrobinsonsre/bamf-bridge
+      tag: ""
+      pullPolicy: IfNotPresent
 
-  # Single tunnel port — bridge is protocol-agnostic, all tunnels use one mTLS port
-  tunnelPort: 8443
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 1Gi
 
-  # Extended to 1800s (30 min) for non-migratable session protection.
-  # After migratable tunnels are migrated (~seconds), the bridge waits for
-  # ssh-audit sessions to finish naturally. 30 min covers most interactive sessions.
-  terminationGracePeriodSeconds: 1800
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 20
+      targetCPUUtilizationPercentage: 70
+      # Target tunnel count per pod — primary scaling signal via prometheus-adapter.
+      # When set (>0), HPA scales on bamf_bridge_active_tunnels custom metric.
+      # Also controls the oversubscription threshold for non-migratable session placement.
+      # Requires prometheus-adapter in the cluster to expose custom metrics API.
+      targetTunnelsPerPod: 50
+      # Oversubscription factor for non-migratable sessions (ssh-audit).
+      # Low-ordinal bridges accept up to this × targetTunnelsPerPod tunnels before
+      # the selector spills ssh-audit sessions to higher ordinals.
+      nonMigratableOversubscribeFactor: 1.5
 
-  # Pre-stop sleep to allow load balancer to drain connections.
-  # The bridge's own graceful shutdown handles tunnel migration;
-  # this sleep only ensures the LB stops sending new connections first.
-  preStopSleepSeconds: 15
+    pdb:
+      enabled: true
+      minAvailable: 1
 
-  # Bootstrap configuration for certificate issuance
-  # When enabled, bridges request their certificates from the API on startup
-  bootstrap:
-    enabled: true  # Set to false if using pre-provisioned TLS secrets
-    # Bootstrap token for authenticating with the API
-    # Required when enabled=true and tokenSecret is not set
-    token: ""
-    # Name of the K8s Secret containing the bootstrap token (optional)
-    # If not set, the chart creates a secret from bootstrap.token
-    tokenSecret: ""
-    tokenKey: "token"
+    service:
+      type: LoadBalancer
+      annotations: {}
 
-  podAnnotations: {}
-  podLabels: {}
-  priorityClassName: ""
-  topologySpreadConstraints: []
-  podSecurityContext: {}
-  securityContext: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
+    headlessService:
+      annotations: {}
 
-  # Extra env vars and volumes for the bridge pod
-  extraEnv: []
-  extraEnvFrom: []
-  extraVolumes: []
-  extraVolumeMounts: []
+    # Single tunnel port — bridge is protocol-agnostic, all tunnels use one mTLS port
+    tunnelPort: 8443
 
-# ── Web UI ────────────────────────────────────────────────────────────────────
-web:
-  # Set to true to deploy web UI as standalone pods
-  # When false, web UI is served by the bridge
-  standalone: false
+    # Extended to 1800s (30 min) for non-migratable session protection.
+    # After migratable tunnels are migrated (~seconds), the bridge waits for
+    # ssh-audit sessions to finish naturally. 30 min covers most interactive sessions.
+    terminationGracePeriodSeconds: 1800
 
-  replicas: 2
+    # Pre-stop sleep to allow load balancer to drain connections.
+    # The bridge's own graceful shutdown handles tunnel migration;
+    # this sleep only ensures the LB stops sending new connections first.
+    preStopSleepSeconds: 15
 
-  image:
-    repository: ghcr.io/mattrobinsonsre/bamf-web
-    tag: ""
-    pullPolicy: IfNotPresent
+    # Bootstrap configuration for certificate issuance
+    # When enabled, bridges request their certificates from the API on startup
+    bootstrap:
+      enabled: true  # Set to false if using pre-provisioned TLS secrets
+      # Bootstrap token for authenticating with the API
+      # Required when enabled=true and tokenSecret is not set
+      token: ""
+      # Name of the K8s Secret containing the bootstrap token (optional)
+      # If not set, the chart creates a secret from bootstrap.token
+      tokenSecret: ""
+      tokenKey: "token"
 
-  podAnnotations: {}
-  podLabels: {}
-  priorityClassName: ""
-  topologySpreadConstraints: []
-  podSecurityContext: {}
-  securityContext: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  terminationGracePeriodSeconds: 60
-  preStopSleepSeconds: 5
+    podAnnotations: {}
+    podLabels: {}
+    priorityClassName: ""
+    topologySpreadConstraints: []
+    podSecurityContext: {}
+    securityContext: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
 
-  livenessProbe: {}
-  readinessProbe: {}
+    # Extra env vars and volumes for the bridge pod
+    extraEnv: []
+    extraEnvFrom: []
+    extraVolumes: []
+    extraVolumeMounts: []
 
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 200m
-      memory: 128Mi
-
-  extraEnv: []
-  extraVolumes: []
-  extraVolumeMounts: []
-
-  service:
-    type: ClusterIP
-    annotations: {}
+  # ── Outpost TLS ─────────────────────────────────────────────────────────────
+  # For remote outposts: TLS cert for *.{outpost}.tunnel.{domain}
+  tls:
+    existingSecret: ""
+    existingGlobalSecret: ""
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
 # Deploy agents within this cluster to provide access to cluster resources.
@@ -320,81 +569,8 @@ agent:
   extraVolumes: []
   extraVolumeMounts: []
 
-# ── Proxy Service (standalone HTTP proxy) ─────────────────────────────────────
-# Handles web app proxying (*.tunnel.domain) and Kubernetes API proxying
-# (/api/v1/kube/*). Communicates with the API exclusively via internal HTTP.
-proxy:
-  enabled: true
-  replicas: 2
-
-  image:
-    repository: ghcr.io/mattrobinsonsre/bamf-proxy
-    tag: ""  # Defaults to appVersion
-    pullPolicy: IfNotPresent
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 256Mi
-
-  autoscaling:
-    enabled: false
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-
-  pdb:
-    enabled: true
-    minAvailable: 1
-
-  # Shared secret for proxy→API internal auth.
-  # Auto-generated and stored in a K8s Secret if empty.
-  internalToken: ""
-
-  logLevel: info
-  jsonLogs: "true"
-  preStopSleepSeconds: 15
-  terminationGracePeriodSeconds: 120
-
-  podAnnotations: {}
-  podLabels: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  extraEnv: []
-
-  # For outpost deployments, override the API URL to point at a remote central API.
-  # apiUrl: https://bamf.example.com
-
-# ── Outpost ───────────────────────────────────────────────────────────────────
-# Every proxy+bridge combination is an outpost. The co-located deployment (with API)
-# is just an outpost that shares a cluster with the API.
-outpost:
-  # Enable outpost components (proxy + bridge).
-  # When true, outpost.name is required.
-  enabled: true
-
-  # DNS-safe short name for this outpost (e.g., "us-east", "eu", "apac").
-  # Used as a hostname prefix: *.{name}.tunnel.{domain}
-  # Must match [a-z][a-z0-9-]*, max 63 characters.
-  name: "default"
-
-  # For remote outposts (api is not co-located):
-  # Join token from `POST /api/v1/outpost-tokens`
-  joinToken: ""
-  # Central API URL (required when outpost is remote)
-  apiUrl: ""
-
-  # GeoDNS — optional convenience layer for shared *.tunnel.{domain} hostname.
-  # When enabled, the proxy accepts requests on both *.{outpost}.tunnel.{domain}
-  # and *.tunnel.{domain}. Does NOT manage DNS records.
-  geodns:
-    enabled: false
-
 # ── Gateway / Ingress Routing ────────────────────────────────────────────────
+# Shared across core and outpost. Configures the ingress controller.
 # provider: traefik (default) or istio
 # traefik: Uses Traefik v3 IngressRoute/IngressRouteTCP CRDs (zero setup on Rancher Desktop)
 # istio:   Uses Gateway API (Gateway, HTTPRoute, TLSRoute) with Istio controller
@@ -431,169 +607,6 @@ ingress:
     tls: true
     certManager: true
     annotations: {}
-
-# ── PostgreSQL ────────────────────────────────────────────────────────────────
-# Production: use external PostgreSQL (RDS, Aurora, Cloud SQL, etc.)
-# Bundled mode is for dev/staging only.
-postgresql:
-  bundled:
-    enabled: false
-    image:
-      repository: public.ecr.aws/docker/library/postgres
-      tag: "16-alpine"
-      pullPolicy: IfNotPresent
-    auth:
-      database: bamf
-      username: bamf
-      password: "changeme"  # Override in values-local.yaml or --set
-    resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
-    persistence:
-      size: 20Gi
-      storageClass: ""
-
-  external:
-    enabled: true
-    host: ""  # Required when enabled
-    port: 5432
-    database: bamf
-    username: bamf
-    sslmode: require
-
-    # Credential options (choose one):
-    # 1. Inline password (creates K8s Secret)
-    # password: ""
-
-    # 2. Pre-existing K8s Secret
-    existingSecret: ""
-    existingSecretKey: password
-
-    # 3. ExternalSecrets operator
-    externalSecret:
-      enabled: false
-      secretStoreRef:
-        name: ""
-        kind: ClusterSecretStore
-      remoteRef:
-        key: ""
-        property: password
-
-    # Read replica — optional, routes read-only queries to a separate endpoint.
-    # When disabled (default), all reads go to the primary. Fields that are not
-    # set inherit from the parent external block (username, port, database, sslmode).
-    readReplica:
-      enabled: false
-      host: ""  # Required when enabled (e.g., bamf-db-ro.cluster-xxx.rds.amazonaws.com)
-      port: ""  # Inherits from external.port if empty
-      database: ""  # Inherits from external.database if empty
-      username: ""  # Inherits from external.username if empty
-      sslmode: ""  # Inherits from external.sslmode if empty
-
-      # Credential options (choose one — same pattern as primary):
-      # password: ""          # Inline (creates K8s Secret)
-      existingSecret: ""      # Pre-existing K8s Secret
-      existingSecretKey: password
-
-# ── Redis ─────────────────────────────────────────────────────────────────────
-# Production: use external Redis (ElastiCache, Memorystore, etc.)
-# Bundled mode is for dev/staging only.
-redis:
-  bundled:
-    enabled: false
-    image:
-      repository: public.ecr.aws/docker/library/redis
-      tag: "7-alpine"
-      pullPolicy: IfNotPresent
-    auth:
-      enabled: false
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 200m
-        memory: 128Mi
-    persistence:
-      size: 8Gi
-      storageClass: ""
-
-  external:
-    enabled: true
-    host: ""  # Required when enabled
-    port: 6379
-    existingSecret: ""
-    existingSecretKey: password
-
-# ── SSO / Authentication ──────────────────────────────────────────────────────
-auth:
-  # Local authentication
-  local:
-    enabled: true
-
-  # SSO configuration
-  sso:
-    defaultProvider: ""
-
-    # OIDC providers — map keyed by provider name.
-    # Each key becomes the provider name in BAMF (e.g., "auth0", "okta").
-    # Example:
-    #   oidc:
-    #     auth0:
-    #       enabled: true
-    #       displayName: "Corporate SSO"
-    #       issuerUrl: https://myorg.us.auth0.com/
-    #       clientId: YOUR_CLIENT_ID
-    #       audience: https://bamf.example.com/api
-    #       existingSecret: bamf-auth0
-    #     okta:
-    #       enabled: true
-    #       displayName: "Okta"
-    #       issuerUrl: https://myorg.okta.com/oauth2/default  # Must use Custom AS
-    #       clientId: YOUR_CLIENT_ID
-    #       scopes: [openid, profile, email, groups]
-    #       groupsClaim: groups
-    #       existingSecret: bamf-okta
-    oidc: {}
-    #   provider-name:
-    #     enabled: false
-    #     displayName: ""          # Human-readable label for login UI
-    #     issuerUrl: ""            # OIDC issuer URL (must serve .well-known/openid-configuration)
-    #     clientId: ""
-    #     audience: ""             # API identifier for application-scoped permissions (Auth0)
-    #     scopes: []               # Override default [openid, profile, email]
-    #     groupsClaim: ""          # Claim name for groups/roles (default: "groups")
-    #     rolePrefixes: []         # Prefixes to strip from group names (default: ["bamf:", "bamf-"])
-    #     # Client secret from K8s Secret (never in ConfigMap)
-    #     existingSecret: ""       # If empty, defaults to {fullname}-{provider-name}
-    #     existingSecretKey: client_secret
-
-# ── Bootstrap ─────────────────────────────────────────────────────────────────
-# Creates an initial admin user and agent join token on first install.
-# Only used for local dev or initial setup; disable for production once
-# admin users are created via SSO.
-# bootstrap:
-#   adminEmail: admin@example.com
-#   adminPassword: ""  # Required when enabled
-#   joinToken: ""      # Optional: pre-create a join token for agents
-
-# ── Migrations ────────────────────────────────────────────────────────────────
-migrations:
-  enabled: true
-  podAnnotations: {}
-  nodeSelector: {}
-  tolerations: []
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
 
 # ── TLS ───────────────────────────────────────────────────────────────────────
 tls:

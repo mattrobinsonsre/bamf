@@ -1,4 +1,4 @@
-{{- if .Values.bridge.pdb.enabled }}
+{{- if .Values.outpost.bridge.pdb.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -7,7 +7,7 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: bridge
 spec:
-  minAvailable: {{ .Values.bridge.pdb.minAvailable }}
+  minAvailable: {{ .Values.outpost.bridge.pdb.minAvailable }}
   selector:
     matchLabels:
       {{- include "bamf.bridge.selectorLabels" . | nindent 6 }}

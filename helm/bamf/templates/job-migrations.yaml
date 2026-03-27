@@ -1,5 +1,5 @@
 # Migration strategy: docs/operations/upgrading.md
-{{- if .Values.migrations.enabled }}
+{{- if .Values.core.migrations.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -18,7 +18,7 @@ spec:
       labels:
         {{- include "bamf.labels" . | nindent 8 }}
         app.kubernetes.io/component: migrations
-      {{- with .Values.migrations.podAnnotations }}
+      {{- with .Values.core.migrations.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,7 +31,7 @@ spec:
       containers:
         - name: migrations
           image: {{ include "bamf.api.image" . }}
-          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.core.api.image.pullPolicy }}
           workingDir: /app/alembic
           command:
             - alembic
@@ -46,12 +46,12 @@ spec:
             - name: DATABASE_URL
               value: {{ include "bamf.databaseUrl" . | quote }}
           resources:
-            {{- toYaml .Values.migrations.resources | nindent 12 }}
-      {{- with .Values.migrations.nodeSelector }}
+            {{- toYaml .Values.core.migrations.resources | nindent 12 }}
+      {{- with .Values.core.migrations.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.migrations.tolerations }}
+      {{- with .Values.core.migrations.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

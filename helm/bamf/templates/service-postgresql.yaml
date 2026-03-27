@@ -1,4 +1,4 @@
-{{- if .Values.postgresql.bundled.enabled }}
+{{- if .Values.core.postgresql.bundled.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

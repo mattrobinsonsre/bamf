@@ -27,6 +27,8 @@ Deploy an agent into a cluster to provide access to that cluster's resources:
 ```zsh
 helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf \
   --namespace bamf \
+  --set core.enabled=false \
+  --set outpost.enabled=false \
   --set agent.enabled=true \
   --set agent.config.name=prod-cluster \
   --set agent.platformUrl=https://bamf.example.com \

@@ -1,7 +1,7 @@
 # Outpost join job — registers a remote outpost with the central API.
 # Only runs when outpost.enabled=true and api.enabled=false (remote outpost).
 # Helm pre-install hook: runs before the main deployment.
-{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
+{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not .Values.core.enabled) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: batch/v1
 kind: Job

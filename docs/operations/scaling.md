@@ -10,13 +10,14 @@ The API server is stateless — any pod handles any request. Scale on request
 volume:
 
 ```yaml
-api:
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+core:
+  api:
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
 ```
 
 The API handles both management API requests and HTTP proxy traffic (web apps,
@@ -27,18 +28,20 @@ Kubernetes access). If proxy traffic is heavy, increase `maxReplicas`.
 Bridges are stateful — they hold gRPC streams to agents. Scale on tunnel count:
 
 ```yaml
-bridge:
-  replicas: 2
-  maxReplicas: 20
-  autoscaling:
-    enabled: true
-    minReplicas: 2
+outpost:
+  bridge:
+    replicas: 2
     maxReplicas: 20
-    targetCPUUtilizationPercentage: 70
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 20
+      targetCPUUtilizationPercentage: 70
 ```
 
-**Important:** `maxReplicas` controls how many per-pod Services and TLSRoutes
-are pre-created. Scaling beyond `maxReplicas` requires a Helm upgrade.
+**Important:** `outpost.bridge.maxReplicas` controls how many per-pod Services
+and TLSRoutes are pre-created. Scaling beyond `maxReplicas` requires a Helm
+upgrade.
 
 Bridge scaling creates new StatefulSet pods. Each pod gets a pre-created Service
 and TLSRoute, so routing works immediately on scale-up.
@@ -48,10 +51,11 @@ and TLSRoute, so routing works immediately on scale-up.
 The web UI serves static assets. Minimal resource requirements:
 
 ```yaml
-web:
-  replicas: 2
-  resources:
-    requests: { cpu: 50m, memory: 64Mi }
+core:
+  web:
+    replicas: 2
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
 ```
 
 ### Agents
@@ -65,15 +69,17 @@ is typical.
 Both API and bridge have PDBs enabled by default:
 
 ```yaml
-api:
-  pdb:
-    enabled: true
-    minAvailable: 1
+core:
+  api:
+    pdb:
+      enabled: true
+      minAvailable: 1
 
-bridge:
-  pdb:
-    enabled: true
-    minAvailable: 1
+outpost:
+  bridge:
+    pdb:
+      enabled: true
+      minAvailable: 1
 ```
 
 ## Graceful Shutdown
@@ -114,8 +120,9 @@ The default of 1800s (30 minutes) is conservative. If you don't use
 safely lower it:
 
 ```yaml
-bridge:
-  terminationGracePeriodSeconds: 120  # sufficient for migration-only workloads
+outpost:
+  bridge:
+    terminationGracePeriodSeconds: 120  # sufficient for migration-only workloads
 ```
 
 See [Spot Instances](#spot-instances) for recommendations when running on
@@ -130,21 +137,22 @@ warning on AWS Spot.
 ### Recommended configuration
 
 ```yaml
-api:
-  # API is stateless — handles spot termination gracefully with its existing
-  # preStop sleep (15s) + in-flight request drain.
-  terminationGracePeriodSeconds: 120
+core:
+  api:
+    # API is stateless — handles spot termination gracefully with its existing
+    # preStop sleep (15s) + in-flight request drain.
+    terminationGracePeriodSeconds: 120
+  web:
+    # Stateless — immediate termination is fine.
+    terminationGracePeriodSeconds: 30
 
-bridge:
-  # Set to 120s for spot instances. This gives the bridge 115s (120 - 5s
-  # buffer) to migrate tunnels and upload any recordings. Migratable tunnel
-  # migration typically completes in seconds. Non-migratable sessions
-  # (ssh-audit, web-terminal) will be force-closed after ~75s of drain time.
-  terminationGracePeriodSeconds: 120
-
-web:
-  # Stateless — immediate termination is fine.
-  terminationGracePeriodSeconds: 30
+outpost:
+  bridge:
+    # Set to 120s for spot instances. This gives the bridge 115s (120 - 5s
+    # buffer) to migrate tunnels and upload any recordings. Migratable tunnel
+    # migration typically completes in seconds. Non-migratable sessions
+    # (ssh-audit, web-terminal) will be force-closed after ~75s of drain time.
+    terminationGracePeriodSeconds: 120
 ```
 
 ### What happens on spot termination
@@ -178,26 +186,28 @@ that recorded sessions may be interrupted.
 If you want bridges on on-demand instances while API pods use spot:
 
 ```yaml
-api:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 90
-          preference:
-            matchExpressions:
-              - key: karpenter.sh/capacity-type  # or node.kubernetes.io/instance-type
-                operator: In
-                values: [spot]
+core:
+  api:
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 90
+            preference:
+              matchExpressions:
+                - key: karpenter.sh/capacity-type  # or node.kubernetes.io/instance-type
+                  operator: In
+                  values: [spot]
 
-bridge:
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: karpenter.sh/capacity-type
-                operator: In
-                values: [on-demand]
+outpost:
+  bridge:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: karpenter.sh/capacity-type
+                  operator: In
+                  values: [on-demand]
 ```
 
 Or for a fully spot-compatible bridge fleet, just set the lower grace period
