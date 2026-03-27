@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import bamf.proxy.kube as kube_mod
 from bamf.proxy.api_client import (
     AuthorizeResult,
     RelayInfo,
@@ -46,8 +47,6 @@ def _patch_settings():
 @pytest.fixture(autouse=True)
 def _reset_kube_client():
     """Reset the shared kube httpx client between tests."""
-    import bamf.proxy.kube as kube_mod
-
     kube_mod._kube_client = None
     yield
     kube_mod._kube_client = None
@@ -152,8 +151,6 @@ class TestKubeProxyHappyPath:
         """Valid Bearer token + authorized + forward succeeds = K8s response returned."""
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result()
         k8s_body = b'{"kind": "PodList", "items": []}'
         forward_resp = _make_httpx_response(status_code=200, content=k8s_body)
@@ -171,7 +168,7 @@ class TestKubeProxyHappyPath:
             mock_auth.return_value = auth_result
             mock_forward.return_value = forward_resp
 
-            response = await kube_proxy(
+            response = await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -193,8 +190,6 @@ class TestKubeProxyHappyPath:
         """X-Forwarded-Email and X-Forwarded-K8s-Groups headers are set on forwarded request."""
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(
             email="bob@example.com",
             k8s_groups=["developers", "view"],
@@ -215,7 +210,7 @@ class TestKubeProxyHappyPath:
             mock_auth.return_value = auth_result
             mock_forward.return_value = forward_resp
 
-            await kube_proxy(
+            await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -236,8 +231,6 @@ class TestKubeProxyHappyPath:
     async def test_hop_by_hop_headers_stripped(self):
         """Hop-by-hop headers (host, connection, etc.) are removed before forwarding."""
         from starlette.requests import Request
-
-        from bamf.proxy.kube import kube_proxy
 
         auth_result = _make_auth_result()
         forward_resp = _make_httpx_response(status_code=200, content=b"{}")
@@ -261,7 +254,7 @@ class TestKubeProxyHappyPath:
             mock_auth.return_value = auth_result
             mock_forward.return_value = forward_resp
 
-            await kube_proxy(
+            await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -284,8 +277,6 @@ class TestKubeProxyMissingToken:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         scope = _make_request_scope(
             headers={
                 "host": "bamf.example.com",
@@ -293,13 +284,11 @@ class TestKubeProxyMissingToken:
             },
         )
         # Override to remove authorization header entirely
-        scope["headers"] = [
-            (k, v) for k, v in scope["headers"] if k != b"authorization"
-        ]
+        scope["headers"] = [(k, v) for k, v in scope["headers"] if k != b"authorization"]
         request = Request(scope=scope)
 
         with pytest.raises(HTTPException) as exc_info:
-            await kube_proxy(
+            await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -314,15 +303,13 @@ class TestKubeProxyMissingToken:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         scope = _make_request_scope(
             headers={"authorization": "Basic dXNlcjpwYXNz"},
         )
         request = Request(scope=scope)
 
         with pytest.raises(HTTPException) as exc_info:
-            await kube_proxy(
+            await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -340,8 +327,6 @@ class TestKubeProxyAuthorizeFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(allowed=False, reason="no_session")
 
         scope = _make_request_scope()
@@ -353,7 +338,7 @@ class TestKubeProxyAuthorizeFailures:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -368,8 +353,6 @@ class TestKubeProxyAuthorizeFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(allowed=False, reason="access_denied")
 
         scope = _make_request_scope()
@@ -379,7 +362,7 @@ class TestKubeProxyAuthorizeFailures:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -394,8 +377,6 @@ class TestKubeProxyAuthorizeFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(allowed=False, reason="resource_not_found")
 
         scope = _make_request_scope()
@@ -405,7 +386,7 @@ class TestKubeProxyAuthorizeFailures:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="nonexistent",
                     path="api/v1/pods",
                     request=request,
@@ -420,8 +401,6 @@ class TestKubeProxyAuthorizeFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(allowed=False, reason="relay_unavailable")
 
         scope = _make_request_scope()
@@ -431,7 +410,7 @@ class TestKubeProxyAuthorizeFailures:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -445,8 +424,6 @@ class TestKubeProxyAuthorizeFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(allowed=False, reason="something_unexpected")
 
         scope = _make_request_scope()
@@ -456,7 +433,7 @@ class TestKubeProxyAuthorizeFailures:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -474,8 +451,6 @@ class TestKubeProxyResourceTypeValidation:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(resource_type="ssh")
 
         scope = _make_request_scope()
@@ -486,7 +461,7 @@ class TestKubeProxyResourceTypeValidation:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -501,8 +476,6 @@ class TestKubeProxyResourceTypeValidation:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(k8s_groups=[])
 
         scope = _make_request_scope()
@@ -513,7 +486,7 @@ class TestKubeProxyResourceTypeValidation:
             mock_auth.return_value = auth_result
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -530,8 +503,6 @@ class TestKubeProxyForwardFailures:
     async def test_forward_returns_502_triggers_retry(self):
         """Forward returning 502 triggers retry via re-authorize."""
         from starlette.requests import Request
-
-        from bamf.proxy.kube import kube_proxy
 
         auth_result = _make_auth_result()
         # First forward returns 502, second returns 200 after retry
@@ -551,7 +522,7 @@ class TestKubeProxyForwardFailures:
             # First call returns 502, second returns 200
             mock_forward.side_effect = [resp_502, resp_200]
 
-            response = await kube_proxy(
+            response = await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -569,8 +540,6 @@ class TestKubeProxyForwardFailures:
         from fastapi import HTTPException
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result()
         resp_502 = _make_httpx_response(status_code=502, content=b"Bad Gateway")
 
@@ -587,7 +556,7 @@ class TestKubeProxyForwardFailures:
             mock_forward.return_value = resp_502
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -601,8 +570,6 @@ class TestKubeProxyForwardFailures:
         """Forward raises connection error (returns None) -> 502."""
         from fastapi import HTTPException
         from starlette.requests import Request
-
-        from bamf.proxy.kube import kube_proxy
 
         auth_result = _make_auth_result()
 
@@ -620,7 +587,7 @@ class TestKubeProxyForwardFailures:
             mock_forward.return_value = None
 
             with pytest.raises(HTTPException) as exc_info:
-                await kube_proxy(
+                await kube_mod.kube_proxy(
                     resource_name="prod-cluster",
                     path="api/v1/pods",
                     request=request,
@@ -637,8 +604,6 @@ class TestKubeProxyResponseHeaders:
     async def test_response_strips_hop_by_hop_headers(self):
         """Response hop-by-hop headers (transfer-encoding, connection, etc.) are stripped."""
         from starlette.requests import Request
-
-        from bamf.proxy.kube import kube_proxy
 
         auth_result = _make_auth_result()
         forward_resp = _make_httpx_response(
@@ -665,7 +630,7 @@ class TestKubeProxyResponseHeaders:
             mock_auth.return_value = auth_result
             mock_forward.return_value = forward_resp
 
-            response = await kube_proxy(
+            response = await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,
@@ -687,8 +652,6 @@ class TestKubeProxyResponseHeaders:
         """When resource has no hostname/port, defaults to kubernetes.default.svc:6443."""
         from starlette.requests import Request
 
-        from bamf.proxy.kube import kube_proxy
-
         auth_result = _make_auth_result(hostname=None, port=None)
         forward_resp = _make_httpx_response(status_code=200, content=b"{}")
 
@@ -704,7 +667,7 @@ class TestKubeProxyResponseHeaders:
             mock_auth.return_value = auth_result
             mock_forward.return_value = forward_resp
 
-            await kube_proxy(
+            await kube_mod.kube_proxy(
                 resource_name="prod-cluster",
                 path="api/v1/pods",
                 request=request,

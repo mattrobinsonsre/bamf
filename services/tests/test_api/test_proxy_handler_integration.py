@@ -20,14 +20,8 @@ import httpx
 import pytest
 from starlette.datastructures import Headers
 
+import bamf.proxy.handler as handler_mod
 from bamf.proxy.api_client import AuthorizeResult, RelayInfo, ResourceInfo, SessionInfo
-from bamf.proxy.handler import (
-    _forward_with_retry,
-    _handle_webhook_request,
-    _store_http_recording,
-    handle_proxy_request,
-    proxy_middleware,
-)
 
 # ── Fixture helpers ──────────────────────────────────────────────────────
 
@@ -256,11 +250,9 @@ def _patch_settings():
 @pytest.fixture(autouse=True)
 def _reset_proxy_client():
     """Reset the global proxy client between tests."""
-    import bamf.proxy.handler as mod
-
-    mod._proxy_client = None
+    handler_mod._proxy_client = None
     yield
-    mod._proxy_client = None
+    handler_mod._proxy_client = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -290,14 +282,17 @@ class TestHandleProxyRequestHappyPath:
         with (
             patch("bamf.proxy.handler.api_client") as mock_api,
             patch("bamf.proxy.handler._forward_with_retry", new_callable=AsyncMock) as mock_fwd,
-            patch("bamf.proxy.handler.rewrite_request_headers", return_value={"Host": "grafana.internal"}),
+            patch(
+                "bamf.proxy.handler.rewrite_request_headers",
+                return_value={"Host": "grafana.internal"},
+            ),
             patch("bamf.proxy.handler.rewrite_response_headers", return_value={"x-custom": "val"}),
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 200
         assert resp.body == b"<html>Dashboard</html>"
@@ -333,7 +328,7 @@ class TestHandleProxyRequestHappyPath:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         mock_rewrite_cookie.assert_called_once()
         # The rewritten cookie should appear in response headers
@@ -367,7 +362,7 @@ class TestHandleProxyRequestHappyPath:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.media_type == "text/event-stream"
         # StreamingResponse — aread should NOT have been called
@@ -397,7 +392,7 @@ class TestHandleProxyRequestHappyPath:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
             # Let fire-and-forget tasks execute
             await asyncio.sleep(0.01)
 
@@ -426,7 +421,7 @@ class TestHandleProxyRequestHappyPath:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            await handle_proxy_request(request)
+            await handler_mod.handle_proxy_request(request)
             # Let fire-and-forget tasks execute
             await asyncio.sleep(0.01)
 
@@ -460,7 +455,7 @@ class TestHandleProxyRequestHappyPath:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            await handle_proxy_request(request)
+            await handler_mod.handle_proxy_request(request)
             await asyncio.sleep(0.01)
 
             mock_store.assert_not_called()
@@ -483,7 +478,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
@@ -504,7 +499,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 401
 
@@ -522,7 +517,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 403
         assert b"permission" in resp.body
@@ -541,7 +536,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 403
         assert resp.body == b"Access denied"
@@ -557,7 +552,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 404
         assert b"nonexistent" in resp.body
@@ -576,7 +571,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 503
         assert "Retry-After" in resp.headers
@@ -598,7 +593,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 503
         assert "Retry-After" in resp.headers
@@ -614,7 +609,7 @@ class TestHandleProxyRequestAuthFailures:
 
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.authorize = AsyncMock(return_value=auth)
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 502
         assert b"some_weird_error" in resp.body
@@ -643,7 +638,7 @@ class TestHandleProxyRequestBridgeFailures:
             mock_api.authorize = AsyncMock(return_value=auth)
             mock_fwd.return_value = None
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 502
         assert b"Bridge connection failed" in resp.body
@@ -669,7 +664,7 @@ class TestHandleProxyRequestBridgeFailures:
             mock_api.authorize = AsyncMock(return_value=auth)
             mock_fwd.return_value = mock_resp
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp.status_code == 503
         assert "Retry-After" in resp.headers
@@ -703,7 +698,7 @@ class TestHandleProxyRequestWebhookDispatch:
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
 
-            resp = await handle_proxy_request(request)
+            resp = await handler_mod.handle_proxy_request(request)
 
         assert resp is expected_response
         mock_webhook.assert_called_once()
@@ -730,7 +725,7 @@ class TestForwardWithRetry:
         mock_client.send = AsyncMock(return_value=mock_resp)
 
         with patch("bamf.proxy.handler._get_proxy_client", return_value=mock_client):
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {"Host": "target"},
@@ -767,7 +762,7 @@ class TestForwardWithRetry:
             patch("bamf.proxy.handler.api_client") as mock_api,
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -810,7 +805,7 @@ class TestForwardWithRetry:
             patch("bamf.proxy.handler.api_client") as mock_api,
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -840,7 +835,7 @@ class TestForwardWithRetry:
             patch("bamf.proxy.handler.api_client") as mock_api,
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -853,8 +848,6 @@ class TestForwardWithRetry:
     @pytest.mark.asyncio
     async def test_pool_timeout_resets_client(self):
         """PoolTimeout triggers client reset and retry."""
-        import bamf.proxy.handler as handler_mod
-
         auth = _make_auth_result()
 
         success_resp = MagicMock(spec=httpx.Response)
@@ -883,7 +876,7 @@ class TestForwardWithRetry:
             patch("bamf.proxy.handler._close_client", new_callable=AsyncMock),
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
-            await _forward_with_retry(
+            await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -911,7 +904,7 @@ class TestForwardWithRetry:
             patch("bamf.proxy.handler.api_client") as mock_api,
         ):
             mock_api.authorize = AsyncMock(return_value=auth)
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -934,7 +927,7 @@ class TestForwardWithRetry:
         mock_client.send = AsyncMock(return_value=resp_304)
 
         with patch("bamf.proxy.handler._get_proxy_client", return_value=mock_client):
-            result = await _forward_with_retry(
+            result = await handler_mod._forward_with_retry(
                 "GET",
                 "http://bridge:8080/relay/agent/path",
                 {},
@@ -976,13 +969,16 @@ class TestHandleWebhookRequest:
         with (
             patch("bamf.proxy.handler._forward_with_retry", new_callable=AsyncMock) as mock_fwd,
             patch("bamf.proxy.handler.api_client") as mock_api,
-            patch("bamf.proxy.handler.rewrite_webhook_request_headers", return_value={"Host": "grafana.internal"}),
+            patch(
+                "bamf.proxy.handler.rewrite_webhook_request_headers",
+                return_value={"Host": "grafana.internal"},
+            ),
             patch("bamf.proxy.handler.rewrite_response_headers", return_value={}),
         ):
             mock_fwd.return_value = mock_resp
             mock_api.log_audit = AsyncMock()
 
-            resp = await _handle_webhook_request(
+            resp = await handler_mod._handle_webhook_request(
                 request, auth, "grafana", "tunnel.bamf.local"
             )
             await asyncio.sleep(0.01)
@@ -1013,7 +1009,7 @@ class TestHandleWebhookRequest:
         ):
             mock_fwd.return_value = None
 
-            resp = await _handle_webhook_request(
+            resp = await handler_mod._handle_webhook_request(
                 request, auth, "grafana", "tunnel.bamf.local"
             )
 
@@ -1040,7 +1036,7 @@ class TestHandleWebhookRequest:
         ):
             mock_fwd.return_value = mock_resp
 
-            resp = await _handle_webhook_request(
+            resp = await handler_mod._handle_webhook_request(
                 request, auth, "grafana", "tunnel.bamf.local"
             )
 
@@ -1070,14 +1066,15 @@ class TestHandleWebhookRequest:
             patch("bamf.proxy.handler.api_client") as mock_api,
             patch("bamf.proxy.handler.rewrite_webhook_request_headers", return_value={}),
             patch("bamf.proxy.handler.rewrite_response_headers", return_value={}),
-            patch("bamf.proxy.handler.rewrite_set_cookie", return_value="tok=xyz; domain=grafana.tunnel.bamf.local") as mock_rsc,
+            patch(
+                "bamf.proxy.handler.rewrite_set_cookie",
+                return_value="tok=xyz; domain=grafana.tunnel.bamf.local",
+            ) as mock_rsc,
         ):
             mock_fwd.return_value = mock_resp
             mock_api.log_audit = AsyncMock()
 
-            await _handle_webhook_request(
-                request, auth, "grafana", "tunnel.bamf.local"
-            )
+            await handler_mod._handle_webhook_request(request, auth, "grafana", "tunnel.bamf.local")
 
         mock_rsc.assert_called_once()
 
@@ -1108,7 +1105,7 @@ class TestHandleWebhookRequest:
             mock_fwd.return_value = mock_resp
             mock_api.log_audit = AsyncMock()
 
-            resp = await _handle_webhook_request(
+            resp = await handler_mod._handle_webhook_request(
                 request, auth, "grafana", "tunnel.bamf.local"
             )
 
@@ -1147,7 +1144,7 @@ class TestStoreHttpRecording:
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.store_recording = AsyncMock()
 
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1194,7 +1191,7 @@ class TestStoreHttpRecording:
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.store_recording = AsyncMock()
 
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1230,7 +1227,7 @@ class TestStoreHttpRecording:
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.store_recording = AsyncMock()
 
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1267,7 +1264,7 @@ class TestStoreHttpRecording:
             mock_api.store_recording = AsyncMock(side_effect=Exception("storage down"))
 
             # Should not raise
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1299,7 +1296,7 @@ class TestStoreHttpRecording:
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.store_recording = AsyncMock()
 
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1336,7 +1333,7 @@ class TestStoreHttpRecording:
         with patch("bamf.proxy.handler.api_client") as mock_api:
             mock_api.store_recording = AsyncMock()
 
-            await _store_http_recording(
+            await handler_mod._store_http_recording(
                 user_email="alice@example.com",
                 resource_name="grafana",
                 request=mock_request,
@@ -1379,7 +1376,7 @@ class TestProxyMiddleware:
         async def call_next(req):
             return next_response
 
-        resp = await proxy_middleware(request, call_next)
+        resp = await handler_mod.proxy_middleware(request, call_next)
         assert resp is next_response
 
     @pytest.mark.asyncio
@@ -1408,7 +1405,7 @@ class TestProxyMiddleware:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await proxy_middleware(request, call_next)
+            resp = await handler_mod.proxy_middleware(request, call_next)
 
         assert resp.status_code == 200
 
@@ -1427,7 +1424,7 @@ class TestProxyMiddleware:
         async def call_next(req):
             return next_response
 
-        resp = await proxy_middleware(request, call_next)
+        resp = await handler_mod.proxy_middleware(request, call_next)
         assert resp is next_response
 
     @pytest.mark.asyncio
@@ -1444,7 +1441,7 @@ class TestProxyMiddleware:
 
         with patch("bamf.proxy.handler.settings") as mock_settings:
             mock_settings.tunnel_domain = ""
-            resp = await proxy_middleware(request, call_next)
+            resp = await handler_mod.proxy_middleware(request, call_next)
 
         assert resp is next_response
 
@@ -1474,6 +1471,6 @@ class TestProxyMiddleware:
             mock_api.log_audit = AsyncMock()
             mock_fwd.return_value = mock_resp
 
-            resp = await proxy_middleware(request, call_next)
+            resp = await handler_mod.proxy_middleware(request, call_next)
 
         assert resp.status_code == 200

@@ -399,10 +399,12 @@ class TestCreateTicketEndpoint:
     @pytest.mark.asyncio
     async def test_wrong_user_returns_403(self, terminal_client, mock_redis):
         """Session belonging to a different user returns 403."""
-        session_data = json.dumps({
-            "user_email": "bob@example.com",
-            "resource_name": "grafana",
-        })
+        session_data = json.dumps(
+            {
+                "user_email": "bob@example.com",
+                "resource_name": "grafana",
+            }
+        )
         mock_redis.get.return_value = session_data
 
         resp = await terminal_client.post(
@@ -416,10 +418,12 @@ class TestCreateTicketEndpoint:
     @pytest.mark.asyncio
     async def test_rbac_revoked_returns_403(self, terminal_client, mock_redis):
         """Ticket is denied when RBAC check fails (roles changed)."""
-        session_data = json.dumps({
-            "user_email": "alice@example.com",
-            "resource_name": "grafana",
-        })
+        session_data = json.dumps(
+            {
+                "user_email": "alice@example.com",
+                "resource_name": "grafana",
+            }
+        )
         mock_redis.get.return_value = session_data
 
         mock_resource = MagicMock()
@@ -448,10 +452,12 @@ class TestCreateTicketEndpoint:
     @pytest.mark.asyncio
     async def test_successful_ticket_issuance(self, terminal_client, mock_redis):
         """Valid session + RBAC pass returns a ticket."""
-        session_data = json.dumps({
-            "user_email": "alice@example.com",
-            "resource_name": "grafana",
-        })
+        session_data = json.dumps(
+            {
+                "user_email": "alice@example.com",
+                "resource_name": "grafana",
+            }
+        )
         mock_redis.get.return_value = session_data
 
         mock_resource = MagicMock()
@@ -493,10 +499,12 @@ class TestCreateTicketEndpoint:
     @pytest.mark.asyncio
     async def test_resource_gone_still_issues_ticket(self, terminal_client, mock_redis):
         """When resource is no longer in catalog, ticket is still issued."""
-        session_data = json.dumps({
-            "user_email": "alice@example.com",
-            "resource_name": "deleted-app",
-        })
+        session_data = json.dumps(
+            {
+                "user_email": "alice@example.com",
+                "resource_name": "deleted-app",
+            }
+        )
         mock_redis.get.return_value = session_data
 
         with patch(
@@ -514,9 +522,11 @@ class TestCreateTicketEndpoint:
     @pytest.mark.asyncio
     async def test_no_resource_name_skips_rbac(self, terminal_client, mock_redis):
         """Session without resource_name skips RBAC and still issues ticket."""
-        session_data = json.dumps({
-            "user_email": "alice@example.com",
-        })
+        session_data = json.dumps(
+            {
+                "user_email": "alice@example.com",
+            }
+        )
         mock_redis.get.return_value = session_data
 
         resp = await terminal_client.post(

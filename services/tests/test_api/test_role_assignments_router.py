@@ -111,9 +111,7 @@ class TestListRoleAssignments:
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    async def test_list_includes_created_assignments(
-        self, role_assignments_client, db_session
-    ):
+    async def test_list_includes_created_assignments(self, role_assignments_client, db_session):
         await _create_custom_role(db_session, "developer")
         with _patch_audit_log():
             await role_assignments_client.put(
@@ -355,9 +353,7 @@ class TestListIdentities:
     async def test_empty_returns_empty_list(self, role_assignments_client):
         """No users, no recent logins, no assignments => empty list."""
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -368,9 +364,7 @@ class TestListIdentities:
         await _create_local_user(db_session, "bob@example.com", "Bob")
 
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -397,9 +391,7 @@ class TestListIdentities:
             )
 
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -421,9 +413,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -433,9 +423,7 @@ class TestListIdentities:
         assert data[0]["roles"] == []
 
     @pytest.mark.asyncio
-    async def test_sso_recent_user_with_roles(
-        self, role_assignments_client, db_session
-    ):
+    async def test_sso_recent_user_with_roles(self, role_assignments_client, db_session):
         """SSO user from Redis with role assignments shows the roles."""
         from bamf.auth.recent_users import RecentUser
 
@@ -460,9 +448,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -488,9 +474,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         # Should have exactly one entry (deduplicated)
@@ -518,9 +502,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         entry = [d for d in data if d["email"] == "no-name@example.com"]
@@ -545,9 +527,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         # The stale local user should not appear
@@ -555,9 +535,7 @@ class TestListIdentities:
         assert stale == []
 
     @pytest.mark.asyncio
-    async def test_local_recent_user_with_roles_included(
-        self, role_assignments_client, db_session
-    ):
+    async def test_local_recent_user_with_roles_included(self, role_assignments_client, db_session):
         """Local provider user from Redis with role assignments IS included."""
         from bamf.auth.recent_users import RecentUser
 
@@ -582,9 +560,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         entry = [d for d in data if d["email"] == "local-with-roles@example.com"]
@@ -592,9 +568,7 @@ class TestListIdentities:
         assert entry[0]["roles"] == ["admin"]
 
     @pytest.mark.asyncio
-    async def test_source3_pre_provisioned_assignment(
-        self, role_assignments_client, db_session
-    ):
+    async def test_source3_pre_provisioned_assignment(self, role_assignments_client, db_session):
         """Identities with role assignments but not in users table or Redis appear."""
         # Pre-provision a role assignment for an SSO user who hasn't logged in
         with _patch_audit_log():
@@ -609,9 +583,7 @@ class TestListIdentities:
 
         # No recent users in Redis
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         entry = [d for d in data if d["email"] == "preprovisioned@example.com"]
@@ -621,9 +593,7 @@ class TestListIdentities:
         assert entry[0]["roles"] == ["audit"]
 
     @pytest.mark.asyncio
-    async def test_source3_not_duplicated_if_in_recent(
-        self, role_assignments_client, db_session
-    ):
+    async def test_source3_not_duplicated_if_in_recent(self, role_assignments_client, db_session):
         """Source 3 does not duplicate an identity already seen in Redis."""
         from bamf.auth.recent_users import RecentUser
 
@@ -648,9 +618,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         entries = [d for d in data if d["email"] == "seen-in-redis@example.com"]
@@ -659,9 +627,7 @@ class TestListIdentities:
         assert entries[0]["display_name"] == "Seen"
 
     @pytest.mark.asyncio
-    async def test_sorting_local_first_then_by_email(
-        self, role_assignments_client, db_session
-    ):
+    async def test_sorting_local_first_then_by_email(self, role_assignments_client, db_session):
         """Results are sorted: local provider first, then alphabetically by email."""
         from bamf.auth.recent_users import RecentUser
 
@@ -684,9 +650,7 @@ class TestListIdentities:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 4
@@ -701,9 +665,7 @@ class TestListIdentities:
         assert data[3]["email"] == "bob@example.com"
 
     @pytest.mark.asyncio
-    async def test_all_three_sources_merged(
-        self, role_assignments_client, db_session
-    ):
+    async def test_all_three_sources_merged(self, role_assignments_client, db_session):
         """Full scenario: users table + Redis recent + pre-provisioned assignments."""
         from bamf.auth.recent_users import RecentUser
 
@@ -732,9 +694,7 @@ class TestListIdentities:
             )
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/identities"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/identities")
         assert resp.status_code == 200
         data = resp.json()
         emails = [d["email"] for d in data]
@@ -754,16 +714,12 @@ class TestListStaleAssignments:
     async def test_empty_when_no_assignments(self, role_assignments_client):
         """No assignments at all => empty stale list."""
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    async def test_no_stale_when_all_recently_seen(
-        self, role_assignments_client, db_session
-    ):
+    async def test_no_stale_when_all_recently_seen(self, role_assignments_client, db_session):
         """All assigned identities have recent logins => no stale entries."""
         from bamf.auth.recent_users import RecentUser
 
@@ -787,16 +743,12 @@ class TestListStaleAssignments:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    async def test_stale_when_not_in_recent(
-        self, role_assignments_client, db_session
-    ):
+    async def test_stale_when_not_in_recent(self, role_assignments_client, db_session):
         """Assignment exists but no recent login => stale."""
         with _patch_audit_log():
             await role_assignments_client.put(
@@ -810,9 +762,7 @@ class TestListStaleAssignments:
 
         # No recent users at all
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -822,9 +772,7 @@ class TestListStaleAssignments:
         assert data[0]["display_name"] is None
 
     @pytest.mark.asyncio
-    async def test_mixed_stale_and_active(
-        self, role_assignments_client, db_session
-    ):
+    async def test_mixed_stale_and_active(self, role_assignments_client, db_session):
         """Some assigned identities are recent, some are stale."""
         from bamf.auth.recent_users import RecentUser
 
@@ -858,9 +806,7 @@ class TestListStaleAssignments:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -868,9 +814,7 @@ class TestListStaleAssignments:
         assert data[0]["provider_name"] == "okta"
 
     @pytest.mark.asyncio
-    async def test_stale_with_custom_and_platform_roles(
-        self, role_assignments_client, db_session
-    ):
+    async def test_stale_with_custom_and_platform_roles(self, role_assignments_client, db_session):
         """Stale identity with both custom and platform roles shows all roles."""
         await _create_custom_role(db_session, "developer")
 
@@ -885,9 +829,7 @@ class TestListStaleAssignments:
             )
 
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         data = resp.json()
         entry = [d for d in data if d["email"] == "stale-mixed@example.com"]
@@ -924,9 +866,7 @@ class TestListStaleAssignments:
             )
 
         with _patch_recent_users([]):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 3
@@ -938,9 +878,7 @@ class TestListStaleAssignments:
         assert data[2]["email"] == "zara@example.com"
 
     @pytest.mark.asyncio
-    async def test_stale_provider_must_match(
-        self, role_assignments_client, db_session
-    ):
+    async def test_stale_provider_must_match(self, role_assignments_client, db_session):
         """Same email on different providers: one stale, one active."""
         from bamf.auth.recent_users import RecentUser
 
@@ -974,9 +912,7 @@ class TestListStaleAssignments:
         ]
 
         with _patch_recent_users(recent):
-            resp = await role_assignments_client.get(
-                "/api/v1/role-assignments/stale"
-            )
+            resp = await role_assignments_client.get("/api/v1/role-assignments/stale")
         assert resp.status_code == 200
         data = resp.json()
         # Only the okta entry is stale

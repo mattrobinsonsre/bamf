@@ -897,7 +897,10 @@ class TestSAMLAuthorize:
             )
 
         assert resp.status_code == 302
-        assert "login.microsoftonline.com" in resp.headers["location"]
+        from urllib.parse import urlparse
+
+        location = urlparse(resp.headers["location"])
+        assert location.hostname == "login.microsoftonline.com"
 
 
 # ── Tests: OIDC Callback ────────────────────────────────────────────

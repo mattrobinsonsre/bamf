@@ -78,16 +78,12 @@ class TestBootstrapSuccess:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.delenv("BAMF_BOOTSTRAP_JOIN_TOKEN", raising=False)
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
 
         # Verify user was created
         async with AsyncSession(async_engine, expire_on_commit=False) as session:
-            result = await session.execute(
-                select(User).where(User.email == "admin@bootstrap.test")
-            )
+            result = await session.execute(select(User).where(User.email == "admin@bootstrap.test"))
             user = result.scalar_one_or_none()
             assert user is not None
             assert user.email == "admin@bootstrap.test"
@@ -114,16 +110,12 @@ class TestBootstrapSuccess:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.delenv("BAMF_BOOTSTRAP_JOIN_TOKEN", raising=False)
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
 
         # Verify user was created with a password hash (generated)
         async with AsyncSession(async_engine, expire_on_commit=False) as session:
-            result = await session.execute(
-                select(User).where(User.email == "gen@bootstrap.test")
-            )
+            result = await session.execute(select(User).where(User.email == "gen@bootstrap.test"))
             user = result.scalar_one_or_none()
             assert user is not None
             assert user.password_hash is not None
@@ -142,9 +134,7 @@ class TestBootstrapIdempotency:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.delenv("BAMF_BOOTSTRAP_JOIN_TOKEN", raising=False)
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
             # Run again -- should skip user creation
             await bootstrap()
@@ -168,9 +158,7 @@ class TestBootstrapIdempotency:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.delenv("BAMF_BOOTSTRAP_JOIN_TOKEN", raising=False)
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
             await bootstrap()
 
@@ -196,9 +184,7 @@ class TestBootstrapJoinToken:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.setenv("BAMF_BOOTSTRAP_JOIN_TOKEN", "my-secret-join-token")
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
 
         expected_hash = hashlib.sha256(b"my-secret-join-token").hexdigest()
@@ -223,9 +209,7 @@ class TestBootstrapJoinToken:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.delenv("BAMF_BOOTSTRAP_JOIN_TOKEN", raising=False)
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
 
         async with AsyncSession(async_engine, expire_on_commit=False) as session:
@@ -241,9 +225,7 @@ class TestBootstrapJoinToken:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://fake/fake")
         monkeypatch.setenv("BAMF_BOOTSTRAP_JOIN_TOKEN", "idempotent-token")
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", return_value=async_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", return_value=async_engine):
             await bootstrap()
             await bootstrap()
 
@@ -262,9 +244,7 @@ class TestBootstrapJoinToken:
 
 class TestDatabaseUrlPlaceholder:
     @pytest.mark.asyncio
-    async def test_resolves_database_password_placeholder(
-        self, async_engine, monkeypatch
-    ):
+    async def test_resolves_database_password_placeholder(self, async_engine, monkeypatch):
         """$(DATABASE_PASSWORD) in DATABASE_URL is replaced with DATABASE_PASSWORD env var."""
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_EMAIL", "placeholder@bootstrap.test")
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_PASSWORD", "placeholder-pass!")
@@ -282,18 +262,14 @@ class TestDatabaseUrlPlaceholder:
             captured_url = url
             return async_engine
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine):
             await bootstrap()
 
         assert captured_url == "postgresql+asyncpg://bamf:real-db-password@db:5432/bamf"
         assert "$(DATABASE_PASSWORD)" not in captured_url
 
     @pytest.mark.asyncio
-    async def test_placeholder_not_resolved_without_env(
-        self, async_engine, monkeypatch
-    ):
+    async def test_placeholder_not_resolved_without_env(self, async_engine, monkeypatch):
         """$(DATABASE_PASSWORD) is left in place if DATABASE_PASSWORD env var is empty."""
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_EMAIL", "noenv@bootstrap.test")
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_PASSWORD", "noenv-pass!")
@@ -311,18 +287,14 @@ class TestDatabaseUrlPlaceholder:
             captured_url = url
             return async_engine
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine):
             await bootstrap()
 
         # Placeholder remains because DATABASE_PASSWORD is not set
         assert "$(DATABASE_PASSWORD)" in captured_url
 
     @pytest.mark.asyncio
-    async def test_no_placeholder_passes_url_unchanged(
-        self, async_engine, monkeypatch
-    ):
+    async def test_no_placeholder_passes_url_unchanged(self, async_engine, monkeypatch):
         """DATABASE_URL without placeholder is passed through unchanged."""
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_EMAIL", "plain@bootstrap.test")
         monkeypatch.setenv("BAMF_BOOTSTRAP_ADMIN_PASSWORD", "plain-pass!")
@@ -339,9 +311,7 @@ class TestDatabaseUrlPlaceholder:
             captured_url = url
             return async_engine
 
-        with patch(
-            "bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine
-        ):
+        with patch("bamf.cli.bootstrap.create_async_engine", side_effect=capture_engine):
             await bootstrap()
 
         assert captured_url == "postgresql+asyncpg://bamf:literal-password@db:5432/bamf"

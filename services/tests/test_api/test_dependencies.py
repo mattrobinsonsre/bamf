@@ -222,7 +222,9 @@ class TestGetCurrentSession:
         creds = type("Creds", (), {"credentials": "good-token"})()
 
         with (
-            patch("bamf.api.dependencies.get_session", new_callable=AsyncMock, return_value=session),
+            patch(
+                "bamf.api.dependencies.get_session", new_callable=AsyncMock, return_value=session
+            ),
             patch("bamf.api.dependencies._should_refresh_session", return_value=False),
         ):
             result = await get_current_session(creds)

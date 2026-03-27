@@ -150,9 +150,7 @@ class TestKubeRouterMount:
     async def test_kube_route_methods(self, proxy_client: AsyncClient):
         """Kube proxy route accepts multiple HTTP methods."""
         for method in ["GET", "POST", "PUT", "PATCH", "DELETE"]:
-            response = await proxy_client.request(
-                method, "/api/v1/kube/test-cluster/api/v1/pods"
-            )
+            response = await proxy_client.request(method, "/api/v1/kube/test-cluster/api/v1/pods")
             # 401 confirms the route matched for this method
             assert response.status_code == 401, f"Method {method} returned {response.status_code}"
 
