@@ -1,4 +1,4 @@
-{{- if .Values.proxy.enabled }}
+{{- if .Values.outpost.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,8 +7,8 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: proxy
 spec:
-  {{- if not .Values.proxy.autoscaling.enabled }}
-  replicas: {{ .Values.proxy.replicas }}
+  {{- if not .Values.outpost.proxy.autoscaling.enabled }}
+  replicas: {{ .Values.outpost.proxy.replicas }}
   {{- end }}
   selector:
     matchLabels:
@@ -17,12 +17,12 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap-proxy.yaml") . | sha256sum }}
-        {{- with .Values.proxy.podAnnotations }}
+        {{- with .Values.outpost.proxy.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
         {{- include "bamf.proxy.selectorLabels" . | nindent 8 }}
-        {{- with .Values.proxy.podLabels }}
+        {{- with .Values.outpost.proxy.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -30,19 +30,19 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.proxy.terminationGracePeriodSeconds | default 120 }}
+      terminationGracePeriodSeconds: {{ .Values.outpost.proxy.terminationGracePeriodSeconds | default 120 }}
       containers:
         - name: proxy
           image: {{ include "bamf.proxy.image" . }}
-          imagePullPolicy: {{ .Values.proxy.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.outpost.proxy.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 8001
               protocol: TCP
           env:
             - name: BAMF_PROXY_API_URL
-              {{- if .Values.proxy.apiUrl }}
-              value: {{ .Values.proxy.apiUrl | quote }}
+              {{- if .Values.outpost.proxy.apiUrl }}
+              value: {{ .Values.outpost.proxy.apiUrl | quote }}
               {{- else }}
               value: "http://{{ include "bamf.fullname" . }}-api:8000"
               {{- end }}
@@ -76,10 +76,10 @@ spec:
             - name: BAMF_PROXY_BRIDGE_INTERNAL_PORT
               value: "8080"
             - name: BAMF_PROXY_LOG_LEVEL
-              value: {{ .Values.proxy.logLevel | default "info" | quote }}
+              value: {{ .Values.outpost.proxy.logLevel | default "info" | quote }}
             - name: BAMF_PROXY_JSON_LOGS
-              value: {{ .Values.proxy.jsonLogs | default "true" | quote }}
-            {{- with .Values.proxy.extraEnv }}
+              value: {{ .Values.outpost.proxy.jsonLogs | default "true" | quote }}
+            {{- with .Values.outpost.proxy.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
@@ -95,25 +95,25 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.proxy.resources | nindent 12 }}
-          {{- if gt (int (.Values.proxy.preStopSleepSeconds | default 15)) 0 }}
+            {{- toYaml .Values.outpost.proxy.resources | nindent 12 }}
+          {{- if gt (int (.Values.outpost.proxy.preStopSleepSeconds | default 15)) 0 }}
           lifecycle:
             preStop:
               exec:
                 command:
                   - /bin/sh
                   - -c
-                  - sleep {{ .Values.proxy.preStopSleepSeconds | default 15 }}
+                  - sleep {{ .Values.outpost.proxy.preStopSleepSeconds | default 15 }}
           {{- end }}
-      {{- with .Values.proxy.nodeSelector }}
+      {{- with .Values.outpost.proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.proxy.affinity }}
+      {{- with .Values.outpost.proxy.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.proxy.tolerations }}
+      {{- with .Values.outpost.proxy.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -1,4 +1,4 @@
-{{- if and .Values.proxy.enabled .Values.proxy.pdb.enabled }}
+{{- if and .Values.outpost.enabled .Values.outpost.proxy.pdb.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -7,7 +7,7 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: proxy
 spec:
-  minAvailable: {{ .Values.proxy.pdb.minAvailable }}
+  minAvailable: {{ .Values.outpost.proxy.pdb.minAvailable }}
   selector:
     matchLabels:
       {{- include "bamf.proxy.selectorLabels" . | nindent 6 }}

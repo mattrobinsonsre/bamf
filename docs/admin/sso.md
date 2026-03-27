@@ -49,13 +49,14 @@ list) to disable prefix stripping entirely, or to custom prefixes for your
 organization:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      okta:
-        rolePrefixes: ["myorg-", "myorg:"]  # custom prefixes
-      auth0:
-        rolePrefixes: []  # disable (Auth0 permissions are already plain names)
+core:
+  auth:
+    sso:
+      oidc:
+        okta:
+          rolePrefixes: ["myorg-", "myorg:"]  # custom prefixes
+        auth0:
+          rolePrefixes: []  # disable (Auth0 permissions are already plain names)
 ```
 
 The default `["bamf:", "bamf-"]` works well for Okta and other providers
@@ -93,17 +94,18 @@ no RBAC configuration. Roles are assigned internally in BAMF.
 **2. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    defaultProvider: auth0
-    oidc:
-      auth0:
-        enabled: true
-        displayName: "Auth0"
-        issuerUrl: https://YOUR_TENANT.us.auth0.com/
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-auth0
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      defaultProvider: auth0
+      oidc:
+        auth0:
+          enabled: true
+          displayName: "Auth0"
+          issuerUrl: https://YOUR_TENANT.us.auth0.com/
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-auth0
+          existingSecretKey: client_secret
 ```
 
 ```zsh
@@ -190,18 +192,19 @@ permission name (`admin`) that BAMF sees.
 Add the `audience` field to your existing config:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      auth0:
-        enabled: true
-        displayName: "Auth0"
-        issuerUrl: https://YOUR_TENANT.us.auth0.com/
-        clientId: YOUR_CLIENT_ID
-        audience: https://bamf.example.com/api  # must match API Identifier
-        rolePrefixes: []  # Auth0 permissions are already plain names
-        existingSecret: bamf-auth0
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        auth0:
+          enabled: true
+          displayName: "Auth0"
+          issuerUrl: https://YOUR_TENANT.us.auth0.com/
+          clientId: YOUR_CLIENT_ID
+          audience: https://bamf.example.com/api  # must match API Identifier
+          rolePrefixes: []  # Auth0 permissions are already plain names
+          existingSecret: bamf-auth0
+          existingSecretKey: client_secret
 ```
 
 ### What Auth0 sends to BAMF (with authz)
@@ -266,17 +269,18 @@ server, no claims configuration. Roles are assigned internally in BAMF.
 **2. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    defaultProvider: okta
-    oidc:
-      okta:
-        enabled: true
-        displayName: "Okta"
-        issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-okta
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      defaultProvider: okta
+      oidc:
+        okta:
+          enabled: true
+          displayName: "Okta"
+          issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-okta
+          existingSecretKey: client_secret
 ```
 
 ```zsh
@@ -439,19 +443,20 @@ If `groups` is missing, recheck Steps 2-4.
 Add `scopes` and `groupsClaim` to your existing config:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      okta:
-        enabled: true
-        displayName: "Okta"
-        # Must be a Custom Authorization Server URL
-        issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
-        clientId: YOUR_CLIENT_ID
-        scopes: ["openid", "profile", "email", "groups"]
-        groupsClaim: groups
-        existingSecret: bamf-okta
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        okta:
+          enabled: true
+          displayName: "Okta"
+          # Must be a Custom Authorization Server URL
+          issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
+          clientId: YOUR_CLIENT_ID
+          scopes: ["openid", "profile", "email", "groups"]
+          groupsClaim: groups
+          existingSecret: bamf-okta
+          existingSecretKey: client_secret
 ```
 
 ### What Okta sends to BAMF (with authz)
@@ -474,23 +479,24 @@ If you have existing Okta groups with different names and can't (or don't want
 to) create `bamf-` prefixed groups, use `claims_to_roles` to map them:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      okta:
-        enabled: true
-        issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
-        clientId: YOUR_CLIENT_ID
-        scopes: ["openid", "profile", "email", "groups"]
-        groupsClaim: groups
-        rolePrefixes: []  # disable prefix stripping
-        claimsToRoles:
-          - claim: groups
-            value: Platform-Engineering
-            roles: [admin, ssh-access]
-          - claim: groups
-            value: Developers
-            roles: [ssh-access]
+core:
+  auth:
+    sso:
+      oidc:
+        okta:
+          enabled: true
+          issuerUrl: https://YOUR_ORG.okta.com/oauth2/default
+          clientId: YOUR_CLIENT_ID
+          scopes: ["openid", "profile", "email", "groups"]
+          groupsClaim: groups
+          rolePrefixes: []  # disable prefix stripping
+          claimsToRoles:
+            - claim: groups
+              value: Platform-Engineering
+              roles: [admin, ssh-access]
+            - claim: groups
+              value: Developers
+              roles: [ssh-access]
 ```
 
 Configure the groups claim filter to include the relevant groups ("Matches
@@ -549,16 +555,17 @@ persistent, check NTP on the Kubernetes nodes.
 **3. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      azure:
-        enabled: true
-        displayName: "Microsoft Entra ID"
-        issuerUrl: https://login.microsoftonline.com/{tenant-id}/v2.0
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-azure
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        azure:
+          enabled: true
+          displayName: "Microsoft Entra ID"
+          issuerUrl: https://login.microsoftonline.com/{tenant-id}/v2.0
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-azure
+          existingSecretKey: client_secret
 ```
 
 ### Authorization Setup (Azure AD manages roles)
@@ -582,18 +589,19 @@ Azure AD uses **App Roles** to scope permissions to a specific application.
 **3. Update BAMF config**
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      azure:
-        enabled: true
-        displayName: "Microsoft Entra ID"
-        issuerUrl: https://login.microsoftonline.com/{tenant-id}/v2.0
-        clientId: YOUR_CLIENT_ID
-        groupsClaim: roles  # Azure AD puts App Roles in the "roles" claim
-        rolePrefixes: []    # App Role values are already plain names
-        existingSecret: bamf-azure
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        azure:
+          enabled: true
+          displayName: "Microsoft Entra ID"
+          issuerUrl: https://login.microsoftonline.com/{tenant-id}/v2.0
+          clientId: YOUR_CLIENT_ID
+          groupsClaim: roles  # Azure AD puts App Roles in the "roles" claim
+          rolePrefixes: []    # App Role values are already plain names
+          existingSecret: bamf-azure
+          existingSecretKey: client_secret
 ```
 
 Azure AD includes App Role values in the `roles` claim of the ID token
@@ -617,16 +625,17 @@ automatically.
 **2. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      keycloak:
-        enabled: true
-        displayName: "Keycloak"
-        issuerUrl: https://keycloak.example.com/realms/myorg
-        clientId: bamf
-        existingSecret: bamf-keycloak
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        keycloak:
+          enabled: true
+          displayName: "Keycloak"
+          issuerUrl: https://keycloak.example.com/realms/myorg
+          clientId: bamf
+          existingSecret: bamf-keycloak
+          existingSecretKey: client_secret
 ```
 
 ### Authorization Setup (Keycloak manages roles)
@@ -654,18 +663,19 @@ Keycloak uses **client-scoped roles** and **protocol mappers**.
 **4. Update BAMF config**
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      keycloak:
-        enabled: true
-        displayName: "Keycloak"
-        issuerUrl: https://keycloak.example.com/realms/myorg
-        clientId: bamf
-        groupsClaim: roles
-        rolePrefixes: []  # Keycloak client roles are already plain names
-        existingSecret: bamf-keycloak
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        keycloak:
+          enabled: true
+          displayName: "Keycloak"
+          issuerUrl: https://keycloak.example.com/realms/myorg
+          clientId: bamf
+          groupsClaim: roles
+          rolePrefixes: []  # Keycloak client roles are already plain names
+          existingSecret: bamf-keycloak
+          existingSecretKey: client_secret
 ```
 
 ---
@@ -704,17 +714,18 @@ This gets users logging in via JumpCloud. Roles are assigned internally in BAMF.
 **3. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    defaultProvider: jumpcloud
-    oidc:
-      jumpcloud:
-        enabled: true
-        displayName: "JumpCloud"
-        issuerUrl: https://oauth.id.jumpcloud.com/
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-jumpcloud
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      defaultProvider: jumpcloud
+      oidc:
+        jumpcloud:
+          enabled: true
+          displayName: "JumpCloud"
+          issuerUrl: https://oauth.id.jumpcloud.com/
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-jumpcloud
+          existingSecretKey: client_secret
 ```
 
 ```zsh
@@ -778,17 +789,18 @@ appear in the `groups` claim.
 Add `groupsClaim` to your existing config:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      jumpcloud:
-        enabled: true
-        displayName: "JumpCloud"
-        issuerUrl: https://oauth.id.jumpcloud.com/
-        clientId: YOUR_CLIENT_ID
-        groupsClaim: groups
-        existingSecret: bamf-jumpcloud
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        jumpcloud:
+          enabled: true
+          displayName: "JumpCloud"
+          issuerUrl: https://oauth.id.jumpcloud.com/
+          clientId: YOUR_CLIENT_ID
+          groupsClaim: groups
+          existingSecret: bamf-jumpcloud
+          existingSecretKey: client_secret
 ```
 
 ### What JumpCloud sends to BAMF (with authz)
@@ -847,16 +859,17 @@ Authentication setup is all there is — roles must always be assigned in BAMF.
 **3. Configure BAMF**
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      google:
-        enabled: true
-        displayName: "Google"
-        issuerUrl: https://accounts.google.com
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-google
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        google:
+          enabled: true
+          displayName: "Google"
+          issuerUrl: https://accounts.google.com
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-google
+          existingSecretKey: client_secret
 ```
 
 **4. Assign roles in BAMF**
@@ -880,39 +893,41 @@ Any OIDC-compliant provider works with BAMF. The minimum config for
 authentication:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      my-provider:
-        enabled: true
-        displayName: "My IdP"
-        issuerUrl: https://idp.example.com  # must serve /.well-known/openid-configuration
-        clientId: YOUR_CLIENT_ID
-        existingSecret: bamf-my-provider
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        my-provider:
+          enabled: true
+          displayName: "My IdP"
+          issuerUrl: https://idp.example.com  # must serve /.well-known/openid-configuration
+          clientId: YOUR_CLIENT_ID
+          existingSecret: bamf-my-provider
+          existingSecretKey: client_secret
 ```
 
-To add authorization (if the provider sends groups/roles in tokens):
+To add authorization (if the provider sends groups/roles in tokens), add these
+fields to the provider block under `core.auth.sso.oidc.<provider>`:
 
 ```yaml
-        # If the provider supports API audiences (like Auth0):
-        audience: https://bamf.example.com/api
+          # If the provider supports API audiences (like Auth0):
+          audience: https://bamf.example.com/api
 
-        # Which claim contains groups/roles (default: "groups"):
-        groupsClaim: roles
+          # Which claim contains groups/roles (default: "groups"):
+          groupsClaim: roles
 
-        # Override default scopes if needed:
-        scopes: ["openid", "profile", "email", "groups"]
+          # Override default scopes if needed:
+          scopes: ["openid", "profile", "email", "groups"]
 
-        # Prefix stripping (default: ["bamf:", "bamf-"]):
-        # Set to [] if the IdP sends plain role names
-        rolePrefixes: []
+          # Prefix stripping (default: ["bamf:", "bamf-"]):
+          # Set to [] if the IdP sends plain role names
+          rolePrefixes: []
 
-        # Explicit mapping if claim values don't match BAMF role names:
-        claimsToRoles:
-          - claim: groups
-            value: platform-admins
-            roles: [admin]
+          # Explicit mapping if claim values don't match BAMF role names:
+          claimsToRoles:
+            - claim: groups
+              value: platform-admins
+              roles: [admin]
 ```
 
 **What BAMF checks at login (in order):**
@@ -939,12 +954,13 @@ kubectl -n bamf create secret generic bamf-auth0 \
 Reference it in Helm values:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      auth0:
-        existingSecret: bamf-auth0
-        existingSecretKey: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        auth0:
+          existingSecret: bamf-auth0
+          existingSecretKey: client_secret
 ```
 
 The secret is injected as an environment variable (`BAMF_AUTH0_CLIENT_SECRET`)
@@ -954,18 +970,19 @@ into the API pod. The naming convention is `BAMF_{PROVIDER_NAME}_CLIENT_SECRET`
 For providers managed via ExternalSecrets operator:
 
 ```yaml
-auth:
-  sso:
-    oidc:
-      auth0:
-        externalSecret:
-          enabled: true
-          secretStoreRef:
-            name: aws-secrets-manager
-            kind: ClusterSecretStore
-          remoteRef:
-            key: production/bamf/auth0
-            property: client_secret
+core:
+  auth:
+    sso:
+      oidc:
+        auth0:
+          externalSecret:
+            enabled: true
+            secretStoreRef:
+              name: aws-secrets-manager
+              kind: ClusterSecretStore
+            remoteRef:
+              key: production/bamf/auth0
+              property: client_secret
 ```
 
 ---
@@ -999,10 +1016,11 @@ Neither source overrides the other.
 Prevent local password auth for privileged roles:
 
 ```yaml
-auth:
-  require_external_sso_for_roles:
-    - admin
-    - k8s-access
+core:
+  auth:
+    requireExternalSsoForRoles:
+      - admin
+      - k8s-access
 ```
 
 Users with these roles must authenticate via an external IdP (not local
@@ -1017,18 +1035,19 @@ BAMF supports multiple providers simultaneously. Users choose their provider
 at login:
 
 ```yaml
-auth:
-  local:
-    enabled: true
-  sso:
-    defaultProvider: auth0
-    oidc:
-      auth0:
-        enabled: true
-        # ...
-      okta:
-        enabled: true
-        # ...
+core:
+  auth:
+    local:
+      enabled: true
+    sso:
+      defaultProvider: auth0
+      oidc:
+        auth0:
+          enabled: true
+          # ...
+        okta:
+          enabled: true
+          # ...
 ```
 
 The login page shows all configured providers. CLI users specify `--provider`:

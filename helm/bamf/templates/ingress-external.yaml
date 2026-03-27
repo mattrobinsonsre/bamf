@@ -53,7 +53,7 @@ spec:
                 name: {{ include "bamf.fullname" . }}-api
                 port:
                   name: http
-          {{- if .Values.web.standalone }}
+          {{- if .Values.core.web.standalone }}
           # Web UI (catch-all)
           - path: /
             pathType: Prefix

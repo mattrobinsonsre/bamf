@@ -1,4 +1,4 @@
-{{- if and .Values.proxy.enabled .Values.proxy.autoscaling.enabled }}
+{{- if and .Values.outpost.enabled .Values.outpost.proxy.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -11,23 +11,23 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "bamf.fullname" . }}-proxy
-  minReplicas: {{ .Values.proxy.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.proxy.autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.outpost.proxy.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.outpost.proxy.autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.proxy.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.outpost.proxy.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.proxy.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.outpost.proxy.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.proxy.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if .Values.outpost.proxy.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.proxy.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ .Values.outpost.proxy.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }}

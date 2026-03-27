@@ -1,4 +1,4 @@
-{{- if .Values.api.autoscaling.enabled }}
+{{- if .Values.core.api.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -11,23 +11,23 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "bamf.fullname" . }}-api
-  minReplicas: {{ .Values.api.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.api.autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.core.api.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.core.api.autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.api.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.core.api.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.api.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.core.api.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.api.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if .Values.core.api.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.api.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ .Values.core.api.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }}

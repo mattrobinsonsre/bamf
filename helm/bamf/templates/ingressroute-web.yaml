@@ -1,6 +1,6 @@
 # Traefik IngressRoute for standalone Web UI
 # Only deployed when web.standalone=true and gateway.provider=traefik
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.web.standalone }}
+{{- if and .Values.core.enabled .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.core.web.standalone }}
 {{- $fullName := include "bamf.fullname" . }}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
 apiVersion: traefik.io/v1alpha1

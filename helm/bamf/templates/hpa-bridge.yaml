@@ -1,4 +1,4 @@
-{{- if .Values.bridge.autoscaling.enabled }}
+{{- if .Values.outpost.bridge.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -11,18 +11,18 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: {{ include "bamf.fullname" . }}-bridge
-  minReplicas: {{ .Values.bridge.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.bridge.autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.outpost.bridge.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.outpost.bridge.autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.bridge.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.outpost.bridge.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.bridge.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.outpost.bridge.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.bridge.autoscaling.targetTunnelsPerPod }}
+    {{- if .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}
     # Primary scaling signal: tunnel count per pod (requires prometheus-adapter).
     # CPU metric above is kept as a safety net.
     - type: Pods
@@ -31,6 +31,6 @@ spec:
           name: bamf_bridge_active_tunnels
         target:
           type: AverageValue
-          averageValue: "{{ .Values.bridge.autoscaling.targetTunnelsPerPod }}"
+          averageValue: "{{ .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}"
     {{- end }}
 {{- end }}

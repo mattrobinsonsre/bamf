@@ -99,153 +99,440 @@
       }
     },
 
-    "api": {
+    "core": {
       "type": "object",
       "additionalProperties": false,
-      "description": "API server (Python/FastAPI) — control plane, auth, RBAC, state.",
+      "description": "Core control plane — API + Web UI + PostgreSQL + Redis + migrations + bootstrap. Disable for remote outpost-only deployments.",
       "properties": {
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/$defs/imageSpec" },
-        "resources": { "$ref": "#/$defs/resourceSpec" },
-        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
-        "pdb": { "$ref": "#/$defs/pdbSpec" },
-        "config": {
+        "enabled": { "type": "boolean" },
+
+        "api": {
           "type": "object",
-          "description": "API configuration mounted as /etc/bamf/config.yaml. Secrets must be injected via env vars from K8s Secrets.",
+          "additionalProperties": false,
+          "description": "API server (Python/FastAPI) — control plane, auth, RBAC, state.",
           "properties": {
-            "log_level": {
-              "type": "string",
-              "enum": ["debug", "info", "warning", "error", "critical"]
-            },
-            "certificates": {
+            "replicas": { "type": "integer", "minimum": 1 },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+            "pdb": { "$ref": "#/$defs/pdbSpec" },
+            "config": {
               "type": "object",
-              "additionalProperties": false,
+              "description": "API configuration mounted as /etc/bamf/config.yaml. Secrets must be injected via env vars from K8s Secrets.",
               "properties": {
-                "user_ttl_hours": { "type": "integer", "minimum": 1 },
-                "agent_ttl_hours": { "type": "integer", "minimum": 1 },
-                "bridge_ttl_hours": { "type": "integer", "minimum": 1 }
+                "log_level": {
+                  "type": "string",
+                  "enum": ["debug", "info", "warning", "error", "critical"]
+                },
+                "certificates": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "user_ttl_hours": { "type": "integer", "minimum": 1 },
+                    "agent_ttl_hours": { "type": "integer", "minimum": 1 },
+                    "bridge_ttl_hours": { "type": "integer", "minimum": 1 }
+                  }
+                },
+                "audit": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "retention_days": { "type": "integer", "minimum": 1 },
+                    "api_audit_enabled": { "type": "boolean" }
+                  }
+                },
+                "cors": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "allow_origins": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
               }
             },
-            "audit": {
+            "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+            "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+            "podAnnotations": { "type": "object" },
+            "podLabels": { "type": "object" },
+            "priorityClassName": { "type": "string" },
+            "topologySpreadConstraints": { "type": "array" },
+            "podSecurityContext": { "type": "object" },
+            "securityContext": { "type": "object" },
+            "nodeSelector": { "type": "object" },
+            "tolerations": { "type": "array" },
+            "affinity": { "type": "object" },
+            "extraEnv": { "type": "array" },
+            "extraEnvFrom": { "type": "array" },
+            "extraVolumes": { "type": "array" },
+            "extraVolumeMounts": { "type": "array" },
+            "extraInitContainers": { "type": "array" },
+            "command": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Override container command (e.g., uvicorn with --reload for local dev)."
+            },
+            "service": { "$ref": "#/$defs/serviceSpec" },
+            "serviceAccount": { "$ref": "#/$defs/serviceAccountSpec" }
+          }
+        },
+
+        "web": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Web UI — React/Next.js frontend served as standalone pods or via bridge.",
+          "properties": {
+            "standalone": { "type": "boolean" },
+            "replicas": { "type": "integer", "minimum": 1 },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+            "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+            "startupProbe": { "type": "object" },
+            "livenessProbe": { "type": "object" },
+            "readinessProbe": { "type": "object" },
+            "podAnnotations": { "type": "object" },
+            "podLabels": { "type": "object" },
+            "priorityClassName": { "type": "string" },
+            "topologySpreadConstraints": { "type": "array" },
+            "podSecurityContext": { "type": "object" },
+            "securityContext": { "type": "object" },
+            "nodeSelector": { "type": "object" },
+            "tolerations": { "type": "array" },
+            "affinity": { "type": "object" },
+            "extraEnv": { "type": "array" },
+            "extraVolumes": { "type": "array" },
+            "extraVolumeMounts": { "type": "array" },
+            "service": { "$ref": "#/$defs/serviceSpec" }
+          }
+        },
+
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "PostgreSQL — bundled (dev/staging) or external (production).",
+          "properties": {
+            "bundled": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "retention_days": { "type": "integer", "minimum": 1 },
-                "api_audit_enabled": { "type": "boolean" }
+                "enabled": { "type": "boolean" },
+                "image": { "$ref": "#/$defs/imageSpec" },
+                "auth": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "database": { "type": "string" },
+                    "username": { "type": "string" },
+                    "password": { "type": "string" }
+                  }
+                },
+                "resources": { "$ref": "#/$defs/resourceSpec" },
+                "persistence": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "size": { "type": "string" },
+                    "storageClass": { "type": "string" }
+                  }
+                }
               }
             },
-            "cors": {
+            "external": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "allow_origins": {
-                  "type": "array",
-                  "items": { "type": "string" }
+                "enabled": { "type": "boolean" },
+                "host": { "type": "string" },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "database": { "type": "string" },
+                "username": { "type": "string" },
+                "sslmode": {
+                  "type": "string",
+                  "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+                },
+                "password": { "type": "string" },
+                "existingSecret": { "type": "string" },
+                "existingSecretKey": { "type": "string" },
+                "externalSecret": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "secretStoreRef": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": { "type": "string" },
+                        "kind": { "type": "string" }
+                      }
+                    },
+                    "remoteRef": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "key": { "type": "string" },
+                        "property": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                "readReplica": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "host": { "type": "string" },
+                    "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+                    "database": { "type": "string" },
+                    "username": { "type": "string" },
+                    "sslmode": { "type": "string" },
+                    "password": { "type": "string" },
+                    "existingSecret": { "type": "string" },
+                    "existingSecretKey": { "type": "string" }
+                  }
                 }
               }
             }
           }
         },
-        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
-        "podAnnotations": { "type": "object" },
-        "podLabels": { "type": "object" },
-        "priorityClassName": { "type": "string" },
-        "topologySpreadConstraints": { "type": "array" },
-        "podSecurityContext": { "type": "object" },
-        "securityContext": { "type": "object" },
-        "nodeSelector": { "type": "object" },
-        "tolerations": { "type": "array" },
-        "affinity": { "type": "object" },
-        "extraEnv": { "type": "array" },
-        "extraEnvFrom": { "type": "array" },
-        "extraVolumes": { "type": "array" },
-        "extraVolumeMounts": { "type": "array" },
-        "extraInitContainers": { "type": "array" },
-        "command": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Override container command (e.g., uvicorn with --reload for local dev)."
-        },
-        "service": { "$ref": "#/$defs/serviceSpec" },
-        "serviceAccount": { "$ref": "#/$defs/serviceAccountSpec" }
-      }
-    },
 
-    "bridge": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Bridge server (Go) — protocol-agnostic TCP tunnel gateway, deployed as StatefulSet.",
-      "properties": {
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/$defs/imageSpec" },
-        "resources": { "$ref": "#/$defs/resourceSpec" },
-        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
-        "pdb": { "$ref": "#/$defs/pdbSpec" },
-        "service": { "$ref": "#/$defs/serviceSpec" },
-        "headlessService": {
+        "redis": {
           "type": "object",
           "additionalProperties": false,
+          "description": "Redis — bundled (dev/staging) or external (production).",
           "properties": {
-            "annotations": { "type": "object" }
+            "bundled": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "image": { "$ref": "#/$defs/imageSpec" },
+                "auth": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" }
+                  }
+                },
+                "resources": { "$ref": "#/$defs/resourceSpec" },
+                "persistence": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "size": { "type": "string" },
+                    "storageClass": { "type": "string" }
+                  }
+                }
+              }
+            },
+            "external": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "host": { "type": "string" },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "existingSecret": { "type": "string" },
+                "existingSecretKey": { "type": "string" }
+              }
+            }
           }
         },
-        "tunnelPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
-        "bootstrap": {
+
+        "auth": {
           "type": "object",
           "additionalProperties": false,
+          "description": "Authentication — local password auth and SSO (OIDC/SAML).",
+          "properties": {
+            "local": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            },
+            "sso": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "defaultProvider": { "type": "string" },
+                "oidc": {
+                  "type": "object",
+                  "description": "Map of OIDC providers keyed by provider name.",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": { "type": "boolean" },
+                      "displayName": { "type": "string" },
+                      "issuerUrl": { "type": "string" },
+                      "clientId": { "type": "string" },
+                      "audience": { "type": "string" },
+                      "scopes": { "type": "array", "items": { "type": "string" } },
+                      "groupsClaim": { "type": "string" },
+                      "rolePrefixes": { "type": "array", "items": { "type": "string" } },
+                      "existingSecret": { "type": "string" },
+                      "existingSecretKey": { "type": "string" },
+                      "claimsToRoles": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "claim": { "type": "string" },
+                            "value": { "type": "string" },
+                            "roles": { "type": "array", "items": { "type": "string" } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "migrations": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Alembic database migrations — runs as Helm pre-install/pre-upgrade hook.",
           "properties": {
             "enabled": { "type": "boolean" },
-            "token": { "type": "string" },
-            "tokenSecret": { "type": "string" },
-            "tokenKey": { "type": "string" }
+            "podAnnotations": { "type": "object" },
+            "nodeSelector": { "type": "object" },
+            "tolerations": { "type": "array" },
+            "resources": { "$ref": "#/$defs/resourceSpec" }
           }
         },
-        "podAnnotations": { "type": "object" },
-        "podLabels": { "type": "object" },
-        "priorityClassName": { "type": "string" },
-        "topologySpreadConstraints": { "type": "array" },
-        "podSecurityContext": { "type": "object" },
-        "securityContext": { "type": "object" },
-        "nodeSelector": { "type": "object" },
-        "tolerations": { "type": "array" },
-        "affinity": { "type": "object" },
-        "extraEnv": { "type": "array" },
-        "extraEnvFrom": { "type": "array" },
-        "extraVolumes": { "type": "array" },
-        "extraVolumeMounts": { "type": "array" }
+
+        "bootstrap": {
+          "type": "object",
+          "description": "Bootstrap admin user and join token for initial setup.",
+          "properties": {
+            "adminEmail": { "type": "string" },
+            "adminPassword": { "type": "string" },
+            "joinToken": { "type": "string" },
+            "existingSecret": { "type": "string" },
+            "emailKey": { "type": "string" },
+            "passwordKey": { "type": "string" }
+          }
+        }
       }
     },
 
-    "web": {
+    "outpost": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Web UI — React/Next.js frontend served as standalone pods or via bridge.",
+      "description": "Outpost data plane — proxy + bridge + tunnel ingress routes. Every proxy+bridge combination is an outpost.",
       "properties": {
-        "standalone": { "type": "boolean" },
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/$defs/imageSpec" },
-        "resources": { "$ref": "#/$defs/resourceSpec" },
-        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
-        "startupProbe": { "type": "object" },
-        "livenessProbe": { "type": "object" },
-        "readinessProbe": { "type": "object" },
-        "podAnnotations": { "type": "object" },
-        "podLabels": { "type": "object" },
-        "priorityClassName": { "type": "string" },
-        "topologySpreadConstraints": { "type": "array" },
-        "podSecurityContext": { "type": "object" },
-        "securityContext": { "type": "object" },
-        "nodeSelector": { "type": "object" },
-        "tolerations": { "type": "array" },
-        "affinity": { "type": "object" },
-        "extraEnv": { "type": "array" },
-        "extraVolumes": { "type": "array" },
-        "extraVolumeMounts": { "type": "array" },
-        "service": { "$ref": "#/$defs/serviceSpec" }
+        "enabled": { "type": "boolean" },
+        "name": {
+          "type": "string",
+          "description": "DNS-safe outpost name (e.g., 'us-east', 'eu'). Required when outpost.enabled=true.",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "joinToken": {
+          "type": "string",
+          "description": "Outpost join token for remote outpost registration. Required when core.enabled=false."
+        },
+        "apiUrl": {
+          "type": "string",
+          "description": "Central API URL for remote outposts. Required when core.enabled=false."
+        },
+        "geodns": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Outpost-specific TLS certificates for tunnel domain.",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "existingGlobalSecret": { "type": "string" }
+          }
+        },
+
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Standalone HTTP proxy service — web app proxying and Kubernetes API proxying.",
+          "properties": {
+            "replicas": { "type": "integer", "minimum": 1 },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+            "pdb": { "$ref": "#/$defs/pdbSpec" },
+            "internalToken": { "type": "string" },
+            "logLevel": {
+              "type": "string",
+              "enum": ["debug", "info", "warning", "error", "critical"]
+            },
+            "jsonLogs": { "type": "string" },
+            "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+            "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+            "apiUrl": { "type": "string", "description": "Override API URL for outpost deployments." },
+            "podAnnotations": { "type": "object" },
+            "podLabels": { "type": "object" },
+            "nodeSelector": { "type": "object" },
+            "tolerations": { "type": "array" },
+            "affinity": { "type": "object" },
+            "extraEnv": { "type": "array" }
+          }
+        },
+
+        "bridge": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Bridge server (Go) — protocol-agnostic TCP tunnel gateway, deployed as StatefulSet.",
+          "properties": {
+            "replicas": { "type": "integer", "minimum": 1 },
+            "image": { "$ref": "#/$defs/imageSpec" },
+            "resources": { "$ref": "#/$defs/resourceSpec" },
+            "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
+            "pdb": { "$ref": "#/$defs/pdbSpec" },
+            "service": { "$ref": "#/$defs/serviceSpec" },
+            "headlessService": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "annotations": { "type": "object" }
+              }
+            },
+            "tunnelPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+            "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
+            "bootstrap": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "token": { "type": "string" },
+                "tokenSecret": { "type": "string" },
+                "tokenKey": { "type": "string" }
+              }
+            },
+            "podAnnotations": { "type": "object" },
+            "podLabels": { "type": "object" },
+            "priorityClassName": { "type": "string" },
+            "topologySpreadConstraints": { "type": "array" },
+            "podSecurityContext": { "type": "object" },
+            "securityContext": { "type": "object" },
+            "nodeSelector": { "type": "object" },
+            "tolerations": { "type": "array" },
+            "affinity": { "type": "object" },
+            "extraEnv": { "type": "array" },
+            "extraEnvFrom": { "type": "array" },
+            "extraVolumes": { "type": "array" },
+            "extraVolumeMounts": { "type": "array" }
+          }
+        }
       }
     },
 
@@ -303,65 +590,6 @@
         "extraEnvFrom": { "type": "array" },
         "extraVolumes": { "type": "array" },
         "extraVolumeMounts": { "type": "array" }
-      }
-    },
-
-    "proxy": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Standalone HTTP proxy service — web app proxying and Kubernetes API proxying.",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "replicas": { "type": "integer", "minimum": 1 },
-        "image": { "$ref": "#/$defs/imageSpec" },
-        "resources": { "$ref": "#/$defs/resourceSpec" },
-        "autoscaling": { "$ref": "#/$defs/autoscalingSpec" },
-        "pdb": { "$ref": "#/$defs/pdbSpec" },
-        "internalToken": { "type": "string" },
-        "logLevel": {
-          "type": "string",
-          "enum": ["debug", "info", "warning", "error", "critical"]
-        },
-        "jsonLogs": { "type": "string" },
-        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
-        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "apiUrl": { "type": "string", "description": "Override API URL for outpost deployments." },
-        "podAnnotations": { "type": "object" },
-        "podLabels": { "type": "object" },
-        "nodeSelector": { "type": "object" },
-        "tolerations": { "type": "array" },
-        "affinity": { "type": "object" },
-        "extraEnv": { "type": "array" }
-      }
-    },
-
-    "outpost": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Outpost configuration — every proxy+bridge is an outpost. Required for multi-region deployments.",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "name": {
-          "type": "string",
-          "description": "DNS-safe outpost name (e.g., 'us-east', 'eu'). Required when outpost.enabled=true.",
-          "pattern": "^[a-z][a-z0-9-]*$",
-          "maxLength": 63
-        },
-        "joinToken": {
-          "type": "string",
-          "description": "Outpost join token for remote outpost registration. Required when api.enabled=false."
-        },
-        "apiUrl": {
-          "type": "string",
-          "description": "Central API URL for remote outposts. Required when api.enabled=false."
-        },
-        "geodns": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" }
-          }
-        }
       }
     },
 
@@ -426,204 +654,6 @@
       }
     },
 
-    "postgresql": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "PostgreSQL — bundled (dev/staging) or external (production).",
-      "properties": {
-        "bundled": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "image": { "$ref": "#/$defs/imageSpec" },
-            "auth": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "database": { "type": "string" },
-                "username": { "type": "string" },
-                "password": { "type": "string" }
-              }
-            },
-            "resources": { "$ref": "#/$defs/resourceSpec" },
-            "persistence": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "size": { "type": "string" },
-                "storageClass": { "type": "string" }
-              }
-            }
-          }
-        },
-        "external": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "host": { "type": "string" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "database": { "type": "string" },
-            "username": { "type": "string" },
-            "sslmode": {
-              "type": "string",
-              "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
-            },
-            "password": { "type": "string" },
-            "existingSecret": { "type": "string" },
-            "existingSecretKey": { "type": "string" },
-            "externalSecret": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean" },
-                "secretStoreRef": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "name": { "type": "string" },
-                    "kind": { "type": "string" }
-                  }
-                },
-                "remoteRef": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "key": { "type": "string" },
-                    "property": { "type": "string" }
-                  }
-                }
-              }
-            },
-            "readReplica": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean" },
-                "host": { "type": "string" },
-                "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
-                "database": { "type": "string" },
-                "username": { "type": "string" },
-                "sslmode": { "type": "string" },
-                "password": { "type": "string" },
-                "existingSecret": { "type": "string" },
-                "existingSecretKey": { "type": "string" }
-              }
-            }
-          }
-        }
-      }
-    },
-
-    "redis": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Redis — bundled (dev/staging) or external (production).",
-      "properties": {
-        "bundled": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "image": { "$ref": "#/$defs/imageSpec" },
-            "auth": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean" }
-              }
-            },
-            "resources": { "$ref": "#/$defs/resourceSpec" },
-            "persistence": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "size": { "type": "string" },
-                "storageClass": { "type": "string" }
-              }
-            }
-          }
-        },
-        "external": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "host": { "type": "string" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "existingSecret": { "type": "string" },
-            "existingSecretKey": { "type": "string" }
-          }
-        }
-      }
-    },
-
-    "auth": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Authentication — local password auth and SSO (OIDC/SAML).",
-      "properties": {
-        "local": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean" }
-          }
-        },
-        "sso": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "defaultProvider": { "type": "string" },
-            "oidc": {
-              "type": "object",
-              "description": "Map of OIDC providers keyed by provider name.",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "enabled": { "type": "boolean" },
-                  "displayName": { "type": "string" },
-                  "issuerUrl": { "type": "string" },
-                  "clientId": { "type": "string" },
-                  "audience": { "type": "string" },
-                  "scopes": { "type": "array", "items": { "type": "string" } },
-                  "groupsClaim": { "type": "string" },
-                  "rolePrefixes": { "type": "array", "items": { "type": "string" } },
-                  "existingSecret": { "type": "string" },
-                  "existingSecretKey": { "type": "string" },
-                  "claimsToRoles": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "claim": { "type": "string" },
-                        "value": { "type": "string" },
-                        "roles": { "type": "array", "items": { "type": "string" } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-
-    "migrations": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Alembic database migrations — runs as Helm pre-install/pre-upgrade hook.",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "podAnnotations": { "type": "object" },
-        "nodeSelector": { "type": "object" },
-        "tolerations": { "type": "array" },
-        "resources": { "$ref": "#/$defs/resourceSpec" }
-      }
-    },
-
     "tls": {
       "type": "object",
       "additionalProperties": false,
@@ -665,16 +695,6 @@
             "minVersion": { "type": "string" }
           }
         }
-      }
-    },
-
-    "bootstrap": {
-      "type": "object",
-      "description": "Bootstrap admin user and join token for initial setup.",
-      "properties": {
-        "adminEmail": { "type": "string" },
-        "adminPassword": { "type": "string" },
-        "joinToken": { "type": "string" }
       }
     },
 

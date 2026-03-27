@@ -1,9 +1,9 @@
 # SNI routing: docs/architecture/tunnels.md
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.tunnelDomain }}
+{{- if and .Values.outpost.enabled .Values.gateway.enabled (eq .Values.gateway.provider "istio") .Values.gateway.tunnelDomain }}
 {{- $fullName := include "bamf.fullname" . -}}
 {{- $labels := include "bamf.labels" . -}}
-{{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
-{{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+{{- $maxReplicas := int .Values.outpost.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelPort := int .Values.outpost.bridge.tunnelPort -}}
 
 # TLSRoutes for SNI-based routing to individual bridge pods
 # One route per bridge — bridge is protocol-agnostic (single tunnel port)

@@ -1,4 +1,4 @@
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "istio") }}
+{{- if and .Values.core.enabled .Values.gateway.enabled (eq .Values.gateway.provider "istio") }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -12,7 +12,7 @@ spec:
   hostnames:
     - {{ .Values.gateway.hostname | quote }}
   rules:
-    {{- if .Values.proxy.enabled }}
+    {{- if .Values.outpost.enabled }}
     # Kube proxy routes go to proxy service (must come before general /api)
     - matches:
         - path:
@@ -44,7 +44,7 @@ spec:
       backendRefs:
         - name: {{ include "bamf.fullname" . }}-api
           port: 8000
-    {{- if not .Values.web.standalone }}
+    {{- if not .Values.core.web.standalone }}
     # If web not standalone, API serves everything
     - matches:
         - path:

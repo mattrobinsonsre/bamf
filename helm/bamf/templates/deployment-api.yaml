@@ -1,3 +1,4 @@
+{{- if .Values.core.enabled }}
 # API deployment: docs/admin/deployment.md
 {{- include "bamf.validateConfig" . }}
 apiVersion: apps/v1
@@ -8,8 +9,8 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
-  {{- if not .Values.api.autoscaling.enabled }}
-  replicas: {{ .Values.api.replicas }}
+  {{- if not .Values.core.api.autoscaling.enabled }}
+  replicas: {{ .Values.core.api.replicas }}
   {{- end }}
   selector:
     matchLabels:
@@ -18,12 +19,12 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap-api.yaml") . | sha256sum }}
-        {{- with .Values.api.podAnnotations }}
+        {{- with .Values.core.api.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
         {{- include "bamf.api.selectorLabels" . | nindent 8 }}
-        {{- with .Values.api.podLabels }}
+        {{- with .Values.core.api.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -32,31 +33,31 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "bamf.serviceAccountName" . }}
-      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
-      {{- with .Values.api.podSecurityContext }}
+      terminationGracePeriodSeconds: {{ .Values.core.api.terminationGracePeriodSeconds }}
+      {{- with .Values.core.api.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.api.priorityClassName }}
+      {{- with .Values.core.api.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
-      {{- with .Values.api.topologySpreadConstraints }}
+      {{- with .Values.core.api.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.api.extraInitContainers }}
+      {{- with .Values.core.api.extraInitContainers }}
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: api
-          {{- with .Values.api.securityContext }}
+          {{- with .Values.core.api.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: {{ include "bamf.api.image" . }}
-          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
-          {{- with .Values.api.command }}
+          imagePullPolicy: {{ .Values.core.api.image.pullPolicy }}
+          {{- with .Values.core.api.command }}
           command:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -72,7 +73,7 @@ spec:
                   key: {{ include "bamf.databaseSecretKey" . }}
             - name: BAMF_DATABASE_URL
               value: {{ include "bamf.databaseUrl" . | quote }}
-            {{- if and .Values.postgresql.external.enabled .Values.postgresql.external.readReplica.enabled }}
+            {{- if and .Values.core.postgresql.external.enabled .Values.core.postgresql.external.readReplica.enabled }}
             - name: DATABASE_READ_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -83,21 +84,21 @@ spec:
             {{- end }}
             - name: BAMF_REDIS_URL
               value: {{ include "bamf.redisUrl" . | quote }}
-            {{- if .Values.bridge.bootstrap.enabled }}
+            {{- if .Values.outpost.bridge.bootstrap.enabled }}
             - name: BAMF_BRIDGE_BOOTSTRAP_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
-                  key: {{ .Values.bridge.bootstrap.tokenKey | default "token" }}
+                  name: {{ .Values.outpost.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
+                  key: {{ .Values.outpost.bridge.bootstrap.tokenKey | default "token" }}
             {{- end }}
-            {{- if .Values.proxy.enabled }}
+            {{- if .Values.outpost.enabled }}
             - name: BAMF_PROXY_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "bamf.fullname" . }}-proxy-token
                   key: token
             {{- end }}
-            {{- range $name, $provider := .Values.auth.sso.oidc }}
+            {{- range $name, $provider := .Values.core.auth.sso.oidc }}
             {{- if $provider.enabled }}
             - name: BAMF_{{ $name | upper }}_CLIENT_SECRET
               valueFrom:
@@ -106,10 +107,10 @@ spec:
                   key: {{ $provider.existingSecretKey | default "client_secret" }}
             {{- end }}
             {{- end }}
-            {{- with .Values.api.extraEnv }}
+            {{- with .Values.core.api.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.api.extraEnvFrom }}
+          {{- with .Values.core.api.extraEnvFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -117,7 +118,7 @@ spec:
             - name: config
               mountPath: /etc/bamf
               readOnly: true
-            {{- with .Values.api.extraVolumeMounts }}
+            {{- with .Values.core.api.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
@@ -133,32 +134,34 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.api.resources | nindent 12 }}
-          {{- if gt (int .Values.api.preStopSleepSeconds) 0 }}
+            {{- toYaml .Values.core.api.resources | nindent 12 }}
+          {{- if gt (int .Values.core.api.preStopSleepSeconds) 0 }}
           lifecycle:
             preStop:
               exec:
                 command:
                   - /bin/sh
                   - -c
-                  - sleep {{ .Values.api.preStopSleepSeconds }}
+                  - sleep {{ .Values.core.api.preStopSleepSeconds }}
           {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "bamf.fullname" . }}-api-config
-        {{- with .Values.api.extraVolumes }}
+        {{- with .Values.core.api.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.api.nodeSelector }}
+      {{- with .Values.core.api.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.api.affinity }}
+      {{- with .Values.core.api.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.api.tolerations }}
+      {{- with .Values.core.api.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+
+{{- end }}

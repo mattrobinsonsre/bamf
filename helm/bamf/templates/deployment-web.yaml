@@ -1,4 +1,4 @@
-{{- if .Values.web.standalone }}
+{{- if .Values.core.web.standalone }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,19 +7,19 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: web
 spec:
-  replicas: {{ .Values.web.replicas }}
+  replicas: {{ .Values.core.web.replicas }}
   selector:
     matchLabels:
       {{- include "bamf.web.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.web.podAnnotations }}
+      {{- with .Values.core.web.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "bamf.web.selectorLabels" . | nindent 8 }}
-        {{- with .Values.web.podLabels }}
+        {{- with .Values.core.web.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -28,26 +28,26 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "bamf.serviceAccountName" . }}
-      terminationGracePeriodSeconds: {{ .Values.web.terminationGracePeriodSeconds | default 60 }}
-      {{- with .Values.web.podSecurityContext }}
+      terminationGracePeriodSeconds: {{ .Values.core.web.terminationGracePeriodSeconds | default 60 }}
+      {{- with .Values.core.web.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.web.priorityClassName }}
+      {{- with .Values.core.web.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
-      {{- with .Values.web.topologySpreadConstraints }}
+      {{- with .Values.core.web.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: web
-          {{- with .Values.web.securityContext }}
+          {{- with .Values.core.web.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: {{ include "bamf.web.image" . }}
-          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.core.web.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 3000
@@ -55,14 +55,14 @@ spec:
           env:
             - name: API_URL
               value: "http://{{ include "bamf.fullname" . }}-api:8000"
-            {{- with .Values.web.extraEnv }}
+            {{- with .Values.core.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
-            {{- with .Values.web.extraVolumeMounts }}
+            {{- with .Values.core.web.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.web.startupProbe }}
+          {{- with .Values.core.web.startupProbe }}
           startupProbe:
             httpGet:
               path: /
@@ -73,40 +73,40 @@ spec:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: {{ hasKey .Values.web.livenessProbe "initialDelaySeconds" | ternary .Values.web.livenessProbe.initialDelaySeconds 10 }}
-            periodSeconds: {{ hasKey .Values.web.livenessProbe "periodSeconds" | ternary .Values.web.livenessProbe.periodSeconds 10 }}
-            timeoutSeconds: {{ hasKey .Values.web.livenessProbe "timeoutSeconds" | ternary .Values.web.livenessProbe.timeoutSeconds 1 }}
+            initialDelaySeconds: {{ hasKey .Values.core.web.livenessProbe "initialDelaySeconds" | ternary .Values.core.web.livenessProbe.initialDelaySeconds 10 }}
+            periodSeconds: {{ hasKey .Values.core.web.livenessProbe "periodSeconds" | ternary .Values.core.web.livenessProbe.periodSeconds 10 }}
+            timeoutSeconds: {{ hasKey .Values.core.web.livenessProbe "timeoutSeconds" | ternary .Values.core.web.livenessProbe.timeoutSeconds 1 }}
           readinessProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: {{ hasKey .Values.web.readinessProbe "initialDelaySeconds" | ternary .Values.web.readinessProbe.initialDelaySeconds 5 }}
-            periodSeconds: {{ hasKey .Values.web.readinessProbe "periodSeconds" | ternary .Values.web.readinessProbe.periodSeconds 5 }}
-            timeoutSeconds: {{ hasKey .Values.web.readinessProbe "timeoutSeconds" | ternary .Values.web.readinessProbe.timeoutSeconds 1 }}
+            initialDelaySeconds: {{ hasKey .Values.core.web.readinessProbe "initialDelaySeconds" | ternary .Values.core.web.readinessProbe.initialDelaySeconds 5 }}
+            periodSeconds: {{ hasKey .Values.core.web.readinessProbe "periodSeconds" | ternary .Values.core.web.readinessProbe.periodSeconds 5 }}
+            timeoutSeconds: {{ hasKey .Values.core.web.readinessProbe "timeoutSeconds" | ternary .Values.core.web.readinessProbe.timeoutSeconds 1 }}
           resources:
-            {{- toYaml .Values.web.resources | nindent 12 }}
-          {{- if gt (int .Values.web.preStopSleepSeconds) 0 }}
+            {{- toYaml .Values.core.web.resources | nindent 12 }}
+          {{- if gt (int .Values.core.web.preStopSleepSeconds) 0 }}
           lifecycle:
             preStop:
               exec:
                 command:
                   - /bin/sh
                   - -c
-                  - sleep {{ .Values.web.preStopSleepSeconds }}
+                  - sleep {{ .Values.core.web.preStopSleepSeconds }}
           {{- end }}
-      {{- with .Values.web.extraVolumes }}
+      {{- with .Values.core.web.extraVolumes }}
       volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.web.nodeSelector }}
+      {{- with .Values.core.web.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.web.affinity }}
+      {{- with .Values.core.web.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.web.tolerations }}
+      {{- with .Values.core.web.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

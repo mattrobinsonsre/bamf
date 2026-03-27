@@ -58,38 +58,39 @@ gateway:
   hostname: bamf.example.com
   tunnelDomain: tunnel.bamf.example.com
 
-postgresql:
-  bundled:
-    enabled: false
-  external:
-    enabled: true
-    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
-    port: 5432
-    database: bamf
-    username: bamf
-    sslmode: require
-    existingSecret: bamf-database-credentials
-    existingSecretKey: password
+core:
+  postgresql:
+    bundled:
+      enabled: false
+    external:
+      enabled: true
+      host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+      port: 5432
+      database: bamf
+      username: bamf
+      sslmode: require
+      existingSecret: bamf-database-credentials
+      existingSecretKey: password
 
-redis:
-  bundled:
-    enabled: false
-  external:
-    enabled: true
-    host: bamf-redis.xxx.cache.amazonaws.com
-    port: 6379
+  redis:
+    bundled:
+      enabled: false
+    external:
+      enabled: true
+      host: bamf-redis.xxx.cache.amazonaws.com
+      port: 6379
 
-auth:
-  local:
-    enabled: false
-  sso:
-    defaultProvider: auth0
-    oidc:
-      auth0:
-        enabled: true
-        issuerUrl: https://myorg.us.auth0.com/
-        existingSecret: bamf-auth0-credentials
-        existingSecretKey: client_secret
+  auth:
+    local:
+      enabled: false
+    sso:
+      defaultProvider: auth0
+      oidc:
+        auth0:
+          enabled: true
+          issuerUrl: https://myorg.us.auth0.com/
+          existingSecret: bamf-auth0-credentials
+          existingSecretKey: client_secret
 ```
 
 ## Component Configuration
@@ -97,38 +98,40 @@ auth:
 ### API Server
 
 ```yaml
-api:
-  replicas: 2
-  resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits: { cpu: "1", memory: 1Gi }
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-  config:
-    log_level: info
-    certificates:
-      user_ttl_hours: 12               # User cert lifetime
-      agent_ttl_hours: 8760            # Agent cert lifetime (1 year)
-      bridge_ttl_hours: 24             # Bridge cert lifetime
-    audit:
-      retention_days: 90
+core:
+  api:
+    replicas: 2
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+    config:
+      log_level: info
+      certificates:
+        user_ttl_hours: 12               # User cert lifetime
+        agent_ttl_hours: 8760            # Agent cert lifetime (1 year)
+        bridge_ttl_hours: 24             # Bridge cert lifetime
+      audit:
+        retention_days: 90
 ```
 
 ### Bridge
 
 ```yaml
-bridge:
-  replicas: 2
-  maxReplicas: 20
-  resources:
-    requests: { cpu: 250m, memory: 256Mi }
-    limits: { cpu: "2", memory: 1Gi }
-  autoscaling:
-    enabled: true
-    minReplicas: 2
+outpost:
+  bridge:
+    replicas: 2
     maxReplicas: 20
+    resources:
+      requests: { cpu: 250m, memory: 256Mi }
+      limits: { cpu: "2", memory: 1Gi }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 20
 ```
 
 The bridge is deployed as a StatefulSet with per-pod Services for SNI routing.
@@ -137,13 +140,14 @@ The bridge is deployed as a StatefulSet with per-pod Services for SNI routing.
 ### Web UI
 
 ```yaml
-web:
-  standalone:
-    enabled: true
-  replicas: 2
-  resources:
-    requests: { cpu: 50m, memory: 64Mi }
-    limits: { cpu: 200m, memory: 128Mi }
+core:
+  web:
+    standalone:
+      enabled: true
+    replicas: 2
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 128Mi }
 ```
 
 ## PostgreSQL
@@ -160,15 +164,16 @@ The bundled option deploys a single-replica PostgreSQL via the bitnami subchart.
 and data lives on a single PVC.
 
 ```yaml
-postgresql:
-  bundled:
-    enabled: true
-    auth:
-      database: bamf
-      username: bamf
-    primary:
-      persistence:
-        size: 20Gi
+core:
+  postgresql:
+    bundled:
+      enabled: true
+      auth:
+        database: bamf
+        username: bamf
+      primary:
+        persistence:
+          size: 20Gi
 ```
 
 ### External (Production)
@@ -196,52 +201,55 @@ for high availability:
   sessions. BAMF's database load is modest — most hot-path operations use Redis.
 - **Storage**: 20 GB minimum. Audit logs and session recordings are the primary
   storage consumers; size based on your retention policy (default 90 days).
-- **Read replica** (optional): Configure `postgresql.external.readReplica` to
+- **Read replica** (optional): Configure `core.postgresql.external.readReplica` to
   offload read-heavy queries (audit log, session listing) from the primary.
 
 **Credential options** (pick one):
 
 ```yaml
 # Option 1: Existing K8s Secret (recommended for GitOps)
-postgresql:
-  external:
-    enabled: true
-    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
-    port: 5432
-    database: bamf
-    username: bamf
-    sslmode: require
-    existingSecret: bamf-database-credentials
-    existingSecretKey: password
+core:
+  postgresql:
+    external:
+      enabled: true
+      host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+      port: 5432
+      database: bamf
+      username: bamf
+      sslmode: require
+      existingSecret: bamf-database-credentials
+      existingSecretKey: password
 
 # Option 2: ExternalSecrets operator (syncs from cloud secret manager)
-postgresql:
-  external:
-    enabled: true
-    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
-    port: 5432
-    database: bamf
-    username: bamf
-    sslmode: require
-    externalSecret:
+core:
+  postgresql:
+    external:
       enabled: true
-      secretStoreRef:
-        name: aws-secrets-manager
-        kind: ClusterSecretStore
-      remoteRef:
-        key: production/bamf/database
-        property: password
+      host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+      port: 5432
+      database: bamf
+      username: bamf
+      sslmode: require
+      externalSecret:
+        enabled: true
+        secretStoreRef:
+          name: aws-secrets-manager
+          kind: ClusterSecretStore
+        remoteRef:
+          key: production/bamf/database
+          property: password
 
 # Option 3: Inline password (avoid in GitOps — stored in values file)
-postgresql:
-  external:
-    enabled: true
-    host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
-    port: 5432
-    database: bamf
-    username: bamf
-    sslmode: require
-    password: "secret"
+core:
+  postgresql:
+    external:
+      enabled: true
+      host: bamf-db.cluster-xxx.us-east-1.rds.amazonaws.com
+      port: 5432
+      database: bamf
+      username: bamf
+      sslmode: require
+      password: "secret"
 ```
 
 ## Redis
@@ -258,9 +266,10 @@ The bundled option deploys a single-replica Redis via the bitnami subchart.
 **Do not use this in production.**
 
 ```yaml
-redis:
-  bundled:
-    enabled: true
+core:
+  redis:
+    bundled:
+      enabled: true
 ```
 
 ### External (Production)
@@ -280,7 +289,7 @@ Use a managed Redis service with replication and automatic failover:
 - **Redis 7+**
 - **Replication enabled** with at least one replica for automatic failover
   (e.g., ElastiCache Multi-AZ with auto-failover, Memorystore Standard Tier)
-- **Encryption in transit** (TLS) — configure via `redis.external.tls: true`
+- **Encryption in transit** (TLS) — configure via `core.redis.external.tls: true`
   if your provider requires it
 - **Encryption at rest** enabled (default on most providers)
 - **Instance sizing**: Start with 1-2 GB memory (e.g., AWS `cache.t4g.small`,
@@ -296,16 +305,17 @@ Use a managed Redis service with replication and automatic failover:
 **Helm configuration:**
 
 ```yaml
-redis:
-  bundled:
-    enabled: false
-  external:
-    enabled: true
-    host: bamf-redis.xxx.cache.amazonaws.com
-    port: 6379
-    # If authentication is required:
-    existingSecret: bamf-redis-credentials
-    existingSecretKey: password
+core:
+  redis:
+    bundled:
+      enabled: false
+    external:
+      enabled: true
+      host: bamf-redis.xxx.cache.amazonaws.com
+      port: 6379
+      # If authentication is required:
+      existingSecret: bamf-redis-credentials
+      existingSecretKey: password
 ```
 
 **ElastiCache cluster mode note:** If using ElastiCache with cluster mode

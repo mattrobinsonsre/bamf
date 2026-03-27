@@ -1,6 +1,6 @@
 # RBAC for outpost join job — allows creating/updating K8s Secrets
 # for proxy internal token and bridge bootstrap token.
-{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not (hasKey .Values "api" | ternary .Values.api.enabled true)) }}
+{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not .Values.core.enabled) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: v1
 kind: ServiceAccount

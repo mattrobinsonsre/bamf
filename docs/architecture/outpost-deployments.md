@@ -256,46 +256,48 @@ and `*.tunnel.{domain}`.
 ### Full Platform (API + co-located outpost)
 
 ```yaml
-api:
-  enabled: true
-web:
-  enabled: true
+core:
+  api:
+    enabled: true
+  web:
+    enabled: true
+  postgresql:
+    bundled:
+      enabled: true
+  redis:
+    bundled:
+      enabled: true
 outpost:
   enabled: true
   name: "us-east"        # Required when outpost.enabled=true
-postgresql:
-  bundled:
-    enabled: true
-redis:
-  bundled:
-    enabled: true
 ```
 
 ### Remote Outpost (proxy+bridge only)
 
 ```yaml
-api:
-  enabled: false
-web:
-  enabled: false
+core:
+  api:
+    enabled: false
+  web:
+    enabled: false
+  postgresql:
+    bundled:
+      enabled: false
+    external:
+      enabled: false
+  redis:
+    bundled:
+      enabled: false
+    external:
+      enabled: false
 outpost:
   enabled: true
   name: "eu"
   joinToken: "bamf_out_..."
   apiUrl: "https://bamf.example.com"
-postgresql:
-  bundled:
-    enabled: false
-  external:
-    enabled: false
-redis:
-  bundled:
-    enabled: false
-  external:
-    enabled: false
 ```
 
-When `outpost.enabled: true` and `api.enabled: false`, the chart deploys:
+When `outpost.enabled: true` and `core.api.enabled: false`, the chart deploys:
 - Proxy Deployment + Service + ConfigMap + HPA + PDB
 - Bridge StatefulSet + Headless Service + Per-Pod Services + HPA + PDB
 - Outpost Join Job (pre-install hook)
@@ -307,7 +309,7 @@ When `outpost.enabled: true` and `api.enabled: false`, the chart deploys:
 ### Validation
 
 - `outpost.enabled` requires `outpost.name` to be non-empty
-- `outpost.enabled` with `api.enabled: false` requires `outpost.joinToken`
+- `outpost.enabled` with `core.api.enabled: false` requires `outpost.joinToken`
   and `outpost.apiUrl`
 - `outpost.name` must match `[a-z][a-z0-9-]*` (DNS label)
 

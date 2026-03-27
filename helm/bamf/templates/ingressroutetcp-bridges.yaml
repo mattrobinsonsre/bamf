@@ -1,10 +1,10 @@
 # Traefik IngressRouteTCP for per-bridge TLS passthrough (SNI routing)
 # SNI routing docs: docs/architecture/tunnels.md
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
+{{- if and .Values.outpost.enabled .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
 {{- $fullName := include "bamf.fullname" . -}}
 {{- $labels := include "bamf.labels" . -}}
-{{- $maxReplicas := int .Values.bridge.autoscaling.maxReplicas -}}
-{{- $tunnelPort := int .Values.bridge.tunnelPort -}}
+{{- $maxReplicas := int .Values.outpost.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelPort := int .Values.outpost.bridge.tunnelPort -}}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" -}}
 
 # IngressRouteTCP per bridge pod — TLS passthrough with SNI matching

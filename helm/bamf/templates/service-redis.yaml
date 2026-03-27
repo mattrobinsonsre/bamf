@@ -1,4 +1,4 @@
-{{- if .Values.redis.bundled.enabled }}
+{{- if .Values.core.redis.bundled.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,4 +1,4 @@
-{{- if .Values.api.pdb.enabled }}
+{{- if .Values.core.api.pdb.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -7,7 +7,7 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
-  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  minAvailable: {{ .Values.core.api.pdb.minAvailable }}
   selector:
     matchLabels:
       {{- include "bamf.api.selectorLabels" . | nindent 6 }}

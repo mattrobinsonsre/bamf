@@ -1,4 +1,4 @@
-{{- if .Values.redis.bundled.enabled }}
+{{- if .Values.core.redis.bundled.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,13 +21,13 @@ spec:
     spec:
       containers:
         - name: redis
-          image: {{ include "bamf.image" (dict "imageValues" .Values.redis.bundled.image "appVersion" .Values.redis.bundled.image.tag "globalRegistry" .Values.global.imageRegistry) }}
-          imagePullPolicy: {{ .Values.redis.bundled.image.pullPolicy | default "IfNotPresent" }}
+          image: {{ include "bamf.image" (dict "imageValues" .Values.core.redis.bundled.image "appVersion" .Values.core.redis.bundled.image.tag "globalRegistry" .Values.global.imageRegistry) }}
+          imagePullPolicy: {{ .Values.core.redis.bundled.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - name: tcp-redis
               containerPort: 6379
               protocol: TCP
-          {{- if .Values.redis.bundled.auth.enabled }}
+          {{- if .Values.core.redis.bundled.auth.enabled }}
           args:
             - --requirepass
             - $(REDIS_PASSWORD)
@@ -58,16 +58,16 @@ spec:
             - name: data
               mountPath: /data
           resources:
-            {{- toYaml .Values.redis.bundled.resources | nindent 12 }}
+            {{- toYaml .Values.core.redis.bundled.resources | nindent 12 }}
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        {{- if .Values.redis.bundled.persistence.storageClass }}
-        storageClassName: {{ .Values.redis.bundled.persistence.storageClass | quote }}
+        {{- if .Values.core.redis.bundled.persistence.storageClass }}
+        storageClassName: {{ .Values.core.redis.bundled.persistence.storageClass | quote }}
         {{- end }}
         resources:
           requests:
-            storage: {{ .Values.redis.bundled.persistence.size }}
+            storage: {{ .Values.core.redis.bundled.persistence.size }}
 {{- end }}

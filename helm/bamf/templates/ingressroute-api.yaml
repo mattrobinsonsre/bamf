@@ -1,6 +1,6 @@
 # Traefik IngressRoute for API + catch-all routing
 # Routing docs: docs/admin/deployment.md
-{{- if and .Values.gateway.enabled (eq .Values.gateway.provider "traefik") }}
+{{- if and .Values.core.enabled .Values.gateway.enabled (eq .Values.gateway.provider "traefik") }}
 {{- $fullName := include "bamf.fullname" . }}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
 apiVersion: traefik.io/v1alpha1
@@ -17,7 +17,7 @@ spec:
   entryPoints:
     - {{ $entryPoint }}
   routes:
-    {{- if .Values.proxy.enabled }}
+    {{- if .Values.outpost.enabled }}
     # Kube proxy routes go to proxy service (must come before general /api)
     - match: Host(`{{ .Values.gateway.hostname }}`) && PathPrefix(`/api/v1/kube`)
       kind: Rule
@@ -41,7 +41,7 @@ spec:
       services:
         - name: {{ $fullName }}-api
           port: 8000
-    {{- if not .Values.web.standalone }}
+    {{- if not .Values.core.web.standalone }}
     # When web UI is not standalone, API serves everything (catch-all)
     - match: Host(`{{ .Values.gateway.hostname }}`)
       kind: Rule
