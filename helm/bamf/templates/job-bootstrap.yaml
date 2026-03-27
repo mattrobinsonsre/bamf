@@ -1,4 +1,4 @@
-{{- if .Values.core.enabled }}
+{{- if and .Values.core.enabled .Values.core.bootstrap }}
 {{- if or (and .Values.core.bootstrap.adminEmail .Values.core.bootstrap.adminPassword) .Values.core.bootstrap.existingSecret }}
 apiVersion: batch/v1
 kind: Job
