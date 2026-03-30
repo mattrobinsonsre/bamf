@@ -12,7 +12,7 @@ python = "^3.13"
 fastapi = "^0.135.2"
 uvicorn = {extras = ["standard"], version = "^0.42.0"}
 pydantic = {extras = ["email"], version = "^2.10.0"}
-pydantic-settings = "^2.7.0"
+pydantic-settings = "^2.13.1"
 sqlalchemy = {extras = ["asyncio"], version = "^2.0.0"}
 asyncpg = "^0.30.0"
 alembic = "^1.14.0"
