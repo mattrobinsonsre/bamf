@@ -31,7 +31,7 @@ restrictions.
 
 | Path | What it is | Language |
 |---|---|---|
-| `services/` | API server (FastAPI) **and** the HTTP reverse proxy for web-app access — one codebase. Poetry-managed. | Python 3.13 |
+| `services/` | API server (FastAPI) **and** the HTTP reverse proxy for web-app access — one codebase. Poetry-managed. | Python 3.14 |
 | `cmd/` | Go binaries: `bamf` (CLI), `bamf-bridge` (tunnel gateway), `bamf-agent` (target-side agent). | Go |
 | `pkg/` | Shared Go packages: `bridge`, `agent`, `ssh`, `dbproxy`, `tunnel`, `certs`, `apiclient` (typed HTTP client for the Python API), `config`. | Go |
 | `web/` | Next.js 16 frontend (React 19, TypeScript). | TypeScript |

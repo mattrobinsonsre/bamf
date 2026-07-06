@@ -62,7 +62,7 @@ async def register_instance(
                     "status": existing.get("status", "active"),
                 }
             )
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             logger.debug("Failed to parse existing agent instance entry")
 
     await r.hset(key, instance_id, entry)
@@ -96,7 +96,7 @@ async def select_agent_instance(
     for iid, raw in all_instances.items():
         try:
             data = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             continue
 
         # Skip stale instances
@@ -133,7 +133,7 @@ async def increment_instance_tunnels(r, agent_id: str, instance_id: str) -> None
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return
 
     data["tunnel_count"] = data.get("tunnel_count", 0) + 1
@@ -156,7 +156,7 @@ async def update_instance_tunnel_count(
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return
 
     data["tunnel_count"] = max(0, active_tunnels)
@@ -172,7 +172,7 @@ async def decrement_instance_tunnels(r, agent_id: str, instance_id: str) -> None
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return
 
     data["tunnel_count"] = max(0, data.get("tunnel_count", 0) - 1)
@@ -188,7 +188,7 @@ async def set_instance_has_relay(r, agent_id: str, instance_id: str, has_relay: 
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return
 
     data["has_relay"] = has_relay
@@ -204,7 +204,7 @@ async def drain_instance(r, agent_id: str, instance_id: str) -> None:
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return
 
     data["status"] = "draining"
@@ -243,7 +243,7 @@ async def cleanup_stale_instances(r, agent_id: str) -> int:
     for iid, raw in all_instances.items():
         try:
             data = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             await r.hdel(key, iid)
             removed += 1
             continue

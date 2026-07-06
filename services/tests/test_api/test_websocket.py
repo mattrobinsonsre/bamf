@@ -207,7 +207,7 @@ class TestWsHandshake:
 
     def _make_capture_writer(
         self,
-    ) -> tuple["_BufferTransport", asyncio.StreamWriter]:
+    ) -> tuple[_BufferTransport, asyncio.StreamWriter]:
         """Create a StreamWriter whose output can be inspected via the transport."""
         reader = asyncio.StreamReader()
         transport = _BufferTransport()

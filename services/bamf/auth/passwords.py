@@ -94,5 +94,5 @@ def verify_password(password: str, password_hash: str) -> bool:
         computed_hash = hash_bytes.hex()
 
         return secrets.compare_digest(computed_hash, stored_hash)
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return False

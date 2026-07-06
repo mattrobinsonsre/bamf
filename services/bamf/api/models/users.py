@@ -64,7 +64,7 @@ class UserResponse(UserBase, TimestampMixin):
     roles: list[UserRoleResponse] = Field(default_factory=list)
 
     @classmethod
-    def from_db(cls, user: Any, role_assignments: list[Any] | None = None) -> "UserResponse":
+    def from_db(cls, user: Any, role_assignments: list[Any] | None = None) -> UserResponse:
         """Create response from database model.
 
         Args:

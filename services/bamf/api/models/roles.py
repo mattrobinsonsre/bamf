@@ -47,7 +47,7 @@ class RoleResponse(RoleBase, TimestampMixin):
     kubernetes_groups: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_db(cls, role: Any) -> "RoleResponse":
+    def from_db(cls, role: Any) -> RoleResponse:
         """Create response from a custom database role."""
         return cls(
             name=role.name,
@@ -61,7 +61,7 @@ class RoleResponse(RoleBase, TimestampMixin):
         )
 
     @classmethod
-    def builtin(cls, name: str, description: str, now: datetime) -> "RoleResponse":
+    def builtin(cls, name: str, description: str, now: datetime) -> RoleResponse:
         """Create response for a built-in role."""
         return cls(
             name=name,

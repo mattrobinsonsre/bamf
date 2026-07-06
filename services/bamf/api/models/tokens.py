@@ -56,7 +56,7 @@ class JoinTokenResponse(BAMFBaseModel):
     created_by: str
 
     @classmethod
-    def from_db(cls, token: "JoinToken") -> "JoinTokenResponse":
+    def from_db(cls, token: JoinToken) -> JoinTokenResponse:
         """Create response from database model."""
         return cls(
             id=token.id,
