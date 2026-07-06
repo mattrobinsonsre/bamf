@@ -9,6 +9,7 @@ Returns empty groups — role resolution (including internal role_assignments
 lookup) is handled by process_login() for all providers uniformly.
 """
 
+import asyncio
 from typing import Any
 
 from sqlalchemy import select
@@ -78,7 +79,7 @@ class LocalConnector(SSOConnector):
         if not user or not user.password_hash:
             raise ValueError("Invalid credentials")
 
-        if not verify_password(password, user.password_hash):
+        if not await asyncio.to_thread(verify_password, password, user.password_hash):
             raise ValueError("Invalid credentials")
 
         if not user.is_active:
