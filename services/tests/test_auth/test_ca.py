@@ -143,7 +143,7 @@ class TestIssueSessionCertificate:
         assert cert is not None
         assert key is not None
 
-    def test_session_cert_has_4_san_uris(self):
+    def test_session_cert_binds_resource_type(self):
         ca = ca_module.CertificateAuthority.generate()
         cert, _ = ca.issue_session_certificate(
             session_id="sess-123",
@@ -151,14 +151,28 @@ class TestIssueSessionCertificate:
             bridge_id="bridge-0",
             subject_cn="alice@example.com",
             role="developer",
+            resource_type="ssh-audit",
         )
         # parse_san_uris returns a dict keyed by URI type
         uris = ca_module.parse_san_uris(cert)
-        assert len(uris) == 4
+        assert len(uris) == 5
         assert uris["session"] == "sess-123"
         assert uris["resource"] == "web-01"
         assert uris["bridge"] == "bridge-0"
         assert uris["role"] == "developer"
+        # The audit-critical resource type is bound into the (CA-signed) cert.
+        assert uris["type"] == "ssh-audit"
+
+    def test_session_cert_omits_type_when_unset(self):
+        ca = ca_module.CertificateAuthority.generate()
+        cert, _ = ca.issue_session_certificate(
+            session_id="s",
+            resource_name="r",
+            bridge_id="b",
+            subject_cn="alice@example.com",
+        )
+        uris = ca_module.parse_san_uris(cert)
+        assert "type" not in uris
 
     def test_session_cert_short_ttl(self):
         ca = ca_module.CertificateAuthority.generate()
