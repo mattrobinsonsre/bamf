@@ -11,10 +11,14 @@ We recommend always running the latest release.
 
 ## Reporting a Vulnerability
 
-To report a security vulnerability, please
-[open a GitHub issue](https://github.com/mattrobinsonsre/bamf/issues/new).
-Include a description of the vulnerability, steps to reproduce, and affected
-versions if known.
+**Please do not open a public issue for security vulnerabilities** — a public
+issue discloses the flaw before a fix is available.
+
+Report privately through GitHub's private vulnerability reporting:
+[**Report a vulnerability**](https://github.com/mattrobinsonsre/bamf/security/advisories/new).
+Include a description, steps to reproduce, affected versions, and any
+proof-of-concept. We aim to acknowledge reports within a few working days and
+will coordinate a fix and a disclosure timeline with you.
 
 ## Security Design
 
