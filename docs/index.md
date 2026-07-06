@@ -13,6 +13,7 @@ New to the project? Read the [README](../README.md) first, then
 - [Getting started](getting-started.md) — install and first access.
 - [Comparison with Teleport](comparison.md) — features and licensing.
 - [Development guide](development.md) — the local Tilt stack.
+- [Releasing](releasing.md) — how to cut a release + the pre-release gates.
 
 ## Architecture
 

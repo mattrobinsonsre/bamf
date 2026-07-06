@@ -201,8 +201,11 @@ Routing rules of thumb:
 
 Releases are automated in `.github/workflows/ci.yml`: pushing a semver tag
 (`vX.Y.Z`) builds multi-arch images, publishes the Helm chart to the OCI
-registry, attaches Go binaries + DEB/RPM packages, and creates the GitHub
-Release. A failed tag pipeline auto-deletes the tag (reuse the version).
+registry, attaches Go binaries + SBOMs, and creates the GitHub Release. A failed
+tag pipeline auto-deletes the tag (reuse the version). The full mechanical
+how-to — cutting, verifying artifacts, the version flow, and the release-notes
+template — is in [`docs/releasing.md`](docs/releasing.md); the gates below run
+**before** you tag.
 
 **Before tagging any minor or major release, run a pre-release audit and land
 its fixes as a dedicated `docs:`/`chore:` PR.** Enumerate everything merged

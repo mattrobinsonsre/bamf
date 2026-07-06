@@ -33,6 +33,9 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
 - `make db-migrate` — Alembic migrations. `make proto` — regenerate protobuf.
 - `make security-scan` — govulncheck + pip-audit. `make pentest` — SAST + Trivy + DAST.
 - Deploy: Helm chart at `helm/bamf/` — see [docs/admin/deployment.md](docs/admin/deployment.md).
+- Release: tag `vX.Y.Z` → automated GitHub Actions pipeline (images + Helm chart
+  + binaries + SBOMs). Process + pre-release gates:
+  [docs/releasing.md](docs/releasing.md) + [AGENTS.md](AGENTS.md#release-discipline).
 
 ## Codebase map
 
