@@ -30,6 +30,7 @@ Changes to response shapes must be coordinated with web UI auth code.
 import base64
 import hashlib
 from datetime import datetime
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -72,6 +73,39 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 logger = get_logger(__name__)
 
 
+# --- redirect_uri allowlist (prevents authorization-code injection) ---
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _origin(url: str) -> tuple[str, str, int] | None:
+    """Return (scheme, host, port) with the scheme's default port applied, or
+    None if the URL isn't an http(s) URL with a host."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return (parsed.scheme, parsed.hostname, port)
+
+
+def _redirect_uri_allowed(redirect_uri: str) -> bool:
+    """Allowlist the client redirect_uri to prevent open-redirect /
+    authorization-code injection: the attacker cannot start a flow and have the
+    one-time code delivered to a host they control.
+
+    Permitted targets:
+    - loopback callbacks (the CLI): http/https on 127.0.0.1 / localhost / ::1,
+      any port and path (RFC 8252 native-app pattern);
+    - the Web UI: the same origin as the configured callback_base_url.
+    """
+    origin = _origin(redirect_uri)
+    if origin is None:
+        return False
+    if origin[1] in _LOOPBACK_HOSTS:
+        return True
+    base = _origin(settings.auth.callback_base_url)
+    return base is not None and origin == base
+
+
 @router.get("/providers", response_model=ProvidersResponse)
 async def list_providers() -> ProvidersResponse:
     """List configured auth providers.
@@ -109,6 +143,13 @@ async def authorize(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only S256 code_challenge_method is supported",
+        )
+
+    if not _redirect_uri_allowed(redirect_uri):
+        logger.warning("Authorize: rejected redirect_uri", redirect_uri=redirect_uri)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="redirect_uri is not allowed",
         )
 
     # Resolve provider

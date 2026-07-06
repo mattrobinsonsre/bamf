@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from bamf.api.dependencies import get_current_session, require_admin
-from bamf.api.routers.auth import _verify_pkce, router
+from bamf.api.routers.auth import _redirect_uri_allowed, _verify_pkce, router
 from bamf.auth.auth_state import AuthCode
 from bamf.auth.sessions import Session
 from bamf.db.session import get_db
@@ -163,6 +163,59 @@ class TestAuthorize:
             )
         assert resp.status_code == 400
         assert "Provider not found" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_disallowed_redirect_uri(self, auth_client):
+        # A redirect_uri that is neither loopback nor the configured web origin
+        # is rejected before any provider work — blocks auth-code injection.
+        with patch("bamf.api.routers.auth.settings") as mock_settings:
+            mock_settings.auth.callback_base_url = "https://bamf.example.com"
+            resp = await auth_client.get(
+                "/api/v1/auth/authorize",
+                params={
+                    "redirect_uri": "https://evil.example/callback",
+                    "code_challenge": "test",
+                    "state": "test",
+                    "response_type": "code",
+                    "code_challenge_method": "S256",
+                    "provider": "local",
+                },
+            )
+        assert resp.status_code == 400
+        assert "redirect_uri" in resp.json()["detail"]
+
+
+class TestRedirectURIAllowlist:
+    def test_loopback_allowed(self):
+        for uri in (
+            "http://127.0.0.1:53123/callback",
+            "http://localhost:8888/callback",
+            "https://127.0.0.1/callback",
+            "http://[::1]:9000/callback",
+        ):
+            assert _redirect_uri_allowed(uri) is True, uri
+
+    def test_web_origin_allowed(self):
+        with patch("bamf.api.routers.auth.settings") as mock_settings:
+            mock_settings.auth.callback_base_url = "https://bamf.example.com"
+            assert _redirect_uri_allowed("https://bamf.example.com/auth/callback") is True
+            # default-port normalization (:443 == implicit https port)
+            assert _redirect_uri_allowed("https://bamf.example.com:443/auth/callback") is True
+
+    def test_rejects_external_and_malformed(self):
+        with patch("bamf.api.routers.auth.settings") as mock_settings:
+            mock_settings.auth.callback_base_url = "https://bamf.example.com"
+            for uri in (
+                "https://evil.example/callback",
+                "https://bamf.example.com.evil.example/callback",
+                "http://bamf.example.com/callback",  # scheme mismatch
+                "https://bamf.example.com:8443/callback",  # port mismatch
+                "javascript:alert(1)",
+                "//evil.example",
+                "not a url",
+                "",
+            ):
+                assert _redirect_uri_allowed(uri) is False, uri
 
 
 # ── Tests: CA Certificate ────────────────────────────────────────────────
