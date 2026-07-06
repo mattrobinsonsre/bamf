@@ -918,6 +918,21 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	s.pendingConns[sessionID] = pc
 	s.pendingConnsMu.Unlock()
 
+	// If this handler panics after registering (the outer recover can't see
+	// sessionID), our own select-timeout cleanup never runs, so the pending
+	// entry would leak until the peer matches — or forever if it never arrives.
+	// Recover here and evict it. On the normal path recover() is nil, so this is
+	// a no-op; after a successful match the entry is already gone (cleanupPending
+	// is idempotent).
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("panic in tunnel handler after pending registration",
+				"session_id", shortID(sessionID), "panic", r)
+			s.cleanupPending(sessionID)
+			conn.Close()
+		}
+	}()
+
 	s.logger.Debug("connection waiting for match",
 		"protocol", protocol,
 		"session_id", shortID(sessionID),
