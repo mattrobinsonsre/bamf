@@ -169,6 +169,15 @@ class RateLimitConfig(BaseModel):
         default=10,
         description="Per-IP limit for /auth/* endpoints — login brute-force defence",
     )
+    trusted_proxy_hops: int = Field(
+        default=1,
+        description=(
+            "Number of trusted reverse proxies in front of the API. The client IP "
+            "for rate-limit keying is taken this many hops in from the right of "
+            "X-Forwarded-For (the leftmost entries are client-supplied and spoofable). "
+            "1 = a single ingress; raise it if a CDN/LB sits in front of the ingress."
+        ),
+    )
 
 
 class AuditConfig(BaseSettings):

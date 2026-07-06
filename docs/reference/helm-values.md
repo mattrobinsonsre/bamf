@@ -69,7 +69,29 @@ core:
         bridge_ttl_hours: 24         # Bridge cert lifetime
       audit:
         retention_days: 90           # Audit log retention
+      rate_limit:                    # Application-level rate limiting (see below)
+        enabled: true
+        requests_per_minute: 100     # Per-IP limit for unauthenticated requests
+        authenticated_requests_per_minute: 1000  # Per-IP limit once authenticated
+        auth_requests_per_minute: 10 # Per-IP limit for /auth/* (login brute-force defence)
+        trusted_proxy_hops: 1        # Trusted reverse-proxy hops for client-IP resolution
 ```
+
+### Application-level rate limiting
+
+Separate from the ingress-level `gateway.rateLimit` above, the API runs its own
+Redis-backed sliding-window limiter (`core.api.config.rate_limit`) — defence in
+depth, and the only tier that can distinguish authenticated from anonymous
+traffic and apply a strict per-IP limit to `/auth/*` for login brute-force
+defence. A per-tier value of `0` means unlimited; the limiter fails open if
+Redis is unavailable.
+
+The client IP for keying is read from `X-Forwarded-For`, counting
+`trusted_proxy_hops` entries in from the right (the entries your own trusted
+proxies appended). The leftmost entries are client-supplied and spoofable, so
+they are never used. Set `trusted_proxy_hops` to the number of trusted reverse
+proxies in front of the API — `1` for a single ingress; raise it if a CDN or
+load balancer sits in front of the ingress.
 
 ## Bridge
 

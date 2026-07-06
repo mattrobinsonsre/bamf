@@ -44,19 +44,19 @@ type Server struct {
 	// TLS configuration — protected by certMu for hot-swap during renewal.
 	// The tls.Config uses GetCertificate callbacks that read currentCert
 	// under certMu, so renewed certs are used for new TLS handshakes.
-	tlsConfig  *tls.Config
-	mtlsConfig *tls.Config // For tunnel connections (mTLS with session certs)
-	certMu     sync.RWMutex
+	tlsConfig     *tls.Config
+	mtlsConfig    *tls.Config // For tunnel connections (mTLS with session certs)
+	certMu        sync.RWMutex
 	currentCert   *tls.Certificate // Hot-swappable via certMu
 	certNotBefore time.Time
 	certExpiry    time.Time
 
 	// Session management
-	tunnels      *TunnelManager
-	relays       *RelayPool
-	apiClient    *APIClient
-	sshProxy     *sshproxy.Proxy
-	metrics      *metricsProvider
+	tunnels   *TunnelManager
+	relays    *RelayPool
+	apiClient *APIClient
+	sshProxy  *sshproxy.Proxy
+	metrics   *metricsProvider
 
 	// Pending connections waiting for match (keyed by session ID)
 	pendingConns   map[string]*pendingConnection
@@ -80,7 +80,7 @@ type Server struct {
 type pendingConnection struct {
 	conn         net.Conn
 	sessionID    string
-	isClient     bool   // true = CLI client, false = agent
+	isClient     bool // true = CLI client, false = agent
 	resource     string
 	resourceType string // e.g., "ssh", "ssh-audit", "tunnel"
 	receivedAt   time.Time
@@ -707,6 +707,26 @@ func shortID(id string) string {
 	return id[:16] + "..."
 }
 
+// resolveResourceType returns the authoritative resource type for routing.
+// The CA-signed session cert (certType) wins over the client-supplied wire-line
+// type — a client must not be able to force an unrecorded splice by lying on the
+// wire. A legacy cert without the type SAN (certType == "") falls back to the
+// wire line. Invariant guarded by tests: cert always wins when present.
+func resolveResourceType(wireType, certType string) string {
+	if certType != "" {
+		return certType
+	}
+	return wireType
+}
+
+// bridgePinMatches reports whether a session cert's bridge pin authorizes this
+// bridge. Fails closed: an empty pin (no bamf://bridge/ SAN) never matches, even
+// against an empty bridge ID — the CA always sets the pin, so an absent one is
+// an attempted replay against the wrong bridge.
+func bridgePinMatches(certBridgeID, ownBridgeID string) bool {
+	return certBridgeID != "" && certBridgeID == ownBridgeID
+}
+
 // handleTunnelConnection handles an mTLS tunnel connection.
 // It validates the session cert, matches client with agent, and splices the tunnel.
 // The bridge is protocol-agnostic — it never interprets the tunneled bytes.
@@ -797,17 +817,15 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	// The CA-signed session cert is authoritative for the resource type — it
 	// decides recording/audit routing. A client can't spoof it via the wire-line
 	// type=. (Legacy certs without the type SAN fall back to the wire line.)
-	if info.ResourceType != "" {
-		if resourceType != info.ResourceType {
-			s.logger.Warn("wire-line type disagrees with session cert; using cert",
-				"wire", resourceType, "cert", info.ResourceType, "session_id", shortID(sessionID))
-		}
-		resourceType = info.ResourceType
+	if info.ResourceType != "" && resourceType != info.ResourceType {
+		s.logger.Warn("wire-line type disagrees with session cert; using cert",
+			"wire", resourceType, "cert", info.ResourceType, "session_id", shortID(sessionID))
 	}
+	resourceType = resolveResourceType(resourceType, info.ResourceType)
 
 	// Verify this connection is for this bridge. Fail closed: a session cert
 	// with no bridge pin (empty SAN) is also rejected — the CA always sets it.
-	if info.BridgeID != s.cfg.BridgeID {
+	if !bridgePinMatches(info.BridgeID, s.cfg.BridgeID) {
 		s.logger.Error("session cert is for different bridge",
 			"protocol", protocol,
 			"expected", s.cfg.BridgeID,
@@ -1427,7 +1445,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	username := params["user"]
 	database := params["database"]
 	password := params["password"]
-	dbType := params["db_type"]           // "postgres" or "mysql"
+	dbType := params["db_type"]               // "postgres" or "mysql"
 	auditSession := params["audit"] == "true" // capture queries for -audit resources
 
 	if dbType == "" {
@@ -1835,4 +1853,3 @@ func extractSessionInfo(cert *x509.Certificate) (sessionInfo, error) {
 	}
 	return info, nil
 }
-

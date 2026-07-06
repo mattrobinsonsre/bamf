@@ -19,6 +19,8 @@ from fastapi import HTTPException
 
 from bamf.api.dependencies import (
     _validate_client_cert,
+    get_agent_identity,
+    get_bridge_identity,
     get_current_session,
     require_admin,
     require_admin_or_audit,
@@ -278,3 +280,65 @@ class TestRequireAdminOrAudit:
         session = _make_session(roles=["audit"])
         result = await require_admin_or_audit(session)
         assert result is session
+
+
+# ── revocation enforcement (agent/bridge cert-auth) ──────────────────────
+
+
+class TestRevocationEnforcement:
+    """A revoked agent/bridge certificate must be rejected at cert-auth even
+    though it is otherwise valid and CA-signed. This is the whole invariant of
+    the revocation feature — enforcement lives in the dependency, not the helper.
+    """
+
+    def setup_method(self):
+        self.ca = CertificateAuthority.generate()
+
+    @pytest.mark.asyncio
+    async def test_revoked_agent_cert_returns_401(self):
+        cert, _ = self.ca.issue_service_certificate("agent-1", "agent")
+        header = _encode_cert(cert)
+        with (
+            patch("bamf.api.dependencies.get_ca", return_value=self.ca),
+            patch(
+                "bamf.auth.revocation.is_certificate_revoked",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_agent_identity(header)
+        assert exc_info.value.status_code == 401
+        assert "revoked" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_non_revoked_agent_cert_authenticates(self):
+        cert, _ = self.ca.issue_service_certificate("agent-1", "agent")
+        header = _encode_cert(cert)
+        with (
+            patch("bamf.api.dependencies.get_ca", return_value=self.ca),
+            patch(
+                "bamf.auth.revocation.is_certificate_revoked",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            identity = await get_agent_identity(header)
+        assert identity.name == "agent-1"
+
+    @pytest.mark.asyncio
+    async def test_revoked_bridge_cert_returns_401(self):
+        cert, _ = self.ca.issue_service_certificate("bridge-0", "bridge")
+        header = _encode_cert(cert)
+        with (
+            patch("bamf.api.dependencies.get_ca", return_value=self.ca),
+            patch(
+                "bamf.auth.revocation.is_certificate_revoked",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_bridge_identity(header)
+        assert exc_info.value.status_code == 401
+        assert "revoked" in exc_info.value.detail.lower()

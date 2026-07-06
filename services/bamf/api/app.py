@@ -69,6 +69,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await load_revoked_into_redis(db_session)
     logger.info("Certificate Authority initialized")
 
+    # Periodically re-seed the revocation denylist from Postgres so it survives a
+    # Redis restart/flush (enforcement reads only Redis on the hot path).
+    from bamf.auth.revocation import reconcile_revoked_loop
+
+    revocation_reconcile_task = asyncio.create_task(reconcile_revoked_loop())
+
     init_connectors()
     logger.info("SSO connectors initialized")
 
@@ -76,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Shutdown — signal SSE generators to close before tearing down connections
     logger.info("Shutting down BAMF API server")
+    revocation_reconcile_task.cancel()
     shutdown_event.set()
     # Brief pause so SSE generators see the event and close cleanly
     await asyncio.sleep(0.5)
@@ -127,6 +134,7 @@ def create_application() -> FastAPI:
             requests_per_minute=settings.rate_limit.requests_per_minute,
             authenticated_requests_per_minute=settings.rate_limit.authenticated_requests_per_minute,
             auth_requests_per_minute=settings.rate_limit.auth_requests_per_minute,
+            trusted_proxy_hops=settings.rate_limit.trusted_proxy_hops,
         )
 
     # Request ID middleware — propagate existing or generate new

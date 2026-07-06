@@ -158,7 +158,8 @@
                     "enabled": { "type": "boolean" },
                     "requests_per_minute": { "type": "integer", "minimum": 0 },
                     "authenticated_requests_per_minute": { "type": "integer", "minimum": 0 },
-                    "auth_requests_per_minute": { "type": "integer", "minimum": 0 }
+                    "auth_requests_per_minute": { "type": "integer", "minimum": 0 },
+                    "trusted_proxy_hops": { "type": "integer", "minimum": 1 }
                   }
                 }
               }

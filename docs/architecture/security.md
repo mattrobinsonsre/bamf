@@ -625,7 +625,11 @@ token's assigned name. This is mitigated by:
 ## Hardening Checklist
 
 - [x] TLS 1.3 on ingress and internal mTLS (default since v0.4.0)
-- [x] Rate limiting on public HTTP endpoints (default since v0.4.0)
+- [x] Ingress-level rate limiting on public HTTP endpoints (`gateway.rateLimit`)
+- [x] Application-level rate limiting (Redis sliding window, per-IP, strict
+      `/auth/*` tier for login brute-force defence — `core.api.config.rate_limit`)
+- [x] Certificate revocation denylist for leaked agent/bridge certs
+      (`POST /certificates/revoke`)
 - [x] SAST (Semgrep) and container image scanning (Trivy) in CI
 - [x] DAST (Nuclei) with custom templates validating auth, CORS, header injection
 - [ ] Use external SSO (not local auth) for production

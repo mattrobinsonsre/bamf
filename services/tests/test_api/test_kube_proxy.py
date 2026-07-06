@@ -267,6 +267,52 @@ class TestKubeProxyHappyPath:
         assert "transfer-encoding" not in headers
         assert "upgrade" not in headers
 
+    @pytest.mark.asyncio
+    async def test_client_supplied_trust_headers_stripped(self):
+        """Inbound X-Forwarded-* / X-Bamf-* / Impersonate-* from the client are
+        stripped before forwarding — otherwise a caller could forge
+        X-Forwarded-K8s-Groups=system:masters and escalate to cluster-admin via
+        the agent's impersonation, or point X-Bamf-Target at an SSRF host."""
+        from starlette.requests import Request
+
+        auth_result = _make_auth_result(email="alice@example.com", k8s_groups=["view"])
+        forward_resp = _make_httpx_response(status_code=200, content=b"{}")
+
+        scope = _make_request_scope(
+            headers={
+                "authorization": "Bearer tok",
+                "x-forwarded-email": "attacker@evil.example",
+                "x-forwarded-k8s-groups": "system:masters",
+                "x-bamf-target": "http://169.254.169.254/",
+                "impersonate-user": "system:admin",
+                "impersonate-group": "system:masters",
+            },
+        )
+        request = Request(scope=scope)
+        request._body = b""
+
+        with (
+            patch("bamf.proxy.kube.api_client.authorize", new_callable=AsyncMock) as mock_auth,
+            patch("bamf.proxy.kube._get_kube_client"),
+            patch("bamf.proxy.kube._forward", new_callable=AsyncMock) as mock_forward,
+        ):
+            mock_auth.return_value = auth_result
+            mock_forward.return_value = forward_resp
+
+            await kube_mod.kube_proxy(
+                resource_name="prod-cluster",
+                path="api/v1/pods",
+                request=request,
+            )
+
+        headers = mock_forward.call_args[0][3]
+        # No Impersonate-* forwarded (agent sets those from the trusted values).
+        assert not any(k.lower().startswith("impersonate-") for k in headers)
+        # The authoritative identity/groups/target win — not the spoofed inbound.
+        assert headers["X-Forwarded-Email"] == "alice@example.com"
+        assert headers["X-Forwarded-K8s-Groups"] == "view"
+        assert headers["X-Bamf-Target"] == "https://kubernetes.default.svc:6443"
+
 
 class TestKubeProxyMissingToken:
     """Tests for missing/invalid Bearer token."""

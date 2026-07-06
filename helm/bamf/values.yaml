@@ -60,6 +60,10 @@ core:
         requests_per_minute: 100
         authenticated_requests_per_minute: 1000
         auth_requests_per_minute: 10
+        # Trusted reverse-proxy hops in front of the API. The rate-limit client
+        # IP is read this many entries in from the right of X-Forwarded-For
+        # (leftmost entries are client-supplied/spoofable). 1 = a single ingress.
+        trusted_proxy_hops: 1
       # CORS — only origins listed here can make cross-origin requests.
       # Empty list (default) means CORS middleware is disabled (same-origin only).
       # Set to your BAMF hostname for production.

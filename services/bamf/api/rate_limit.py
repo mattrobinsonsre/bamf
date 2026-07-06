@@ -33,11 +33,24 @@ def _is_auth_path(path: str) -> bool:
     return any(path.startswith(p) for p in _AUTH_PREFIXES)
 
 
-def _get_client_ip(request: Request) -> str:
-    """Client IP, respecting X-Forwarded-For behind the ingress."""
+def _get_client_ip(request: Request, trusted_proxy_hops: int = 1) -> str:
+    """Client IP for rate-limit keying, resolved from X-Forwarded-For.
+
+    XFF is ``client, proxy1, ..., proxyN`` where each proxy appends the address
+    it received the request from — so the entries appended by our own trusted
+    proxies are the RIGHTMOST ones, and anything a client sends arrives on the
+    LEFT. Taking ``[0]`` (leftmost) is attacker-controlled: rotating a spoofed
+    XFF value lands every request in a fresh bucket and defeats the limiter
+    (including the auth-tier brute-force defence). Instead we count
+    ``trusted_proxy_hops`` in from the right — the IP our outermost trusted proxy
+    observed. Default 1 = a single ingress in front of the API.
+    """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            idx = min(max(trusted_proxy_hops, 1), len(parts))
+            return parts[-idx]
     if request.client:
         return request.client.host
     return "unknown"
@@ -52,12 +65,14 @@ class RateLimitMiddleware:
         requests_per_minute: int = 100,
         authenticated_requests_per_minute: int = 1000,
         auth_requests_per_minute: int = 10,
+        trusted_proxy_hops: int = 1,
         get_redis: Callable | None = None,
     ) -> None:
         self.app = app
         self.requests_per_minute = requests_per_minute
         self.authenticated_requests_per_minute = authenticated_requests_per_minute
         self.auth_requests_per_minute = auth_requests_per_minute
+        self.trusted_proxy_hops = trusted_proxy_hops
         self._get_redis = get_redis
 
     def _resolve_redis(self):  # type: ignore[no-untyped-def]
@@ -101,7 +116,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)  # Redis not initialized — fail open
             return
 
-        client_ip = _get_client_ip(request)
+        client_ip = _get_client_ip(request, self.trusted_proxy_hops)
         window_id = int(time.time()) // 60  # 60-second buckets
         key = f"bamf:ratelimit:{prefix}:{client_ip}:{window_id}"
 

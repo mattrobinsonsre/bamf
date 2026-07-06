@@ -77,7 +77,13 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
 - **Audit & session recording** — immutable audit log; SSH/DB/HTTP recording
   with redaction. [docs/architecture/security.md](docs/architecture/security.md).
 - **Certificates / internal CA** — BAMF-CA-issued short-lived certs (users 12h,
-  services 24h). [docs/admin/certificates.md](docs/admin/certificates.md).
+  services 24h). Revocation denylist for leaked agent/bridge certs
+  (`POST /certificates/revoke`, enforced at API cert-auth).
+  [docs/admin/certificates.md](docs/admin/certificates.md).
+- **Rate limiting** — ingress-level (`gateway.rateLimit`) plus an application
+  Redis sliding-window limiter (`core.api.config.rate_limit`) with a strict
+  `/auth/*` tier for login brute-force defence.
+  [docs/reference/helm-values.md](docs/reference/helm-values.md).
 - **Outpost deployments** — data-plane components deployed close to targets.
   [docs/architecture/outpost-deployments.md](docs/architecture/outpost-deployments.md).
 

@@ -177,3 +177,122 @@ class TestIssueServiceCertificate:
                 },
             )
         assert resp.status_code == 422  # Pydantic validation
+
+
+# ── Certificate revocation endpoints (RBAC + errors) ──────────────────────
+
+
+def _revoke_app(session: Session) -> FastAPI:
+    """Build an app that runs the REAL require_admin/require_admin_or_audit
+    gates against the given session, with a fake DB and no real Redis/PG."""
+    from bamf.api.dependencies import get_current_session as real_get_current_session
+    from bamf.db.session import get_db
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+
+    async def override_session() -> Session:
+        return session
+
+    async def override_db():
+        from unittest.mock import AsyncMock
+
+        yield AsyncMock()
+
+    app.dependency_overrides[real_get_current_session] = override_session
+    app.dependency_overrides[get_db] = override_db
+    return app
+
+
+async def _revoke_client(app: FastAPI) -> AsyncClient:
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+class TestRevokeCertificate:
+    @pytest.mark.asyncio
+    async def test_admin_can_revoke(self):
+        from unittest.mock import AsyncMock
+
+        app = _revoke_app(ADMIN_SESSION)
+        async with await _revoke_client(app) as client:
+            with (
+                patch(
+                    "bamf.api.routers.certificates.revoke_certificate",
+                    new_callable=AsyncMock,
+                ) as mock_revoke,
+                patch(
+                    "bamf.api.routers.certificates.log_audit_event",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                resp = await client.post(
+                    "/api/v1/certificates/revoke",
+                    json={"fingerprint": "aa:bb:cc", "reason": "leaked"},
+                )
+        assert resp.status_code == 200
+        mock_revoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_non_admin_forbidden(self):
+        app = _revoke_app(USER_SESSION)
+        async with await _revoke_client(app) as client:
+            resp = await client.post(
+                "/api/v1/certificates/revoke",
+                json={"fingerprint": "aa:bb:cc"},
+            )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_empty_fingerprint_rejected(self):
+        from unittest.mock import AsyncMock
+
+        app = _revoke_app(ADMIN_SESSION)
+        async with await _revoke_client(app) as client:
+            with (
+                patch(
+                    "bamf.api.routers.certificates.revoke_certificate",
+                    new_callable=AsyncMock,
+                ),
+                patch(
+                    "bamf.api.routers.certificates.log_audit_event",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                resp = await client.post(
+                    "/api/v1/certificates/revoke",
+                    json={"fingerprint": ""},
+                )
+        assert resp.status_code == 400
+
+
+class TestListRevokedCertificates:
+    @pytest.mark.asyncio
+    async def test_audit_can_list(self):
+        from unittest.mock import AsyncMock
+
+        audit_session = Session(
+            email="audit@example.com",
+            display_name="Auditor",
+            roles=["audit"],
+            provider_name="local",
+            created_at=_NOW,
+            expires_at=_NOW,
+            last_active_at=_NOW,
+        )
+        app = _revoke_app(audit_session)
+        async with await _revoke_client(app) as client:
+            with patch(
+                "bamf.api.routers.certificates.list_revoked_certificates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ):
+                resp = await client.get("/api/v1/certificates/revoked")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_plain_user_forbidden(self):
+        app = _revoke_app(USER_SESSION)
+        async with await _revoke_client(app) as client:
+            resp = await client.get("/api/v1/certificates/revoked")
+        assert resp.status_code == 403
