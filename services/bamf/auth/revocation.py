@@ -50,14 +50,19 @@ async def is_certificate_revoked(fingerprint: str) -> bool:
         return False
 
 
-async def revoke_certificate(
+async def record_revocation(
     db: AsyncSession,
     fingerprint: str,
     reason: str | None = None,
     revoked_by: str | None = None,
     subject_cn: str | None = None,
-) -> None:
-    """Add a certificate fingerprint to the durable denylist and the Redis set."""
+) -> str:
+    """Insert a revocation row (idempotent). Returns the normalized fingerprint.
+
+    DB-only — does NOT touch Redis, so a caller can commit the transaction first
+    and only then publish to the enforcement set (add_revoked_to_redis), avoiding
+    a Redis entry that outlives a rolled-back DB write.
+    """
     fingerprint = _normalize_fingerprint(fingerprint)
     if await db.get(RevokedCertificate, fingerprint) is None:
         db.add(
@@ -70,8 +75,28 @@ async def revoke_certificate(
             )
         )
         await db.flush()
-    redis = get_redis_client()
-    await redis.sadd(_REVOKED_SET, fingerprint)
+    return fingerprint
+
+
+async def add_revoked_to_redis(r, fingerprint: str) -> None:
+    """Add a fingerprint to the Redis enforcement denylist set."""
+    await r.sadd(_REVOKED_SET, _normalize_fingerprint(fingerprint))
+
+
+async def revoke_certificate(
+    db: AsyncSession,
+    fingerprint: str,
+    reason: str | None = None,
+    revoked_by: str | None = None,
+    subject_cn: str | None = None,
+) -> None:
+    """Add a certificate fingerprint to the durable denylist and the Redis set.
+
+    Convenience combining record_revocation + add_revoked_to_redis for callers
+    that don't need to control commit ordering.
+    """
+    fingerprint = await record_revocation(db, fingerprint, reason, revoked_by, subject_cn)
+    await add_revoked_to_redis(get_redis_client(), fingerprint)
     logger.info("certificate revoked", fingerprint=fingerprint[:16], revoked_by=revoked_by)
 
 

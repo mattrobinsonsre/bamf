@@ -184,9 +184,12 @@ class TestIssueServiceCertificate:
 
 def _revoke_app(session: Session) -> FastAPI:
     """Build an app that runs the REAL require_admin/require_admin_or_audit
-    gates against the given session, with a fake DB and no real Redis/PG."""
+    gates against the given session, with a fake DB + Redis (no real PG/Redis)."""
+    from unittest.mock import AsyncMock
+
     from bamf.api.dependencies import get_current_session as real_get_current_session
     from bamf.db.session import get_db
+    from bamf.redis.client import get_redis
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
@@ -195,12 +198,14 @@ def _revoke_app(session: Session) -> FastAPI:
         return session
 
     async def override_db():
-        from unittest.mock import AsyncMock
-
         yield AsyncMock()
+
+    async def override_redis():
+        return AsyncMock()
 
     app.dependency_overrides[real_get_current_session] = override_session
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_redis] = override_redis
     return app
 
 
@@ -208,29 +213,36 @@ async def _revoke_client(app: FastAPI) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
+def _patch_revoke_internals():
+    """Patch the revoke endpoint's collaborators (DB record, Redis add, agent
+    notify, audit) so the tests exercise routing/RBAC/errors, not real IO."""
+    from unittest.mock import AsyncMock
+
+    return (
+        patch(
+            "bamf.api.routers.certificates.record_revocation",
+            new_callable=AsyncMock,
+            return_value="aabbcc",
+        ),
+        patch("bamf.api.routers.certificates.add_revoked_to_redis", new_callable=AsyncMock),
+        patch("bamf.api.routers.certificates._notify_revoked_agent", new_callable=AsyncMock),
+        patch("bamf.api.routers.certificates.log_audit_event", new_callable=AsyncMock),
+    )
+
+
 class TestRevokeCertificate:
     @pytest.mark.asyncio
     async def test_admin_can_revoke(self):
-        from unittest.mock import AsyncMock
-
         app = _revoke_app(ADMIN_SESSION)
+        p_record, p_redis, p_notify, p_audit = _patch_revoke_internals()
         async with await _revoke_client(app) as client:
-            with (
-                patch(
-                    "bamf.api.routers.certificates.revoke_certificate",
-                    new_callable=AsyncMock,
-                ) as mock_revoke,
-                patch(
-                    "bamf.api.routers.certificates.log_audit_event",
-                    new_callable=AsyncMock,
-                ),
-            ):
+            with p_record as mock_record, p_redis, p_notify, p_audit:
                 resp = await client.post(
                     "/api/v1/certificates/revoke",
                     json={"fingerprint": "aa:bb:cc", "reason": "leaked"},
                 )
         assert resp.status_code == 200
-        mock_revoke.assert_awaited_once()
+        mock_record.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_non_admin_forbidden(self):
@@ -244,20 +256,10 @@ class TestRevokeCertificate:
 
     @pytest.mark.asyncio
     async def test_empty_fingerprint_rejected(self):
-        from unittest.mock import AsyncMock
-
         app = _revoke_app(ADMIN_SESSION)
+        p_record, p_redis, p_notify, p_audit = _patch_revoke_internals()
         async with await _revoke_client(app) as client:
-            with (
-                patch(
-                    "bamf.api.routers.certificates.revoke_certificate",
-                    new_callable=AsyncMock,
-                ),
-                patch(
-                    "bamf.api.routers.certificates.log_audit_event",
-                    new_callable=AsyncMock,
-                ),
-            ):
+            with p_record, p_redis, p_notify, p_audit:
                 resp = await client.post(
                     "/api/v1/certificates/revoke",
                     json={"fingerprint": ""},
@@ -296,3 +298,52 @@ class TestListRevokedCertificates:
         async with await _revoke_client(app) as client:
             resp = await client.get("/api/v1/certificates/revoked")
         assert resp.status_code == 403
+
+
+class TestNotifyRevokedAgent:
+    """Revoking an agent cert pushes a revoke command to its live instances so it
+    shuts down promptly; a non-agent fingerprint is a no-op."""
+
+    @pytest.mark.asyncio
+    async def test_notifies_each_agent_instance(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from bamf.api.routers.certificates import _notify_revoked_agent
+
+        agent = MagicMock()
+        agent.id = "agent-uuid"
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=agent)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        r = MagicMock()
+        r.hgetall = AsyncMock(return_value={"inst-a": "x", "inst-b": "y"})
+
+        with patch(
+            "bamf.api.routers.certificates.enqueue_agent_command", new_callable=AsyncMock
+        ) as enq:
+            await _notify_revoked_agent(db, r, "aabbcc")
+
+        assert enq.await_count == 2  # one revoke per live instance
+        assert all(call.args[3]["command"] == "revoke" for call in enq.await_args_list)
+
+    @pytest.mark.asyncio
+    async def test_noop_when_fingerprint_is_not_an_agent(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from bamf.api.routers.certificates import _notify_revoked_agent
+
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=None)  # bridge/user cert
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        r = MagicMock()
+        r.hgetall = AsyncMock()
+
+        with patch(
+            "bamf.api.routers.certificates.enqueue_agent_command", new_callable=AsyncMock
+        ) as enq:
+            await _notify_revoked_agent(db, r, "aabbcc")
+
+        enq.assert_not_awaited()
+        r.hgetall.assert_not_awaited()

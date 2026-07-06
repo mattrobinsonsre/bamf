@@ -1,8 +1,11 @@
 """Certificates router for CA operations."""
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bamf.api.agent_commands import enqueue_agent_command
 from bamf.api.dependencies import (
     get_current_session,
     require_admin,
@@ -17,15 +20,35 @@ from bamf.api.models.certificates import (
     UserCertificateResponse,
 )
 from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
-from bamf.auth.revocation import list_revoked_certificates, revoke_certificate
+from bamf.auth.revocation import (
+    add_revoked_to_redis,
+    list_revoked_certificates,
+    record_revocation,
+)
 from bamf.auth.sessions import Session
-from bamf.db.models import utc_now
+from bamf.db.models import Agent, utc_now
 from bamf.db.session import get_db
 from bamf.logging_config import get_logger
+from bamf.redis.client import get_redis
 from bamf.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/certificates", tags=["certificates"])
 logger = get_logger(__name__)
+
+
+async def _notify_revoked_agent(db: AsyncSession, r: aioredis.Redis, fingerprint: str) -> None:
+    """If the revoked fingerprint belongs to an agent, tell its live instances to
+    shut down now (via the reliable command queue) instead of running until their
+    next API call is rejected with 401."""
+    result = await db.execute(select(Agent).where(Agent.certificate_fingerprint == fingerprint))
+    agent = result.scalar_one_or_none()
+    if agent is None:
+        return  # bridge/user cert, or an unknown fingerprint — nothing to notify
+    instances = await r.hgetall(f"agent:{agent.id}:instances")
+    for iid in instances or {}:
+        await enqueue_agent_command(
+            r, str(agent.id), iid, {"command": "revoke", "reason": "Certificate revoked"}
+        )
 
 
 @router.get("/ca", response_model=CACertificateResponse)
@@ -101,6 +124,7 @@ async def issue_service_certificate(
 async def revoke_certificate_endpoint(
     body: RevokeCertificateRequest,
     db: AsyncSession = Depends(get_db),
+    r: aioredis.Redis = Depends(get_redis),
     current_user: Session = Depends(require_admin),
 ) -> RevokedCertificateResponse:
     """Revoke a certificate by fingerprint (admin).
@@ -108,12 +132,17 @@ async def revoke_certificate_endpoint(
     Durable (Postgres) + enforced at the API cert-auth layer for agent/bridge
     certs. Tunnel session certs are 30s TTL and won't be re-minted for a revoked
     identity, so the bridge keeps its zero-runtime-dependency design.
+
+    Ordering: the DB row is committed BEFORE the Redis denylist add, so a rolled
+    back transaction can't leave a Redis entry Postgres doesn't have. If the
+    fingerprint belongs to an agent, its live instances are told to shut down
+    promptly rather than waiting to be 401'd on their next call.
     """
     if not body.fingerprint:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="fingerprint is required"
         )
-    await revoke_certificate(
+    fingerprint = await record_revocation(
         db, body.fingerprint, reason=body.reason, revoked_by=current_user.email
     )
     await log_audit_event(
@@ -123,12 +152,16 @@ async def revoke_certificate_endpoint(
         actor_type="user",
         actor_id=current_user.email,
         target_type="certificate",
-        target_id=body.fingerprint,
+        target_id=fingerprint,
         success=True,
         details={"reason": body.reason},
     )
+    # Commit the durable revocation before touching Redis / agents.
+    await db.commit()
+    await add_revoked_to_redis(r, fingerprint)
+    await _notify_revoked_agent(db, r, fingerprint)
     return RevokedCertificateResponse(
-        fingerprint=body.fingerprint,
+        fingerprint=fingerprint,
         revoked_at=utc_now(),
         reason=body.reason,
         revoked_by=current_user.email,
