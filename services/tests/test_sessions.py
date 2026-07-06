@@ -8,6 +8,7 @@ import pytest
 
 from bamf.auth.sessions import (
     SESSION_REFRESH_INTERVAL,
+    Session,
     _should_refresh_session,
     create_session,
     get_session,
@@ -506,4 +507,57 @@ class TestRefreshSession:
             await refresh_session("test-token", session)
 
         # Pipeline should NOT have been used since session was gone
+        pipeline.set.assert_not_called()
+
+
+class TestRefreshSessionHardCap:
+    """refresh_session must never extend a session past its hard cap (e.g. the
+    IDP id_token lifetime recorded at login)."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        redis = AsyncMock()
+        pipeline = AsyncMock()
+        pipeline.__aenter__ = AsyncMock(return_value=pipeline)
+        pipeline.__aexit__ = AsyncMock(return_value=None)
+        redis.pipeline = lambda **kwargs: pipeline
+        return redis, pipeline
+
+    def _session_data(self, hard_expires_at):
+        now = utc_now()
+        return {
+            "email": "a@example.com",
+            "display_name": None,
+            "roles": [],
+            "provider_name": "auth0",
+            "created_at": now.isoformat(),
+            "expires_at": now.isoformat(),
+            "last_active_at": now.isoformat(),
+            "kubernetes_groups": [],
+            "hard_expires_at": hard_expires_at,
+        }
+
+    @pytest.mark.asyncio
+    async def test_refresh_clamps_to_hard_cap(self, mock_redis):
+        redis, pipeline = mock_redis
+        hard = (utc_now() + timedelta(seconds=60)).isoformat()
+        data = self._session_data(hard)
+        redis.get = AsyncMock(return_value=json.dumps(data))
+        session = Session(token="t", **data)
+        with patch("bamf.auth.sessions.get_redis_client", return_value=redis):
+            await refresh_session("t", session)
+        # ex is clamped to the ~60s remaining, not the multi-hour session TTL.
+        _, kwargs = pipeline.set.call_args
+        assert kwargs["ex"] <= 60
+
+    @pytest.mark.asyncio
+    async def test_refresh_expires_session_past_hard_cap(self, mock_redis):
+        redis, pipeline = mock_redis
+        hard = (utc_now() - timedelta(seconds=1)).isoformat()
+        data = self._session_data(hard)
+        redis.get = AsyncMock(return_value=json.dumps(data))
+        session = Session(token="t", **data)
+        with patch("bamf.auth.sessions.get_redis_client", return_value=redis):
+            await refresh_session("t", session)
+        pipeline.delete.assert_called_once()
         pipeline.set.assert_not_called()
