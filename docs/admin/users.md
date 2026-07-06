@@ -78,9 +78,14 @@ and the next API request with that session token will fail.
 
 ### Session Lifetime
 
-Sessions expire after a configurable duration (default: 12 hours). This is
-controlled by the Redis key TTL. To disable a user mid-session, revoke their
-sessions.
+Sessions use a **sliding** TTL (`auth.session_ttl_hours`, default 12 hours):
+each authenticated request extends the Redis key TTL, so an active session stays
+alive. To bound this, every session also has an **absolute cap**
+(`auth.session_max_lifetime_hours`, default 168 hours / 7 days) recorded at
+creation — a session can never slide past this cap regardless of activity, so it
+eventually forces re-authentication. When an external IdP's id_token expires
+sooner than the cap, the token lifetime wins (a BAMF session never outlives the
+IdP assertion). To disable a user mid-session, revoke their sessions.
 
 ## Disabling Users
 

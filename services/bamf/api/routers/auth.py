@@ -845,23 +845,26 @@ def _enforce_external_sso_requirement(provider_name: str, roles: list[str]) -> N
         )
 
 
-def _compute_max_session_ttl(id_token_expires_at: datetime | None) -> int | None:
-    """Compute max session TTL from id_token expiry.
+def _compute_max_session_ttl(id_token_expires_at: datetime | None) -> int:
+    """Absolute session cap in seconds, used as the session's hard_expires_at.
 
-    Returns the remaining id_token lifetime in seconds if it's shorter than
-    the configured session TTL, otherwise None.
+    A session may slide (refresh on activity) up to session_ttl_hours per window,
+    but never past this absolute cap from creation — so local and long-lived-IDP
+    sessions can't refresh indefinitely. When the IDP id_token expires sooner
+    than the cap, the token lifetime wins (a BAMF session never outlives the IDP
+    assertion). Always returns a positive value, so every session gets a hard cap.
     """
-    if id_token_expires_at is None:
-        return None
-
     from bamf.db.models import utc_now
 
-    remaining = (id_token_expires_at - utc_now()).total_seconds()
-    configured = settings.auth.session_ttl_hours * 3600
+    max_absolute = settings.auth.session_max_lifetime_hours * 3600
+    if id_token_expires_at is None:
+        return max_absolute
 
-    if 0 < remaining < configured:
-        return int(remaining)
-    return None
+    remaining = int((id_token_expires_at - utc_now()).total_seconds())
+    if remaining <= 0:
+        # id_token already expired at login (anomalous) — fall back to the cap.
+        return max_absolute
+    return min(remaining, max_absolute)
 
 
 def _get_claims_rules(provider_name: str) -> list:

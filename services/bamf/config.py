@@ -115,7 +115,16 @@ class AuthConfig(BaseSettings):
     sso: SSOConfig = Field(default_factory=SSOConfig)
     session_ttl_hours: int = Field(
         default=12,
-        description="Session TTL in hours",
+        description="Sliding session TTL in hours — extended on activity",
+    )
+    session_max_lifetime_hours: int = Field(
+        default=168,
+        description=(
+            "Absolute maximum session lifetime in hours. A session may slide "
+            "(refresh on activity) up to session_ttl_hours per window, but never "
+            "past this cap from creation — bounding indefinitely-active local and "
+            "long-lived-IDP-token sessions. Default 168h (7 days)."
+        ),
     )
     require_external_sso_for_roles: list[str] = Field(
         default_factory=list,
