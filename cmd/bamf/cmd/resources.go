@@ -49,7 +49,6 @@ func init() {
 }
 
 type resource struct {
-	ID           string            `json:"id"`
 	Name         string            `json:"name"`
 	ResourceType string            `json:"resource_type"`
 	Labels       map[string]string `json:"labels"`

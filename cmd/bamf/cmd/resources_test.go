@@ -392,7 +392,7 @@ func TestRunAgents_Success(t *testing.T) {
 		require.Equal(t, "GET", r.Method)
 
 		resp := map[string]any{
-			"agents": []agent{
+			"items": []agent{
 				{
 					Name:          "agent-01",
 					Status:        "online",
@@ -447,7 +447,7 @@ func TestRunAgents_EmptyList(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(bamfPath, "credentials.json"), data, 0600))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"agents": []agent{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []agent{}})
 	}))
 	defer srv.Close()
 
@@ -486,7 +486,7 @@ func TestRunAgents_JSONOutput(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
-			"agents": []agent{
+			"items": []agent{
 				{Name: "agent-01", Status: "online", ResourceCount: 5},
 			},
 		}
