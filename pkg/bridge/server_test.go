@@ -108,3 +108,22 @@ func TestBridgePinMatches(t *testing.T) {
 		})
 	}
 }
+
+// TestCleanupPendingIdempotent covers the safety the panic-recovery cleanup
+// relies on: evicting a pending session is a no-op when it's missing or already
+// matched, so calling it from a deferred recover can't corrupt state.
+func TestCleanupPendingIdempotent(t *testing.T) {
+	s := &Server{pendingConns: make(map[string]*pendingConnection)}
+
+	// Cleaning a session that was never registered is safe.
+	s.cleanupPending("never-registered")
+
+	// Register, clean once → gone.
+	s.pendingConns["sess"] = &pendingConnection{sessionID: "sess"}
+	s.cleanupPending("sess")
+	require.NotContains(t, s.pendingConns, "sess")
+
+	// Cleaning again (e.g. after a match already deleted it) is still safe.
+	s.cleanupPending("sess")
+	require.Empty(t, s.pendingConns)
+}
