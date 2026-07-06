@@ -32,6 +32,12 @@ REDACT_BODY_FIELDS: frozenset[str] = frozenset(
         "code_verifier",
         "samlresponse",
         "session_token",
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "token",
+        "api_key",
+        "authorization",
         "key",
         "private_key",
     }
@@ -124,6 +130,11 @@ def redact_body(body: str, content_type: str) -> str:
         return _redact_json(body)
     if ct == "application/x-www-form-urlencoded":
         return _redact_form(body)
+    if ct == "multipart/form-data":
+        # Multipart bodies (file uploads / form fields) aren't parsed here and
+        # may carry secrets — redact the whole body rather than risk leaking it
+        # into the audit store.
+        return _REDACTED
 
     return body
 

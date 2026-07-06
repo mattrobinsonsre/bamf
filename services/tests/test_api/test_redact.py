@@ -177,36 +177,26 @@ class TestRedactBodyJson:
         assert data["users"][1]["password"] == "[REDACTED]"
 
     def test_all_redact_body_fields(self):
-        """All fields in REDACT_BODY_FIELDS are redacted."""
+        """Every field in REDACT_BODY_FIELDS is redacted. Iterates the set so
+        new entries (e.g. access_token / refresh_token / id_token) are covered
+        automatically."""
         import json
 
-        body = json.dumps(
-            {
-                "password": "pw",
-                "secret": "sec",
-                "client_secret": "cs",
-                "code_verifier": "cv",
-                "samlresponse": "sr",
-                "session_token": "st",
-                "key": "k",
-                "private_key": "pk",
-                "safe_field": "keep-me",
-            }
-        )
-        result = redact_body(body, "application/json")
+        from bamf.proxy.redact import REDACT_BODY_FIELDS
+
+        payload = dict.fromkeys(REDACT_BODY_FIELDS, "sensitive")
+        payload["safe_field"] = "keep-me"
+        result = redact_body(json.dumps(payload), "application/json")
         data = json.loads(result)
-        for field in [
-            "password",
-            "secret",
-            "client_secret",
-            "code_verifier",
-            "samlresponse",
-            "session_token",
-            "key",
-            "private_key",
-        ]:
+        for field in REDACT_BODY_FIELDS:
             assert data[field] == "[REDACTED]", f"Expected {field} to be redacted"
         assert data["safe_field"] == "keep-me"
+
+    def test_multipart_body_fully_redacted(self):
+        """multipart/form-data bodies are redacted wholesale — they may carry
+        file uploads or secret form fields and aren't parsed here."""
+        body = '--x\r\nContent-Disposition: form-data; name="password"\r\n\r\nhunter2\r\n--x--'
+        assert redact_body(body, "multipart/form-data; boundary=x") == "[REDACTED]"
 
     def test_case_insensitive_field_matching(self):
         """Field name matching is case-insensitive."""
