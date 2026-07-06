@@ -434,16 +434,25 @@ def _match_webhook(resource, method: str, path: str, client_ip: str | None) -> d
 
         # Source CIDR check
         source_cidrs = wh.get("source_cidrs", [])
-        if source_cidrs and client_ip:
+        if source_cidrs:
+            if not client_ip:
+                # CIDRs configured but no client IP available — deny (fail closed).
+                continue
             try:
                 addr = ipaddress.ip_address(client_ip)
                 if not any(addr in ipaddress.ip_network(cidr) for cidr in source_cidrs):
                     continue
             except ValueError:
                 continue
-        elif source_cidrs and not client_ip:
-            # CIDRs configured but no client IP available — deny
-            continue
+        else:
+            # No IP allowlist — the webhook is unrestricted by source and relies
+            # entirely on the target application's own auth (HMAC, etc.). Warn so
+            # an unintentionally-open webhook is visible in the logs.
+            logger.warning(
+                "webhook passthrough matched with no source_cidrs — unrestricted by IP",
+                path=wh_path,
+                method=method,
+            )
 
         return wh
 
