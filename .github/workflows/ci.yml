@@ -531,11 +531,16 @@ jobs:
 
           echo "$notes" > /tmp/release-notes.md
 
+      # Install syft via the SHA-pinned action instead of `curl … | sh`
+      # (removes the piped-shell supply-chain risk and pins the syft version).
+      - name: Install syft (SBOM tool)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.46.0
+
       - name: Generate SBOMs
         run: |
           version="${{ needs.prepare.outputs.version }}"
-
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
           for image in bamf-api bamf-bridge bamf-agent bamf-web bamf-proxy; do
             echo "Generating SBOM for $image:$version"
