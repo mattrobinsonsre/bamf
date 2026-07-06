@@ -62,3 +62,49 @@ func TestShortID(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveResourceType guards the #157 invariant: the CA-signed session cert
+// is authoritative for recording/audit routing — a client cannot force an
+// unrecorded splice via the wire line. Only a legacy cert with no type SAN
+// falls back to the wire line.
+func TestResolveResourceType(t *testing.T) {
+	tests := []struct {
+		name     string
+		wireType string
+		certType string
+		want     string
+	}{
+		{"cert wins over wire", "ssh", "ssh-audit", "ssh-audit"},
+		{"client cannot downgrade audit", "ssh", "postgres-audit", "postgres-audit"},
+		{"client cannot strip audit to plain", "ssh-audit", "ssh-audit", "ssh-audit"},
+		{"legacy no-type falls back to wire", "ssh-audit", "", "ssh-audit"},
+		{"legacy no-type default tunnel", "tunnel", "", "tunnel"},
+		{"cert wins even if wire is empty-ish", "tunnel", "web-ssh", "web-ssh"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, resolveResourceType(tt.wireType, tt.certType))
+		})
+	}
+}
+
+// TestBridgePinMatches guards the #151 invariant: the session-cert bridge pin
+// must match this bridge, and an empty pin fails closed (never matches).
+func TestBridgePinMatches(t *testing.T) {
+	tests := []struct {
+		name         string
+		certBridgeID string
+		ownBridgeID  string
+		want         bool
+	}{
+		{"matching pin", "bridge-0", "bridge-0", true},
+		{"different bridge rejected", "bridge-1", "bridge-0", false},
+		{"empty pin fails closed", "", "bridge-0", false},
+		{"empty pin fails closed even vs empty own", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, bridgePinMatches(tt.certBridgeID, tt.ownBridgeID))
+		})
+	}
+}

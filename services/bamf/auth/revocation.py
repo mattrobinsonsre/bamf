@@ -11,6 +11,8 @@ session certs are 30s TTL and the API won't mint a new one for a revoked
 identity, so the tunnel path needs no bridge-side check.
 """
 
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,11 +25,23 @@ logger = get_logger(__name__)
 _REVOKED_SET = "bamf:revoked_certs"
 
 
+def _normalize_fingerprint(fingerprint: str) -> str:
+    """Normalize a fingerprint to the form enforcement compares against.
+
+    Enforcement checks against ``cert.fingerprint(SHA256).hex()`` — lowercase
+    hex, no separators. An admin may paste an uppercase or colon-delimited
+    fingerprint; without normalization the stored/denied value would never match
+    ``sismember`` and the revocation would silently no-op while appearing revoked
+    in the audit log and ``/revoked`` listing.
+    """
+    return fingerprint.strip().replace(":", "").replace(" ", "").lower()
+
+
 async def is_certificate_revoked(fingerprint: str) -> bool:
     """Return True if the fingerprint is on the denylist (Redis set)."""
     try:
         redis = get_redis_client()
-        return bool(await redis.sismember(_REVOKED_SET, fingerprint))
+        return bool(await redis.sismember(_REVOKED_SET, _normalize_fingerprint(fingerprint)))
     except Exception:
         # Fail open on Redis error (consistent with the rate limiter): the
         # durable DB reloads into Redis at startup, so the exposure window is
@@ -44,6 +58,7 @@ async def revoke_certificate(
     subject_cn: str | None = None,
 ) -> None:
     """Add a certificate fingerprint to the durable denylist and the Redis set."""
+    fingerprint = _normalize_fingerprint(fingerprint)
     if await db.get(RevokedCertificate, fingerprint) is None:
         db.add(
             RevokedCertificate(
@@ -77,3 +92,28 @@ async def load_revoked_into_redis(db: AsyncSession) -> int:
         await redis.sadd(_REVOKED_SET, *fingerprints)
     logger.info("loaded revoked certificates into Redis", count=len(fingerprints))
     return len(fingerprints)
+
+
+# Enforcement reads only the Redis set (the hot cert-auth path must not hit
+# Postgres per request). But Redis is volatile: a restart / failover / flush
+# would drop the denylist and silently re-admit every revoked cert until the
+# next API process restart. Postgres is the source of truth, so we periodically
+# re-seed the set from it — bounding the post-flush exposure window to one
+# interval without adding a per-request DB round-trip.
+_RECONCILE_INTERVAL_SECONDS = 60
+
+
+async def reconcile_revoked_loop(interval_seconds: int = _RECONCILE_INTERVAL_SECONDS) -> None:
+    """Background task: periodically re-seed the Redis denylist from Postgres."""
+    from bamf.db.session import async_session_factory
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            async with async_session_factory() as db:
+                await load_revoked_into_redis(db)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Never let a transient DB/Redis error kill the reconciler.
+            logger.warning("revocation reconcile iteration failed", exc_info=True)

@@ -414,3 +414,37 @@ class TestRewriteWebhookRequestHeaders:
         result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
         assert "bamf_session" not in result.get("cookie", "")
         assert "github_token=xyz" in result["cookie"]
+
+    def test_client_supplied_trust_headers_stripped(self):
+        """Inbound X-Forwarded-* / X-Bamf-* / Impersonate-* are stripped on the
+        UNAUTHENTICATED webhook path — an anonymous caller must not be able to
+        spoof identity or K8s impersonation groups to the backend."""
+        headers = {
+            "accept": "*/*",
+            "x-forwarded-email": "attacker@evil.example",
+            "x-forwarded-user": "attacker@evil.example",
+            "x-forwarded-roles": "admin",
+            "x-forwarded-k8s-groups": "system:masters",
+            "x-bamf-target": "http://169.254.169.254/",
+            "x-bamf-session-token": "forged",
+            "impersonate-user": "system:admin",
+            "impersonate-group": "system:masters",
+        }
+        result = rewrite_webhook_request_headers(headers=headers, **self._base_kwargs())
+        for k in (
+            "x-forwarded-email",
+            "x-forwarded-user",
+            "x-forwarded-roles",
+            "x-forwarded-k8s-groups",
+            "impersonate-user",
+            "impersonate-group",
+        ):
+            assert k not in result, k
+        # The proxy's own X-Forwarded-* / X-Bamf-Target win (set after the copy).
+        assert result["X-Forwarded-Host"] == "jenkins.tunnel.bamf.local"
+        assert result["X-Forwarded-For"] == "140.82.112.10"
+        assert result["X-Bamf-Target"] == "http://jenkins.internal:8080"
+        # A forged session token must not survive to the backend.
+        assert "x-bamf-session-token" not in result
+        assert "X-Bamf-Session-Token" not in result
+        assert "accept" in result

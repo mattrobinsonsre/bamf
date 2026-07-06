@@ -172,7 +172,15 @@ def rewrite_webhook_request_headers(
             continue
         if lower_k in ("host", "origin"):
             continue
-        # Keep Authorization — it belongs to the webhook provider, not BAMF
+        # Strip client-supplied trust headers on the UNAUTHENTICATED webhook
+        # path. Webhook passthrough bypasses BAMF session auth, so an inbound
+        # X-Forwarded-Email / X-Forwarded-K8s-Groups / Impersonate-* would let an
+        # anonymous caller spoof identity to the backend (and, for K8s-reachable
+        # agents, escalate to impersonation). BAMF injects no identity here; these
+        # must never survive from the client. Authorization is kept intentionally
+        # — it belongs to the webhook provider (HMAC/bearer), not BAMF.
+        if lower_k.startswith(("x-forwarded-", "x-bamf-", "impersonate-")):
+            continue
         # Strip bamf_session cookie but keep other cookies
         if lower_k == "cookie":
             v = _strip_bamf_cookie(v)

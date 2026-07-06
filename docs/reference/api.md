@@ -137,6 +137,16 @@ CRUD API for resources — they are managed through agent configuration.
 | GET | `/certificates/ca` | No | Get CA public certificate |
 | POST | `/certificates/user` | Yes | Issue user identity certificate |
 | POST | `/certificates/service` | Yes | Issue service certificate |
+| POST | `/certificates/revoke` | Admin | Revoke a certificate by SHA-256 fingerprint |
+| GET | `/certificates/revoked` | Admin/Audit | List revoked certificates |
+
+Revocation is a kill-switch for leaked long-lived agent/bridge certificates.
+Revoked fingerprints are enforced at the API cert-auth layer (agent/bridge
+requests presenting `X-Bamf-Client-Cert` get `401` once revoked). The durable
+list lives in Postgres and is mirrored into a Redis set for O(1) checks;
+enforcement fails open if Redis is unavailable. User sessions are revoked
+separately via `/auth/sessions`, and tunnel session certs are 30-second TTL, so
+revocation targets the long-lived service certs.
 
 ## Audit Log
 
