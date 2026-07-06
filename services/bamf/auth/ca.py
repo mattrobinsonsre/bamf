@@ -341,6 +341,7 @@ class CertificateAuthority:
         bridge_id: str,
         subject_cn: str,
         role: str = "client",
+        resource_type: str = "",
         ttl_seconds: int = 30,
     ) -> tuple[x509.Certificate, ed25519.Ed25519PrivateKey]:
         """Issue a per-tunnel session certificate.
@@ -411,6 +412,13 @@ class CertificateAuthority:
                         x509.UniformResourceIdentifier(f"bamf://resource/{resource_name}"),
                         x509.UniformResourceIdentifier(f"bamf://bridge/{bridge_id}"),
                         x509.UniformResourceIdentifier(f"bamf://role/{role}"),
+                        # Authoritative resource type — the bridge routes
+                        # recording/audit from this (CA-signed), not the client wire line.
+                        *(
+                            [x509.UniformResourceIdentifier(f"bamf://type/{resource_type}")]
+                            if resource_type
+                            else []
+                        ),
                     ]
                 ),
                 critical=False,

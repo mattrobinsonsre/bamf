@@ -794,6 +794,17 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	sessionID := info.SessionID
 	resource := info.Resource
 
+	// The CA-signed session cert is authoritative for the resource type — it
+	// decides recording/audit routing. A client can't spoof it via the wire-line
+	// type=. (Legacy certs without the type SAN fall back to the wire line.)
+	if info.ResourceType != "" {
+		if resourceType != info.ResourceType {
+			s.logger.Warn("wire-line type disagrees with session cert; using cert",
+				"wire", resourceType, "cert", info.ResourceType, "session_id", shortID(sessionID))
+		}
+		resourceType = info.ResourceType
+	}
+
 	// Verify this connection is for this bridge. Fail closed: a session cert
 	// with no bridge pin (empty SAN) is also rejected — the CA always sets it.
 	if info.BridgeID != s.cfg.BridgeID {
@@ -1784,10 +1795,11 @@ func (s *Server) cleanupPending(sessionID string) {
 
 // sessionInfo holds fields extracted from a session certificate's SAN URIs.
 type sessionInfo struct {
-	SessionID string
-	Resource  string
-	BridgeID  string
-	Role      string // "client" or "agent"
+	SessionID    string
+	Resource     string
+	BridgeID     string
+	Role         string // "client" or "agent"
+	ResourceType string // authoritative resource type (audit routing) — may be empty on legacy certs
 }
 
 // extractSessionInfo extracts session ID, resource name, bridge ID, and role from cert SAN URIs.
@@ -1814,6 +1826,8 @@ func extractSessionInfo(cert *x509.Certificate) (sessionInfo, error) {
 			info.BridgeID = value
 		case "role":
 			info.Role = value
+		case "type":
+			info.ResourceType = value
 		}
 	}
 	if info.SessionID == "" {

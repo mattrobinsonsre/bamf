@@ -433,6 +433,7 @@ async def _issue_session(
         bridge_id=bridge_id,
         subject_cn=current_user.email,
         role="client",
+        resource_type=resource_type,
         ttl_seconds=session_ttl,
     )
 
@@ -442,6 +443,7 @@ async def _issue_session(
         bridge_id=bridge_id,
         subject_cn=agent_id,
         role="agent",
+        resource_type=resource_type,
         ttl_seconds=session_ttl,
     )
 
