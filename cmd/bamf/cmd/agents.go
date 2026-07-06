@@ -86,25 +86,26 @@ func runAgents(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("API error: %s", resp.Status)
 	}
 
+	// The API paginates list endpoints with a CursorPage envelope: {"items":[...]}.
 	var result struct {
-		Agents []agent `json:"agents"`
+		Items []agent `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(result.Agents) == 0 {
+	if len(result.Items) == 0 {
 		fmt.Println("No agents registered.")
 		return nil
 	}
 
 	if jsonOutput {
-		out, _ := json.MarshalIndent(result.Agents, "", "  ")
+		out, _ := json.MarshalIndent(result.Items, "", "  ")
 		fmt.Println(string(out))
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tSTATUS\tLAST SEEN\tRESOURCES\tLABELS")
-		for _, a := range result.Agents {
+		for _, a := range result.Items {
 			lastSeen := "-"
 			if a.LastHeartbeat != nil {
 				lastSeen = time.Since(*a.LastHeartbeat).Round(time.Second).String() + " ago"

@@ -67,7 +67,7 @@ func TestRunTokensList_Success(t *testing.T) {
 		require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
 
 		resp := map[string]any{
-			"tokens": []joinToken{
+			"items": []joinToken{
 				{
 					Name:      "dev-token",
 					ExpiresAt: time.Now().Add(24 * time.Hour),
@@ -124,7 +124,7 @@ func TestRunTokensList_EmptyList(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(bamfPath, "credentials.json"), data, 0600))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"tokens": []joinToken{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []joinToken{}})
 	}))
 	defer srv.Close()
 
@@ -163,7 +163,7 @@ func TestRunTokensList_JSONOutput(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
-			"tokens": []joinToken{
+			"items": []joinToken{
 				{Name: "test-token", ExpiresAt: time.Now().Add(1 * time.Hour)},
 			},
 		}
@@ -214,7 +214,7 @@ func TestRunTokensList_RevokedToken(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
-			"tokens": []joinToken{
+			"items": []joinToken{
 				{
 					Name:      "revoked-token",
 					ExpiresAt: time.Now().Add(1 * time.Hour),

@@ -117,24 +117,24 @@ func runTokensList(cmd *cobra.Command, args []string) error {
 	}
 
 	var result struct {
-		Tokens []joinToken `json:"tokens"`
+		Items []joinToken `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(result.Tokens) == 0 {
+	if len(result.Items) == 0 {
 		fmt.Println("No join tokens found.")
 		return nil
 	}
 
 	if jsonOutput {
-		out, _ := json.MarshalIndent(result.Tokens, "", "  ")
+		out, _ := json.MarshalIndent(result.Items, "", "  ")
 		fmt.Println(string(out))
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tSTATUS\tEXPIRES\tUSES\tCREATED BY")
-		for _, t := range result.Tokens {
+		for _, t := range result.Items {
 			status := "active"
 			if t.IsRevoked {
 				status = "revoked"
