@@ -1493,53 +1493,56 @@ class TestEnforceExternalSSO:
 class TestComputeMaxSessionTTL:
     """Tests for _compute_max_session_ttl helper."""
 
-    def test_none_when_no_expiry(self):
-        """No id_token expiry returns None."""
+    def test_absolute_cap_when_no_expiry(self):
+        """No id_token expiry (e.g. local auth) still returns the absolute cap —
+        the session can no longer slide indefinitely."""
         from bamf.api.routers.auth import _compute_max_session_ttl
 
-        assert _compute_max_session_ttl(None) is None
+        with patch("bamf.api.routers.auth.settings") as mock_settings:
+            mock_settings.auth.session_max_lifetime_hours = 168
+            result = _compute_max_session_ttl(None)
 
-    def test_returns_remaining_when_shorter_than_configured(self):
-        """When id_token expires sooner than session TTL, returns remaining seconds."""
+        assert result == 168 * 3600
+
+    def test_returns_remaining_when_shorter_than_cap(self):
+        """When id_token expires sooner than the absolute cap, the token wins."""
         from datetime import timedelta
 
         from bamf.api.routers.auth import _compute_max_session_ttl
 
-        # id_token expires in 1 hour, session TTL is 12 hours
         future_time = datetime.now(UTC) + timedelta(hours=1)
         with patch("bamf.api.routers.auth.settings") as mock_settings:
-            mock_settings.auth.session_ttl_hours = 12
+            mock_settings.auth.session_max_lifetime_hours = 168
             result = _compute_max_session_ttl(future_time)
 
-        assert result is not None
         assert 3500 < result < 3700  # ~1 hour in seconds, allowing timing tolerance
 
-    def test_none_when_longer_than_configured(self):
-        """When id_token expires later than session TTL, returns None."""
+    def test_capped_when_id_token_longer_than_cap(self):
+        """When id_token outlives the absolute cap, the cap wins (no unbounded life)."""
         from datetime import timedelta
 
         from bamf.api.routers.auth import _compute_max_session_ttl
 
-        # id_token expires in 24 hours, session TTL is 12 hours
-        future_time = datetime.now(UTC) + timedelta(hours=24)
+        # id_token expires in 30 days, absolute cap is 7 days
+        future_time = datetime.now(UTC) + timedelta(days=30)
         with patch("bamf.api.routers.auth.settings") as mock_settings:
-            mock_settings.auth.session_ttl_hours = 12
+            mock_settings.auth.session_max_lifetime_hours = 168
             result = _compute_max_session_ttl(future_time)
 
-        assert result is None
+        assert result == 168 * 3600
 
-    def test_none_when_already_expired(self):
-        """Already-expired id_token returns None (remaining <= 0)."""
+    def test_absolute_cap_when_already_expired(self):
+        """Already-expired id_token (anomalous at login) falls back to the cap."""
         from datetime import timedelta
 
         from bamf.api.routers.auth import _compute_max_session_ttl
 
         past_time = datetime.now(UTC) - timedelta(hours=1)
         with patch("bamf.api.routers.auth.settings") as mock_settings:
-            mock_settings.auth.session_ttl_hours = 12
+            mock_settings.auth.session_max_lifetime_hours = 168
             result = _compute_max_session_ttl(past_time)
 
-        assert result is None
+        assert result == 168 * 3600
 
 
 # ── Tests: Get Claims Rules ──────────────────────────────────────────
