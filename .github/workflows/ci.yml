@@ -165,13 +165,24 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - run: scripts/lint.sh web
-      # AGENTS.md requires `npm run build` for web changes — the Next.js
-      # prerender catches breakage that eslint + tsc do not.
-      - name: Next.js build (prerender check)
+
+  # AGENTS.md requires `npm run build` for web changes — the Next.js prerender
+  # catches breakage eslint + tsc do not. Runs in its own fresh checkout inside
+  # a node container (web-lint leaves root-owned node_modules from its Docker run).
+  web-build:
+    name: Web Build
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: node:25-alpine
+    defaults:
+      run:
         working-directory: web
-        run: |
-          npm ci
-          npm run build
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - run: npm ci
+      - run: npm run build
 
   web-audit:
     name: npm Audit
@@ -647,6 +658,7 @@ jobs:
       - python-test
       - python-security
       - web-lint
+      - web-build
       - web-audit
       - helm-lint
       - sast
@@ -672,6 +684,7 @@ jobs:
             "${{ needs.python-test.result }}"
             "${{ needs.python-security.result }}"
             "${{ needs.web-lint.result }}"
+            "${{ needs.web-build.result }}"
             "${{ needs.web-audit.result }}"
             "${{ needs.helm-lint.result }}"
             "${{ needs.sast.result }}"
