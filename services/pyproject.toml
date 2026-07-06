@@ -8,7 +8,7 @@ readme = "README.md"
 packages = [{include = "bamf"}]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = "^3.14"
 fastapi = "^0.139.0"
 uvicorn = {extras = ["standard"], version = "^0.42.0"}
 pydantic = {extras = ["email"], version = "^2.10.0"}
@@ -46,7 +46,7 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]

@@ -26,7 +26,7 @@ from bamf.logging_config import get_logger
 logger = get_logger(__name__)
 
 # Module-level CA singleton, initialized in lifespan
-_ca: "CertificateAuthority | None" = None
+_ca: CertificateAuthority | None = None
 
 # Module-level SSH host key singleton (PEM string), for ssh-audit proxy
 _ssh_host_key_pem: str | None = None
@@ -66,7 +66,7 @@ class CertificateAuthority:
         cls,
         common_name: str = "BAMF Certificate Authority",
         validity_days: int = 3650,
-    ) -> "CertificateAuthority":
+    ) -> CertificateAuthority:
         """Generate a new CA certificate and Ed25519 key pair."""
         private_key = ed25519.Ed25519PrivateKey.generate()
         public_key = private_key.public_key()
@@ -122,7 +122,7 @@ class CertificateAuthority:
         return cls(ca_cert=cert, ca_key=private_key)
 
     @classmethod
-    def load(cls, cert_pem: bytes, key_pem: bytes) -> "CertificateAuthority":
+    def load(cls, cert_pem: bytes, key_pem: bytes) -> CertificateAuthority:
         """Load CA from PEM-encoded certificate and key."""
         cert = x509.load_pem_x509_certificate(cert_pem)
         key = serialization.load_pem_private_key(key_pem, password=None)
@@ -131,7 +131,7 @@ class CertificateAuthority:
         return cls(ca_cert=cert, ca_key=key)
 
     @classmethod
-    def load_or_generate(cls, data_dir: Path | None = None) -> "CertificateAuthority":
+    def load_or_generate(cls, data_dir: Path | None = None) -> CertificateAuthority:
         """Load CA from disk if available, otherwise generate and persist."""
         data_dir = data_dir or CA_DATA_DIR
         cert_path = data_dir / "ca.crt"

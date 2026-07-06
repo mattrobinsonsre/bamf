@@ -66,7 +66,7 @@ async def list_active_tunnels(
 
         try:
             data = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             stale_ids.append(sid)
             continue
 
@@ -80,7 +80,7 @@ async def list_active_tunnels(
         created_at_str = data.get("created_at", "")
         try:
             created_at = datetime.fromisoformat(created_at_str)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             created_at = datetime.now(UTC)
 
         tunnels.append(

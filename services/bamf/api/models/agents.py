@@ -62,7 +62,7 @@ class AgentResponse(AgentBase, TimestampMixin):
         status: str = "unknown",
         last_heartbeat: datetime | None = None,
         connected_bridge_id: str | None = None,
-    ) -> "AgentResponse":
+    ) -> AgentResponse:
         """Create response from database model + Redis runtime state.
 
         Args:

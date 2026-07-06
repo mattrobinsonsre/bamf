@@ -381,7 +381,7 @@ async def _relay_loop(
                             payload = struct.pack("!HH", cols, rows)
                             writer.write(_write_frame(FRAME_RESIZE, payload))
                             await writer.drain()
-                    except (json.JSONDecodeError, KeyError, ValueError):
+                    except json.JSONDecodeError, KeyError, ValueError:
                         logger.debug("Ignoring malformed resize control message")
         except WebSocketDisconnect:
             logger.debug("WebSocket disconnected in ws_to_bridge")

@@ -715,7 +715,7 @@ async def agent_events(
                             event_type = "relay_connect"
                         elif cmd == "revoke":
                             event_type = "revoke"
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         logger.debug("Failed to parse SSE event type")
                     yield f"event: {event_type}\ndata: {data}\n\n"
                     keepalive_counter = 0

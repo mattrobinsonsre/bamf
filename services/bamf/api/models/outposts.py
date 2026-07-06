@@ -74,7 +74,7 @@ class OutpostTokenResponse(BAMFBaseModel):
     created_by: str
 
     @classmethod
-    def from_db(cls, token: "OutpostToken") -> "OutpostTokenResponse":
+    def from_db(cls, token: OutpostToken) -> OutpostTokenResponse:
         """Create response from database model."""
         return cls(
             id=token.id,
@@ -136,7 +136,7 @@ class OutpostResponse(BAMFBaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_db(cls, outpost: "Outpost") -> "OutpostResponse":
+    def from_db(cls, outpost: Outpost) -> OutpostResponse:
         """Create response from database model."""
         return cls(
             id=outpost.id,

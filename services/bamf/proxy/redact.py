@@ -145,6 +145,8 @@ def _redact_json(body: str) -> str:
         data = json.loads(body)
         redacted = _redact_value(data)
         return json.dumps(redacted)
+    # PEP 758 (Python 3.14+): unparenthesized except tuple. The project floor is
+    # 3.14 (pyproject `python = "^3.14"`, ruff target py314, all images 3.14-slim).
     except json.JSONDecodeError, TypeError, ValueError:
         return body
 
