@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# BAMF pre-commit hook — fast, local checks on staged files before every commit.
+# Install with `make hooks` (sets core.hooksPath to .githooks). Runs whichever
+# of gitleaks / gofmt / ruff are available; blocks the commit on any failure.
+# Do NOT bypass with `git commit --no-verify` — fix the issue instead.
+set -euo pipefail
+
+fail=0
+staged() { git diff --cached --name-only --diff-filter=ACM -- "$@"; }
+
+# 1. Secret scan (highest value; config: .gitleaks.toml). Blocks on any leak.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --redact --no-banner >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks found a potential secret in staged changes." >&2
+    gitleaks protect --staged --redact --no-banner >&2 || true
+    fail=1
+  fi
+else
+  echo "pre-commit: gitleaks not installed — skipping secret scan (install it: https://github.com/gitleaks/gitleaks)." >&2
+fi
+
+# 2. Go formatting (gofmt ships with Go; trivially fast).
+go_files=$(staged '*.go' || true)
+if [ -n "$go_files" ] && command -v gofmt >/dev/null 2>&1; then
+  unformatted=$(gofmt -l $go_files || true)
+  if [ -n "$unformatted" ]; then
+    echo "pre-commit: gofmt — these Go files need formatting (run: gofmt -w <file>):" >&2
+    echo "$unformatted" >&2
+    fail=1
+  fi
+fi
+
+# 3. Python lint + format (ruff, if installed locally for speed).
+py_files=$(staged '*.py' || true)
+if [ -n "$py_files" ] && command -v ruff >/dev/null 2>&1; then
+  if ! ruff check $py_files; then fail=1; fi
+  if ! ruff format --check $py_files; then
+    echo "pre-commit: ruff format — run: ruff format <files>" >&2
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-commit: checks failed — fix the issues above and re-stage. (Do not use --no-verify.)" >&2
+  exit 1
+fi

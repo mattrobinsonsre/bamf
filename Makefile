@@ -9,7 +9,7 @@
 	test test-go test-python \
 	build build-local images packages \
 	publish publish-images publish-chart publish-release \
-	release dev dev-down \
+	release hooks dev dev-down \
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
@@ -108,6 +108,10 @@ pentest-sast:       ## Run SAST static analysis (Semgrep)
 	scripts/pentest.sh sast
 
 # ── Development ──────────────────────────────────────────
+hooks:              ## Install git hooks (pre-commit lint + secret scan)
+	git config core.hooksPath .githooks
+	@echo "git hooks installed (core.hooksPath=.githooks). Pre-commit runs on staged files."
+
 dev:                ## Start Tilt development environment
 	tilt up
 
