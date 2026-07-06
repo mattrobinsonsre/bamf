@@ -176,6 +176,41 @@ class TestHandleCallback:
         assert identity.provider_name == "test-oidc"
 
     @pytest.mark.asyncio
+    async def test_nonce_mismatch_raises(self):
+        """An id_token whose nonce != the one we sent is rejected (replay)."""
+        connector = OIDCConnector(_make_config())
+        connector._discovery = DISCOVERY_DOC
+        connector._jwks = MagicMock()
+        claims = {"sub": "u", "email": "a@example.com", "nonce": "server-sent-nonce"}
+
+        with (
+            patch("bamf.auth.connectors.oidc.httpx.AsyncClient") as mock_http,
+            patch("bamf.auth.connectors.oidc.authlib_jwt") as mock_jwt,
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"id_token": "t", "access_token": "at"}
+            mock_resp.raise_for_status = MagicMock()
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_resp
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock()
+            mock_http.return_value = mock_client
+
+            decoded = MagicMock()
+            decoded.get.side_effect = claims.get
+            decoded.__getitem__.side_effect = claims.__getitem__
+            decoded.__contains__.side_effect = claims.__contains__
+            decoded.validate.return_value = None
+            mock_jwt.decode.return_value = decoded
+
+            with pytest.raises(ValueError, match="nonce mismatch"):
+                await connector.handle_callback(
+                    callback_url="https://bamf.example.com/auth/callback",
+                    code="c",
+                    nonce="a-different-nonce",
+                )
+
+    @pytest.mark.asyncio
     async def test_no_id_token_raises(self):
         connector = OIDCConnector(_make_config())
         connector._discovery = DISCOVERY_DOC

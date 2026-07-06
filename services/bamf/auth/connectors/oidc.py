@@ -151,6 +151,13 @@ class OIDCConnector(SSOConnector):
         except JoseError as e:
             raise ValueError(f"ID token validation failed for {self.name}: {e}") from e
 
+        # Validate the nonce binds this id_token to our authorization request
+        # (replay protection). Per OIDC, if we sent a nonce the IDP must echo it
+        # in the id_token.
+        expected_nonce = kwargs.get("nonce")
+        if expected_nonce and claims.get("nonce") != expected_nonce:
+            raise ValueError(f"ID token nonce mismatch for {self.name}")
+
         # Merge additional claims from /userinfo endpoint (catches groups/roles
         # that providers put in userinfo but not in the ID token)
         userinfo_claims = await self._fetch_userinfo(access_token)
