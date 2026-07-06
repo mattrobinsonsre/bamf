@@ -178,11 +178,24 @@ def _validate_client_cert(header_value: str | None, entity_type: str) -> x509.Ce
     return cert
 
 
+async def _reject_if_revoked(cert: x509.Certificate) -> None:
+    """Reject a certificate whose fingerprint is on the revocation denylist."""
+    from bamf.auth.ca import get_certificate_fingerprint
+    from bamf.auth.revocation import is_certificate_revoked
+
+    if await is_certificate_revoked(get_certificate_fingerprint(cert)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Certificate has been revoked",
+        )
+
+
 async def get_agent_identity(
     x_bamf_client_cert: str | None = Header(default=None, alias="X-Bamf-Client-Cert"),
 ) -> AgentIdentity:
     """Dependency to validate agent certificate from X-Bamf-Client-Cert header."""
     cert = _validate_client_cert(x_bamf_client_cert, "agent")
+    await _reject_if_revoked(cert)
     cn = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
     return AgentIdentity(name=cn, certificate=cert, expires_at=cert.not_valid_after_utc)
 
@@ -192,5 +205,6 @@ async def get_bridge_identity(
 ) -> BridgeIdentity:
     """Dependency to validate bridge certificate from X-Bamf-Client-Cert header."""
     cert = _validate_client_cert(x_bamf_client_cert, "bridge")
+    await _reject_if_revoked(cert)
     cn = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
     return BridgeIdentity(bridge_id=cn, certificate=cert, expires_at=cert.not_valid_after_utc)

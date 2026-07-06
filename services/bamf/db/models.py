@@ -371,3 +371,20 @@ class CertificateAuthority(Base):
     )
 
     __table_args__ = (UniqueConstraint("id"),)  # Only one CA row
+
+
+class RevokedCertificate(Base):
+    """Denylisted certificate fingerprints (revocation). Durable source of
+    truth; cached in Redis for fast cert-auth checks. The bridge keeps its
+    zero-runtime-dependency design — revocation is enforced at the API's
+    cert-auth layer (agent/bridge certs), and tunnel session certs are 30s TTL."""
+
+    __tablename__ = "revoked_certificates"
+
+    fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)  # SHA256 hex
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)  # admin email
+    subject_cn: Mapped[str | None] = mapped_column(String(255), nullable=True)  # for admin UX
