@@ -98,6 +98,38 @@ class TestRewriteRequestHeaders:
         assert result["X-Forwarded-For"] == "10.0.0.1"
         assert result["X-Forwarded-Roles"] == "developer"
 
+    def test_client_supplied_trust_headers_stripped(self):
+        """Inbound X-Forwarded-* / X-Bamf-* / Impersonate-* from the client are
+        stripped so they cannot spoof identity, k8s groups, or the target."""
+        headers = {
+            "accept": "*/*",
+            "x-forwarded-email": "attacker@evil.example",
+            "x-forwarded-user": "attacker@evil.example",
+            "x-forwarded-roles": "admin",
+            "x-forwarded-groups": "system:masters",
+            "x-bamf-target": "http://169.254.169.254/",
+            "impersonate-user": "system:admin",
+            "impersonate-group": "system:masters",
+        }
+        result = rewrite_request_headers(headers=headers, **self._base_kwargs())
+        # None of the spoofed inbound (lowercase) keys survive.
+        for k in (
+            "x-forwarded-email",
+            "x-forwarded-user",
+            "x-forwarded-roles",
+            "x-forwarded-groups",
+            "x-bamf-target",
+            "impersonate-user",
+            "impersonate-group",
+        ):
+            assert k not in result, k
+        # The authoritative values are the proxy's own.
+        assert result["X-Forwarded-Email"] == "alice@example.com"
+        assert result["X-Forwarded-User"] == "alice@example.com"
+        assert result["X-Forwarded-Roles"] == "developer"
+        assert result["X-Bamf-Target"] == "http://grafana.internal:3000"
+        assert "accept" in result
+
     def test_authorization_stripped(self):
         """Authorization header (BAMF Bearer) is stripped from proxied requests."""
         headers = {"authorization": "Bearer bamf-session-token"}

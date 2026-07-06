@@ -83,6 +83,12 @@ def rewrite_request_headers(
         # Strip BAMF Bearer token — the target shouldn't see it
         if lower_k == "authorization":
             continue
+        # Strip any client-supplied trust headers — the proxy injects the
+        # authoritative X-Forwarded-* / X-Bamf-* / Impersonate-* values below.
+        # Leaving inbound copies lets a client spoof identity, Kubernetes
+        # groups, or the proxy target (privilege escalation + SSRF).
+        if lower_k.startswith(("x-forwarded-", "x-bamf-", "impersonate-")):
+            continue
         # Strip bamf_session cookie but keep other cookies
         if lower_k == "cookie":
             v = _strip_bamf_cookie(v)

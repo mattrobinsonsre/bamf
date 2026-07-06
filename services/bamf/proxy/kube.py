@@ -136,10 +136,17 @@ async def kube_proxy(
     target_host = resource.hostname or "kubernetes.default.svc"
     target_port = resource.port or 6443
 
-    # Build headers for the bridge relay
-    headers = dict(request.headers)
-    for h in ("host", "connection", "transfer-encoding", "upgrade"):
-        headers.pop(h, None)
+    # Build headers for the bridge relay. Drop hop-by-hop headers AND any
+    # client-supplied trust headers (X-Forwarded-* / X-Bamf-* / Impersonate-*)
+    # so the client can't spoof identity, Kubernetes groups, or the target —
+    # that would be privilege escalation to impersonated groups + SSRF via
+    # X-Bamf-Target. The authoritative values are set below.
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "connection", "transfer-encoding", "upgrade")
+        and not k.lower().startswith(("x-forwarded-", "x-bamf-", "impersonate-"))
+    }
 
     headers["X-Bamf-Target"] = f"{target_protocol}://{target_host}:{target_port}"
     headers["X-Forwarded-Email"] = session.email
