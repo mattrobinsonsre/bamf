@@ -113,6 +113,18 @@ def create_application() -> FastAPI:
         """Record API request/response exchanges for audit."""
         return await api_audit_middleware(request, call_next)
 
+    # Rate limiting — Redis sliding window, per-IP. Added last so it runs
+    # outermost (throttle before routing/audit). Fails open if Redis is down.
+    if settings.rate_limit.enabled:
+        from bamf.api.rate_limit import RateLimitMiddleware
+
+        app.add_middleware(
+            RateLimitMiddleware,
+            requests_per_minute=settings.rate_limit.requests_per_minute,
+            authenticated_requests_per_minute=settings.rate_limit.authenticated_requests_per_minute,
+            auth_requests_per_minute=settings.rate_limit.auth_requests_per_minute,
+        )
+
     # Request ID middleware — propagate existing or generate new
     @app.middleware("http")
     async def add_request_id(request: Request, call_next: Any) -> Any:
