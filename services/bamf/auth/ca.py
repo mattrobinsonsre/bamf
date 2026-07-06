@@ -526,7 +526,7 @@ async def init_ca(db: AsyncSession) -> CertificateAuthority:
         # Load existing CA from database
         ca = CertificateAuthority.load(
             ca_record.ca_cert.encode(),
-            ca_record.ca_key_encrypted.encode(),
+            ca_record.ca_key_pem.encode(),
         )
         logger.info(
             "Loaded CA from database",
@@ -542,7 +542,7 @@ async def init_ca(db: AsyncSession) -> CertificateAuthority:
 
         ca_record = CertificateAuthorityModel(
             ca_cert=cert_pem,
-            ca_key_encrypted=key_pem,
+            ca_key_pem=key_pem,
         )
         db.add(ca_record)
         await db.commit()

@@ -359,7 +359,10 @@ class CertificateAuthority(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ca_cert: Mapped[str] = mapped_column(Text, nullable=False)
-    ca_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)  # Encrypted private key
+    # PEM CA private key. Stored unencrypted at rest by design (the DB is the
+    # trust root; a PG backup is the DR artifact). Protect via DB access
+    # controls / encryption-at-rest, or an external CA provider (Vault/cert-manager).
+    ca_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
     ssh_host_key: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # PEM Ed25519 for ssh-audit
