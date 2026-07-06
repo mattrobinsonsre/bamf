@@ -24,6 +24,13 @@ data:
     audit:
       retention_days: {{ .Values.core.api.config.audit.retention_days }}
 
+    # Application-level rate limiting
+    rate_limit:
+      enabled: {{ .Values.core.api.config.rate_limit.enabled }}
+      requests_per_minute: {{ .Values.core.api.config.rate_limit.requests_per_minute }}
+      authenticated_requests_per_minute: {{ .Values.core.api.config.rate_limit.authenticated_requests_per_minute }}
+      auth_requests_per_minute: {{ .Values.core.api.config.rate_limit.auth_requests_per_minute }}
+
     # Redis URL (password injected via environment)
     redis_url: {{ include "bamf.redisUrl" . | quote }}
 

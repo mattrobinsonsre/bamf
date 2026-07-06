@@ -154,6 +154,23 @@ class CORSConfig(BaseModel):
     )
 
 
+class RateLimitConfig(BaseModel):
+    """Application-level rate limiting (Redis sliding window). Complements any
+    ingress-level rate limiting (defense in depth). Per-tier limit 0 = unlimited."""
+
+    enabled: bool = Field(default=True, description="Enable app-level rate limiting")
+    requests_per_minute: int = Field(
+        default=100, description="Per-IP limit for unauthenticated requests"
+    )
+    authenticated_requests_per_minute: int = Field(
+        default=1000, description="Per-IP limit for authenticated requests"
+    )
+    auth_requests_per_minute: int = Field(
+        default=10,
+        description="Per-IP limit for /auth/* endpoints — login brute-force defence",
+    )
+
+
 class AuditConfig(BaseSettings):
     """Audit log configuration."""
 
@@ -214,6 +231,8 @@ class Settings(BaseSettings):
 
     # CORS
     cors: CORSConfig = Field(default_factory=CORSConfig)
+
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
 
     # API
     api_prefix: str = Field(default="/api/v1")
