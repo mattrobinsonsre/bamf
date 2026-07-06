@@ -685,9 +685,26 @@ func (s *Server) serveTunnels(ctx context.Context) error {
 		s.handlerWg.Add(1)
 		go func() {
 			defer s.handlerWg.Done()
+			// A panic in a single connection handler (e.g. malformed cert data)
+			// must not crash the whole bridge process — contain it here.
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in tunnel connection handler", "panic", r)
+					conn.Close()
+				}
+			}()
 			s.handleTunnelConnection(ctx, conn)
 		}()
 	}
+}
+
+// shortID returns a truncated, panic-safe identifier for logging. Session IDs
+// are normally UUIDs, but a crafted cert could carry a shorter SAN value.
+func shortID(id string) string {
+	if len(id) <= 16 {
+		return id
+	}
+	return id[:16] + "..."
 }
 
 // handleTunnelConnection handles an mTLS tunnel connection.
@@ -777,8 +794,9 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	sessionID := info.SessionID
 	resource := info.Resource
 
-	// Verify this connection is for this bridge
-	if info.BridgeID != "" && info.BridgeID != s.cfg.BridgeID {
+	// Verify this connection is for this bridge. Fail closed: a session cert
+	// with no bridge pin (empty SAN) is also rejected — the CA always sets it.
+	if info.BridgeID != s.cfg.BridgeID {
 		s.logger.Error("session cert is for different bridge",
 			"protocol", protocol,
 			"expected", s.cfg.BridgeID,
@@ -811,7 +829,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 
 	s.logger.Debug("connection authenticated",
 		"protocol", protocol,
-		"session_id", sessionID[:16]+"...",
+		"session_id", shortID(sessionID),
 		"resource", resource,
 		"resource_type", resourceType,
 		"role", info.Role,
@@ -826,7 +844,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		s.webTermSessionsMu.Unlock()
 		if exists && existing.IsDetached() {
 			s.logger.Info("web terminal client reconnecting",
-				"session_id", sessionID[:16]+"...",
+				"session_id", shortID(sessionID),
 				"resource_type", resourceType,
 			)
 			existing.Reconnect(&bufferedConn{r: reader, Conn: conn})
@@ -848,7 +866,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 
 		s.logger.Info("session matched",
 			"protocol", protocol,
-			"session_id", sessionID[:16]+"...",
+			"session_id", shortID(sessionID),
 			"resource", resource,
 		)
 		return
@@ -873,7 +891,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 
 	s.logger.Debug("connection waiting for match",
 		"protocol", protocol,
-		"session_id", sessionID[:16]+"...",
+		"session_id", shortID(sessionID),
 		"is_client", isClient,
 	)
 
@@ -887,7 +905,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	case <-time.After(matchTimeout):
 		s.logger.Warn("session match timeout",
 			"protocol", protocol,
-			"session_id", sessionID[:16]+"...",
+			"session_id", shortID(sessionID),
 			"is_client", isClient,
 		)
 		s.cleanupPending(sessionID)
@@ -908,7 +926,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 		// Notify API that tunnel is established (async — don't block)
 		go func() {
 			if err := s.apiClient.NotifyTunnelEstablished(ctx, sessionID, sessionID); err != nil {
-				s.logger.Warn("failed to notify tunnel established", "session_id", sessionID[:16]+"...", "error", err)
+				s.logger.Warn("failed to notify tunnel established", "session_id", shortID(sessionID), "error", err)
 			}
 		}()
 
@@ -947,12 +965,12 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 
 		s.logger.Info("tunnel established",
 			"protocol", protocol,
-			"session_id", sessionID[:16]+"...",
+			"session_id", shortID(sessionID),
 			"resource", resource,
 		)
 
 		if err := tunnel.Run(ctx); err != nil {
-			s.logger.Debug("tunnel closed", "protocol", protocol, "session_id", sessionID[:16]+"...", "error", err)
+			s.logger.Debug("tunnel closed", "protocol", protocol, "session_id", shortID(sessionID), "error", err)
 		}
 
 		// Notify API that tunnel is closed (use background context — tunnel ctx may be done)
@@ -960,7 +978,7 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
-				s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
+				s.logger.Warn("failed to notify tunnel closed", "session_id", shortID(sessionID), "error", err)
 			}
 		}()
 	}
@@ -1725,7 +1743,7 @@ func (s *Server) handleDBAuditSession(ctx context.Context, clientConn, agentConn
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.apiClient.NotifyTunnelClosed(closeCtx, sessionID, sessionID, tunnel.BytesSent.Load(), tunnel.BytesRecv.Load()); err != nil {
-		s.logger.Warn("failed to notify tunnel closed", "session_id", sessionID[:16]+"...", "error", err)
+		s.logger.Warn("failed to notify tunnel closed", "session_id", shortID(sessionID), "error", err)
 	}
 }
 
