@@ -42,6 +42,10 @@ class Session:
     # Kubernetes groups resolved from roles at login (union of all matching roles)
     kubernetes_groups: list[str] = field(default_factory=list)
 
+    # Absolute hard expiry (e.g. the IDP id_token lifetime) — a sliding refresh
+    # must never extend the session past this. None means no hard cap.
+    hard_expires_at: str | None = None
+
     # Token is not stored in Redis — it's the key, not the value.
     token: str = field(default="", repr=False)
 
@@ -73,6 +77,13 @@ async def create_session(
         ttl = max_ttl
     now = utc_now()
     expires_at = now + timedelta(seconds=ttl)
+    # Record the absolute hard cap so a later sliding refresh cannot extend the
+    # session past the IDP token lifetime.
+    hard_expires_at = (
+        (now + timedelta(seconds=max_ttl)).isoformat()
+        if max_ttl is not None and max_ttl > 0
+        else None
+    )
 
     session = Session(
         email=email,
@@ -83,6 +94,7 @@ async def create_session(
         expires_at=expires_at.isoformat(),
         last_active_at=now.isoformat(),
         kubernetes_groups=kubernetes_groups or [],
+        hard_expires_at=hard_expires_at,
         token=token,
     )
 
@@ -137,10 +149,24 @@ async def refresh_session(token: str, session: Session) -> None:
         return  # Session vanished between check and refresh — harmless
 
     data = json.loads(raw)
+    user_key = USER_SESSIONS_PREFIX + session.email
+
+    # Honor the hard cap (e.g. the IDP id_token lifetime) set at login — a
+    # sliding refresh must never extend the session past it.
+    hard = data.get("hard_expires_at")
+    if hard:
+        remaining = int((datetime.fromisoformat(hard) - now).total_seconds())
+        if remaining <= 0:
+            # Reached the hard cap — expire the session now instead of extending.
+            async with redis.pipeline(transaction=True) as pipe:
+                pipe.delete(session_key)
+                pipe.srem(user_key, token)
+                await pipe.execute()
+            return
+        ttl = min(ttl, remaining)
+
     data["last_active_at"] = now.isoformat()
     data["expires_at"] = (now + timedelta(seconds=ttl)).isoformat()
-
-    user_key = USER_SESSIONS_PREFIX + session.email
 
     async with redis.pipeline(transaction=True) as pipe:
         pipe.set(session_key, json.dumps(data), ex=ttl)
