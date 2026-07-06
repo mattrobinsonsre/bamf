@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     async with async_session_factory() as db_session:
         await init_ca(db_session)
+        # Load the certificate-revocation denylist into Redis for fast cert-auth checks.
+        from bamf.auth.revocation import load_revoked_into_redis
+
+        await load_revoked_into_redis(db_session)
     logger.info("Certificate Authority initialized")
 
     init_connectors()

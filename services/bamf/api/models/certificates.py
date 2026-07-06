@@ -38,3 +38,20 @@ class CACertificateResponse(BAMFBaseModel):
     """Response containing the public CA certificate."""
 
     ca_certificate: str = Field(description="PEM-encoded CA certificate")
+
+
+class RevokeCertificateRequest(BAMFBaseModel):
+    """Request to revoke a certificate by fingerprint."""
+
+    fingerprint: str = Field(description="SHA256 hex fingerprint of the certificate to revoke")
+    reason: str | None = Field(default=None, description="Optional revocation reason")
+
+
+class RevokedCertificateResponse(BAMFBaseModel):
+    """A revoked certificate entry."""
+
+    fingerprint: str
+    revoked_at: datetime
+    reason: str | None = None
+    revoked_by: str | None = None
+    subject_cn: str | None = None
