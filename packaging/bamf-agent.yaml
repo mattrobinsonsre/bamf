@@ -12,7 +12,7 @@ maintainer: "Matt Robinson <mattrobinsonsre@gmail.com>"
 description: "BAMF Agent - secure infrastructure access agent"
 vendor: "BAMF"
 homepage: "https://github.com/mattrobinsonsre/bamf"
-license: "GPL-3.0"
+license: "MPL-2.0"
 
 contents:
   - src: dist/bamf-agent-linux-${ARCH}

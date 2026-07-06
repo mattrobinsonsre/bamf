@@ -16,18 +16,18 @@ or resell Teleport Community in their products or services.
 Prior to v16, Teleport Community was AGPLv3. The source remains available but
 the license is no longer open-source by any standard definition.
 
-BAMF is licensed under the **GNU General Public License v3.0** with no usage
+BAMF is licensed under the **Mozilla Public License 2.0** with no usage
 restrictions. Any organization can use, modify, and distribute BAMF regardless
 of size or revenue. There is no CLA.
 
 | | BAMF | Teleport Community |
 |---|---|---|
-| License | GPLv3 | Commercial (employee + revenue caps) |
+| License | MPL-2.0 | Commercial (employee + revenue caps) |
 | Source available | Yes | Yes |
 | Free for individuals | Yes | Yes |
 | Free for companies >100 employees | Yes | No |
 | Free for companies >$10M revenue | Yes | No |
-| Embedding / reselling | Permitted (GPLv3 terms) | Prohibited |
+| Embedding / reselling | Permitted (MPL-2.0, file-level copyleft) | Prohibited |
 
 ## SSO — The Biggest Gap
 
@@ -39,7 +39,7 @@ Teleport Enterprise.
 
 BAMF includes full SSO support in the open-source release:
 
-| SSO Provider | BAMF (GPLv3) | Teleport Community | Teleport Enterprise |
+| SSO Provider | BAMF (MPL-2.0) | Teleport Community | Teleport Enterprise |
 |---|---|---|---|
 | GitHub | Planned | Yes | Yes |
 | Auth0 | Yes | No | Yes |
@@ -197,7 +197,7 @@ BAMF is a younger project. Features that Teleport has and BAMF does not:
 
 - Your team uses an identity provider (Okta, Azure AD, Auth0, Google, Keycloak)
   and needs SSO without paying for an enterprise license
-- You want a truly open-source solution (GPLv3) with no usage restrictions
+- You want a truly open-source solution (MPL-2.0) with no usage restrictions
 - You value build simplicity — standard Go + Python toolchains, no C/Rust deps
 - You don't need Windows/RDP desktop access
 - You prefer a lighter-weight deployment (separate Go data path + Python control plane)
