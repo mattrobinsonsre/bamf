@@ -84,6 +84,42 @@ ca:
 Only the API server needs the CA private key. CLI and agents fetch the public
 cert from `/api/v1/certificates/ca` over public HTTPS.
 
+## Certificate Revocation
+
+BAMF certificates are short-lived, but the long-lived service certs (agents
+default to 1 year, bridges to 24h) need a kill-switch for the case where a
+private key leaks. A revocation denylist provides it.
+
+```zsh
+# Revoke a certificate by its SHA-256 fingerprint (admin only)
+curl -X POST https://bamf.example.com/api/v1/certificates/revoke \
+  -H "Authorization: Bearer $BAMF_SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"fingerprint": "<sha256-hex>", "reason": "key compromised"}'
+
+# List revoked certificates (admin or audit)
+curl https://bamf.example.com/api/v1/certificates/revoked \
+  -H "Authorization: Bearer $BAMF_SESSION"
+```
+
+How it works:
+
+- **Durable source of truth** — revoked fingerprints are stored in Postgres, so
+  they survive restarts and are covered by your database backup.
+- **Fast enforcement** — the denylist is mirrored into a Redis set and checked on
+  every agent/bridge request (those presenting `X-Bamf-Client-Cert`). A revoked
+  cert gets `401`. The set is re-seeded from Postgres at startup and periodically
+  thereafter, so it survives a Redis restart/flush.
+- **Fails open** — if Redis is unavailable the check fails open (consistent with
+  the rate limiter); the periodic re-seed bounds the exposure window.
+- **Scope** — revocation targets the long-lived service certs. User access is
+  revoked separately by deleting the session (`DELETE /api/v1/auth/sessions/{id}`
+  or `revoke_all_user_sessions`), and per-tunnel session certs are 30-second TTL,
+  so a revoked identity simply stops getting new ones.
+
+Fingerprints are normalized on ingest (lowercase, colons/spaces stripped), so
+either `AA:BB:CC…` or `aabbcc…` forms work.
+
 ## CA Backup and Recovery
 
 The CA cert and key are stored in the database (in addition to the K8s Secret).
