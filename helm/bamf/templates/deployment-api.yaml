@@ -84,7 +84,11 @@ spec:
             {{- end }}
             - name: BAMF_REDIS_URL
               value: {{ include "bamf.redisUrl" . | quote }}
-            {{- if .Values.outpost.bridge.bootstrap.enabled }}
+            {{- if and .Values.outpost.enabled .Values.outpost.bridge.bootstrap.enabled }}
+            {{- /* Only for the co-located bridge; remote-outpost bridges auth via
+                   DB-hashed bootstrap tokens, not this env var. Gate on
+                   outpost.enabled so a core-only install doesn't reference a
+                   Secret that isn't rendered. */}}
             - name: BAMF_BRIDGE_BOOTSTRAP_TOKEN
               valueFrom:
                 secretKeyRef:

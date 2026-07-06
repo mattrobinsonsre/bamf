@@ -187,6 +187,18 @@ jobs:
             alpine/helm:3.17.2 \
             lint helm/bamf --values helm/bamf/values.yaml
 
+      # Every documented topology must render — guards against gating regressions
+      # like a Secret that requires input in a topology where its component is off.
+      - name: Helm template — all 4 topologies must render
+        run: |
+          docker run --rm -v "$PWD:/chart" -w /chart alpine/helm:3.17.2 sh -euc '
+            helm template helm/bamf --set core.enabled=true,outpost.enabled=true,agent.enabled=false >/dev/null
+            helm template helm/bamf --set core.enabled=false,outpost.enabled=true,agent.enabled=false >/dev/null
+            helm template helm/bamf --set core.enabled=false,outpost.enabled=false,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
+            helm template helm/bamf --set core.enabled=true,outpost.enabled=true,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
+            echo "all 4 topologies rendered"
+          '
+
   # ── Security ────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
