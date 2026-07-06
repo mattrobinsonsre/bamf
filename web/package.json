@@ -23,7 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.564.0",
-    "next": "^16.2.1",
+    "next": "^16.2.10",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-hot-toast": "^2.6.0",
@@ -35,7 +35,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.1",
+    "eslint-config-next": "^16.2.10",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
