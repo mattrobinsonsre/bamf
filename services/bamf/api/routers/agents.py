@@ -34,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
+from bamf.api.agent_commands import command_queue_key, enqueue_agent_command
 from bamf.api.dependencies import (
     AgentIdentity,
     get_agent_identity,
@@ -588,14 +589,15 @@ async def delete_agent(
     agent_id_str = str(resolved_id)
     agent_name = agent.name
 
-    # Send revoke event to all instances via their instance-specific channels
-    revoke_payload = json.dumps({"command": "revoke", "reason": "Agent deleted by administrator"})
+    # Enqueue a revoke command on every instance's reliable delivery queue.
     instances = await r.hgetall(f"agent:{agent_id_str}:instances")
     if instances:
         for iid in instances:
-            await r.publish(
-                f"agent:{agent_id_str}:instance:{iid}:commands",
-                revoke_payload,
+            await enqueue_agent_command(
+                r,
+                agent_id_str,
+                iid,
+                {"command": "revoke", "reason": "Agent deleted by administrator"},
             )
 
     # Clear all Redis state for this agent
@@ -684,50 +686,43 @@ async def agent_events(
     """
     resolved_id, _ = await resolve_agent_id(agent_id, db)
     agent_id_str = str(resolved_id)
-    # Instance-specific channel for targeted command routing
-    channel = f"agent:{agent_id_str}:instance:{instance_id}:commands"
+    # Reliable per-instance command queue (drained via BLPOP). A command enqueued
+    # while this stream was down waits here (bounded by TTL) and is delivered on
+    # (re)connect — exactly-once, no fire-and-forget pub/sub loss.
+    queue_key = command_queue_key(agent_id_str, instance_id)
 
     async def event_generator() -> AsyncGenerator[str]:
         from bamf.api.app import shutdown_event
 
-        # Subscribe to the instance-specific command channel
-        pubsub = r.pubsub()
-        await pubsub.subscribe(channel)
+        keepalive_counter = 0
 
-        try:
-            keepalive_counter = 0
+        while not shutdown_event.is_set():
+            # Block up to 1s for the next queued command, then send a keepalive
+            # if none arrived within ~30s. BLPOP delivers immediately on enqueue.
+            popped = await r.blpop([queue_key], timeout=1)
 
-            while not shutdown_event.is_set():
-                # Check for pub/sub messages with 1s timeout, then send
-                # keepalive if no message arrived within 30s.
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-
-                if message and message["type"] == "message":
-                    data = message["data"]
-                    if isinstance(data, bytes):
-                        data = data.decode()
-                    # Determine SSE event type from the command field
-                    event_type = "tunnel_request"
-                    try:
-                        parsed = json.loads(data)
-                        cmd = parsed.get("command", "")
-                        if cmd == "relay_connect":
-                            event_type = "relay_connect"
-                        elif cmd == "revoke":
-                            event_type = "revoke"
-                    except json.JSONDecodeError, TypeError:
-                        logger.debug("Failed to parse SSE event type")
-                    yield f"event: {event_type}\ndata: {data}\n\n"
+            if popped is not None:
+                data = popped[1]
+                if isinstance(data, bytes):
+                    data = data.decode()
+                # Determine SSE event type from the command field
+                event_type = "tunnel_request"
+                try:
+                    cmd = json.loads(data).get("command", "")
+                    if cmd == "relay_connect":
+                        event_type = "relay_connect"
+                    elif cmd == "revoke":
+                        event_type = "revoke"
+                except json.JSONDecodeError, TypeError:
+                    logger.debug("Failed to parse SSE event type")
+                yield f"event: {event_type}\ndata: {data}\n\n"
+                keepalive_counter = 0
+            else:
+                keepalive_counter += 1
+                # Send heartbeat every ~30 iterations (30s at 1s poll)
+                if keepalive_counter >= 30:
+                    yield "event: heartbeat\ndata: {}\n\n"
                     keepalive_counter = 0
-                else:
-                    keepalive_counter += 1
-                    # Send heartbeat every ~30 iterations (30s at 1s poll)
-                    if keepalive_counter >= 30:
-                        yield "event: heartbeat\ndata: {}\n\n"
-                        keepalive_counter = 0
-        finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
 
     return StreamingResponse(
         event_generator(),

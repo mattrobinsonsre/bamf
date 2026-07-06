@@ -14,10 +14,10 @@ Relay connection lifecycle:
 from __future__ import annotations
 
 import asyncio
-import json
 
 import httpx
 
+from bamf.api.agent_commands import enqueue_agent_command
 from bamf.auth.ca import get_ca
 from bamf.config import settings
 from bamf.logging_config import get_logger
@@ -149,18 +149,17 @@ async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
     # The agent may have joined with a previous CA — always send the current one.
     ca = get_ca()
 
-    # Route to the selected instance's channel
-    channel = f"agent:{agent_id}:instance:{instance_id}:commands"
-    await r.publish(
-        channel,
-        json.dumps(
-            {
-                "command": "relay_connect",
-                "bridge_host": bridge_host,
-                "bridge_port": bridge_port,
-                "ca_certificate": ca.ca_cert_pem,
-            }
-        ),
+    # Enqueue on the selected instance's reliable delivery queue.
+    await enqueue_agent_command(
+        r,
+        agent_id,
+        instance_id,
+        {
+            "command": "relay_connect",
+            "bridge_host": bridge_host,
+            "bridge_port": bridge_port,
+            "ca_certificate": ca.ca_cert_pem,
+        },
     )
 
     # Mark this instance as having a relay connection

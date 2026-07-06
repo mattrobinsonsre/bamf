@@ -130,6 +130,12 @@ func (c *SSEClient) Connect(ctx context.Context) (<-chan SSEEvent, error) {
 		defer close(eventCh)
 
 		scanner := bufio.NewScanner(resp.Body)
+		// A tunnel_request/relay_connect data line inlines three PEM blocks
+		// (session_cert + session_key + ca_certificate). The default 64KB token
+		// limit is comfortable today (~6KB) but a cert chain or larger key could
+		// exceed it and silently drop the event (bufio.ErrTooLong). Give ample
+		// headroom (1MB) so oversized-but-legitimate events still parse.
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		var eventType string
 		var dataLines []string
 

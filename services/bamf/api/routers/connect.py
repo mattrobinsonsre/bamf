@@ -11,19 +11,21 @@ Consumers:
         POST /api/v1/connect — initiates web app proxy session
 
 Downstream effects:
-    This endpoint publishes a JSON command to a Redis pub/sub channel
-    agent:{agent_id}:instance:{instance_id}:commands (selected by
-    select_agent_instance). The SSE endpoint in agents.py delivers
-    this to the specific Go agent instance.
+    This endpoint enqueues a JSON command on a reliable per-instance Redis
+    list agent:{agent_id}:instance:{instance_id}:commands (via
+    agent_commands.enqueue_agent_command; instance selected by
+    select_agent_instance). The SSE endpoint in agents.py drains it (BLPOP)
+    and delivers it to the specific Go agent instance — surviving a brief
+    agent SSE reconnect rather than being lost like fire-and-forget pub/sub.
 
-    Pub/sub payload shape (new connection):
+    Command payload shape (new connection):
         {"command": "dial", "session_id": "...", "bridge_host": "...",
          "bridge_port": 443, "resource_name": "...", "resource_type": "ssh",
          "session_cert": "-----BEGIN CERTIFICATE-----...",
          "session_key": "-----BEGIN PRIVATE KEY-----...",
          "ca_certificate": "-----BEGIN CERTIFICATE-----..."}
 
-    Pub/sub payload shape (reconnect after bridge failure):
+    Command payload shape (reconnect after bridge failure):
         {"command": "redial", "session_id": "...", "bridge_host": "...",
          "bridge_port": 443, "resource_name": "...", "resource_type": "ssh",
          "session_cert": "-----BEGIN CERTIFICATE-----...",
@@ -48,6 +50,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bamf.api.agent_commands import enqueue_agent_command
 from bamf.api.dependencies import get_current_user
 from bamf.api.models.connect import ConnectRequest, ConnectResponse
 from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
@@ -524,23 +527,23 @@ async def _issue_session(
         agent_bridge_host = bridge_hostname
         agent_bridge_port = bridge_port
 
-    # Route command to the selected instance's channel
-    channel = f"agent:{agent_id}:instance:{instance_id}:commands"
-    await r.publish(
-        channel,
-        json.dumps(
-            {
-                "command": command,
-                "session_id": session_id,
-                "bridge_host": agent_bridge_host,
-                "bridge_port": agent_bridge_port,
-                "resource_name": resource_name,
-                "resource_type": resource_type,
-                "session_cert": serialize_certificate(agent_cert).decode(),
-                "session_key": serialize_private_key(agent_key).decode(),
-                "ca_certificate": ca.ca_cert_pem,
-            }
-        ),
+    # Enqueue the command on the selected instance's reliable delivery queue so
+    # it survives a brief agent SSE reconnect (see agent_commands).
+    await enqueue_agent_command(
+        r,
+        agent_id,
+        instance_id,
+        {
+            "command": command,
+            "session_id": session_id,
+            "bridge_host": agent_bridge_host,
+            "bridge_port": agent_bridge_port,
+            "resource_name": resource_name,
+            "resource_type": resource_type,
+            "session_cert": serialize_certificate(agent_cert).decode(),
+            "session_key": serialize_private_key(agent_key).decode(),
+            "ca_certificate": ca.ca_cert_pem,
+        },
     )
 
     # Increment instance tunnel count for load-balancing selection
