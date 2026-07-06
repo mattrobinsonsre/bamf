@@ -96,12 +96,10 @@ spec:
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 5
-          {{- if .Values.agent.preStopSleepSeconds }}
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sleep", "{{ .Values.agent.preStopSleepSeconds }}"]
-          {{- end }}
+          {{- /* No preStop hook: the agent image is FROM scratch (no `sleep`),
+                 and the agent is an outbound-only client (SSE to the API, dials
+                 bridges on demand) with no inbound Service to drain. Graceful
+                 shutdown is the agent's SIGTERM handler + terminationGracePeriodSeconds. */}}
           volumeMounts:
             - name: config
               mountPath: /etc/bamf-agent

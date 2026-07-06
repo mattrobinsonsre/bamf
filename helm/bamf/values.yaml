@@ -561,9 +561,6 @@ agent:
   # to finish naturally. 30 min covers most interactive sessions.
   terminationGracePeriodSeconds: 1800
 
-  # Pre-stop sleep to allow in-flight heartbeats to complete
-  preStopSleepSeconds: 5
-
   podAnnotations: {}
   podLabels: {}
   priorityClassName: ""

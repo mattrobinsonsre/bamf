@@ -587,7 +587,6 @@
         },
         "dataDir": { "type": "string" },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-        "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
         "podAnnotations": { "type": "object" },
         "podLabels": { "type": "object" },
         "priorityClassName": { "type": "string" },
