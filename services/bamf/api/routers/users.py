@@ -1,5 +1,7 @@
 """Users router."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -129,10 +131,14 @@ async def create_user(
             detail="User with this email already exists",
         )
 
-    # Create user
+    # Create user. Hash off the event loop — PBKDF2 (100k iterations) is
+    # CPU-heavy and would stall the worker on the async path.
+    password_hash = (
+        await asyncio.to_thread(hash_password, user_data.password) if user_data.password else None
+    )
     user = User(
         email=user_data.email,
-        password_hash=hash_password(user_data.password) if user_data.password else None,
+        password_hash=password_hash,
         is_active=user_data.is_active,
     )
     db.add(user)
@@ -217,7 +223,7 @@ async def update_user(
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
     if user_data.password is not None:
-        user.password_hash = hash_password(user_data.password)
+        user.password_hash = await asyncio.to_thread(hash_password, user_data.password)
 
     # Update local role assignments if provided
     if user_data.roles is not None:

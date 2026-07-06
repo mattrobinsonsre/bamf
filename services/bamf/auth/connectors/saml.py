@@ -3,6 +3,7 @@
 Uses python3-saml for metadata parsing and assertion validation.
 """
 
+import asyncio
 from typing import Any
 
 from bamf.auth.sso import AuthenticatedIdentity, AuthorizationRequest, SSOConnector
@@ -66,8 +67,11 @@ class SAMLConnector(SSOConnector):
 
         # Parse IDP metadata
         if self._idp_metadata is None:
-            self._idp_metadata = OneLogin_Saml2_IdPMetadataParser.parse_remote(
-                self._config.metadata_url
+            # parse_remote does a blocking HTTP GET — offload it so a slow or
+            # unreachable IdP can't freeze the event loop.
+            self._idp_metadata = await asyncio.to_thread(
+                OneLogin_Saml2_IdPMetadataParser.parse_remote,
+                self._config.metadata_url,
             )
 
         saml_settings = self._get_saml_settings(callback_url)
@@ -107,8 +111,11 @@ class SAMLConnector(SSOConnector):
             raise RuntimeError("python3-saml is required for SAML providers.") from e
 
         if self._idp_metadata is None:
-            self._idp_metadata = OneLogin_Saml2_IdPMetadataParser.parse_remote(
-                self._config.metadata_url
+            # parse_remote does a blocking HTTP GET — offload it so a slow or
+            # unreachable IdP can't freeze the event loop.
+            self._idp_metadata = await asyncio.to_thread(
+                OneLogin_Saml2_IdPMetadataParser.parse_remote,
+                self._config.metadata_url,
             )
 
         saml_settings = self._get_saml_settings(callback_url)
@@ -123,7 +130,8 @@ class SAMLConnector(SSOConnector):
         }
 
         auth = OneLogin_Saml2_Auth(request_data, saml_settings)
-        auth.process_response()
+        # process_response runs xmlsec signature verification (CPU-bound).
+        await asyncio.to_thread(auth.process_response)
 
         errors = auth.get_errors()
         if errors:
