@@ -3,7 +3,7 @@ name = "bamf"
 version = "0.1.0"
 description = "Beyond Access Management Framework - API Server"
 authors = ["Matt Robinson"]
-license = "Apache-2.0"
+license = "MPL-2.0"
 readme = "README.md"
 packages = [{include = "bamf"}]
 

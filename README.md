@@ -1,7 +1,7 @@
 # BAMF — Bridge Access Management Fabric
 
 [![CI](https://github.com/mattrobinsonsre/bamf/actions/workflows/ci.yml/badge.svg)](https://github.com/mattrobinsonsre/bamf/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 
 Secure infrastructure access with short-lived certificates, centralized audit,
 and zero-trust tunnels. An open-source alternative to Teleport that builds in
@@ -20,16 +20,16 @@ starting with v16 (June 2024). Companies with >100 employees or >$10M revenue
 cannot legally use it. And even within those limits, SSO is locked to GitHub
 only — Okta, Azure AD, Google, SAML, and generic OIDC all require Enterprise.
 
-BAMF is **GPLv3** — no usage restrictions, no feature gating:
+BAMF is **MPL-2.0** — no usage restrictions, no feature gating:
 
-| | BAMF (GPLv3) | Teleport Community |
+| | BAMF (MPL-2.0) | Teleport Community |
 |---|---|---|
 | **SSO (OIDC/SAML)** | All providers included | GitHub only (Okta, Azure AD, SAML: Enterprise) |
 | **Session recording** | SSH + DB query + HTTP audit | SSH only (enhanced recording: Enterprise) |
 | **Web app access** | Included | Enterprise only |
 | **Commercial use** | Unrestricted | <100 employees **and** <$10M revenue |
 | **Build from source** | Go + Python, minutes | Go + Rust + C + libfido2, hours |
-| **License** | GPLv3 | Commercial (since v16, June 2024) |
+| **License** | MPL-2.0 | Commercial (since v16, June 2024) |
 
 [Detailed comparison](docs/comparison.md)
 
@@ -334,4 +334,6 @@ See [Development Guide](docs/development.md) for the full setup.
 
 ## License
 
-BAMF is licensed under the [GNU General Public License v3.0](LICENSE).
+BAMF is licensed under the [Mozilla Public License 2.0](LICENSE) — file-level
+copyleft (BAMF's own source stays open) with no usage, size, or revenue
+restrictions and unrestricted commercial use.

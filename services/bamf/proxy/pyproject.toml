@@ -3,7 +3,7 @@ name = "bamf-proxy"
 description = "BAMF standalone HTTP proxy service"
 version = "0.0.0"
 authors = ["Matt Robinson <mattrobinsonsre@gmail.com>"]
-license = "GPL-3.0"
+license = "MPL-2.0"
 readme = "README.md"
 packages = [{include = "bamf", from = "../../services"}]
 

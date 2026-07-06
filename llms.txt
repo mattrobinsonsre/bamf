@@ -1,0 +1,101 @@
+# BAMF
+
+> BAMF (Bridge Access Management Fabric) is a free, open-source (MPL-2.0)
+> infrastructure access platform — an alternative to Teleport. It gives teams
+> secure, audited access to SSH servers, databases, Kubernetes clusters, and
+> internal web applications via short-lived certificates, centralized audit,
+> session recording, and zero-trust tunnels, with SSO and role-based access
+> control. Control plane in Python/FastAPI; data plane (bridge, agent, CLI) in
+> Go; Next.js web UI; deployed via a Helm chart. Repo:
+> `github.com/mattrobinsonsre/bamf`.
+
+This file is the machine-friendly map. Entries resolve to real files/commands in
+the repo — no hallucinated endpoints, Helm values, or config keys.
+
+## Start here (entry-point hierarchy)
+
+- [README.md](README.md): what BAMF is, feature overview, quickstart.
+- [AGENTS.md](AGENTS.md): contributor + AI-assistant guide — architecture,
+  contracts (API↔consumer, code↔tests), test tiers, conventions, content
+  hygiene, release discipline. **Read this before changing code.**
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup + issue→branch→PR workflow.
+- [docs/index.md](docs/index.md): documentation entry point / table of contents.
+- `CLAUDE.md`: local-only (gitignored) operational + deep-architecture notes;
+  imports AGENTS.md. Not part of the public repo.
+
+## Build, test, run (all via Docker `make`; run `make help` for the full list)
+
+- `make lint` — lint Go + Python + Web.
+- `make test` — test Go + Python (`make test-go` / `make test-python` to scope).
+- `make build` — cross-compile the Go binaries; `make build-local` for the host.
+- `make dev` / `make dev-down` — local Kubernetes dev stack (Tilt on Rancher
+  Desktop); see [docs/development.md](docs/development.md).
+- `make db-migrate` — Alembic migrations. `make proto` — regenerate protobuf.
+- `make security-scan` — govulncheck + pip-audit. `make pentest` — SAST + Trivy + DAST.
+- Deploy: Helm chart at `helm/bamf/` — see [docs/admin/deployment.md](docs/admin/deployment.md).
+- Release: tag `vX.Y.Z` → automated GitHub Actions pipeline (images + Helm chart
+  + binaries + SBOMs). Process + pre-release gates:
+  [docs/releasing.md](docs/releasing.md) + [AGENTS.md](AGENTS.md#release-discipline).
+
+## Codebase map
+
+- `services/` — Python API server (FastAPI) + HTTP reverse proxy. Routers in
+  `services/bamf/api/routers/`; auth/CA/RBAC/SSO in `services/bamf/auth/`;
+  business logic in `services/bamf/services/`; models in `services/bamf/db/`.
+- `cmd/` — Go binaries: `bamf` (CLI), `bamf-bridge` (tunnel gateway),
+  `bamf-agent` (target-side agent).
+- `pkg/` — shared Go: `bridge`, `agent`, `ssh`, `dbproxy`, `tunnel`, `certs`,
+  `apiclient` (typed HTTP client for the Python API — the Go-side API contract),
+  `config`.
+- `web/` — Next.js 16 + React 19 + TypeScript frontend.
+- `proto/` → `pkg/pb/` — gRPC/protobuf.
+- `alembic/` — DB migrations. `helm/bamf/` — Helm chart. `docker/` — Dockerfiles.
+- `docs/` — documentation. `pentest/` — SAST/Trivy/DAST config.
+
+## Feature catalogue (each entry → what it does + where to learn more)
+
+- **SSO / identity** — OIDC + SAML connectors (Auth0, Okta, Google, Azure AD,
+  Keycloak, generic OIDC/SAML); MFA delegated to the IdP. Every provider is a
+  `Connector`. [docs/admin/sso.md](docs/admin/sso.md),
+  [docs/architecture/authentication.md](docs/architecture/authentication.md).
+- **RBAC** — role-based access control; built-in + custom roles; SSO claim
+  mapping via the `bamf:` claim prefix. [docs/admin/rbac.md](docs/admin/rbac.md).
+- **SSH access** — certificate-based SSH with session recording.
+  [docs/guides/ssh.md](docs/guides/ssh.md).
+- **Database access** — protocol-aware DB proxying (Postgres/MySQL) with query
+  audit. [docs/guides/databases.md](docs/guides/databases.md).
+- **Kubernetes access** — kube access via the HTTP proxy + exec credential
+  plugin. [docs/guides/kubernetes.md](docs/guides/kubernetes.md).
+- **Web app access** — authenticated HTTP reverse proxy to internal web apps.
+  [docs/guides/web-apps.md](docs/guides/web-apps.md).
+- **Web terminal** — browser-based SSH + DB access.
+  [docs/guides/web-terminal.md](docs/guides/web-terminal.md).
+- **Generic TCP tunnels** — short-lived local-forward tunnels (`bamf tcp ...`).
+  [docs/architecture/tunnels.md](docs/architecture/tunnels.md).
+- **Agents** — target-side agents (registration, heartbeat, join tokens).
+  [docs/guides/agents.md](docs/guides/agents.md).
+- **Audit & session recording** — immutable audit log; SSH/DB/HTTP recording
+  with redaction. [docs/architecture/security.md](docs/architecture/security.md).
+- **Certificates / internal CA** — BAMF-CA-issued short-lived certs (users 12h,
+  services 24h). [docs/admin/certificates.md](docs/admin/certificates.md).
+- **Outpost deployments** — data-plane components deployed close to targets.
+  [docs/architecture/outpost-deployments.md](docs/architecture/outpost-deployments.md).
+
+## Operations
+
+- [docs/operations/upgrading.md](docs/operations/upgrading.md),
+  [docs/operations/backup-restore.md](docs/operations/backup-restore.md),
+  [docs/operations/scaling.md](docs/operations/scaling.md),
+  [docs/operations/monitoring.md](docs/operations/monitoring.md).
+
+## Conventions that constrain changes (see AGENTS.md for the full text)
+
+- API is `/api/v1/`, flat responses (no envelope), FastAPI `{"detail": ...}`
+  errors, timezone-aware UTC ISO8601 timestamps, Pydantic request/response
+  models (no raw dicts).
+- Every API change updates its consumers: `pkg/apiclient` (Go), `web`, CLI.
+- Every code change ships tests at the right tier (Go unit / Python
+  services-API / integration / web E2E).
+- Helm: `values.yaml` ↔ `values.schema.json` must stay in sync
+  (`additionalProperties: false`); secrets via `secretKeyRef`, never ConfigMaps.
+- Content hygiene: no internal references; never disparage peer OSS (Teleport).
