@@ -417,6 +417,7 @@ async def callback(
             callback_url=bamf_callback_url,
             code=code,
             state=state,
+            nonce=auth_state.nonce,
         )
     except ValueError as e:
         logger.error("SSO callback failed", provider=auth_state.provider_name, error=str(e))
