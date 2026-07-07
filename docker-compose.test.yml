@@ -43,3 +43,16 @@ services:
     image: ${TEST_IMAGE:-bamf-test:local}
     command: >
       sh -c "ruff check . && ruff format --check ."
+
+  # Migration round-trip: upgrade to head, downgrade ALL the way to base (exercises
+  # every downgrade()), then upgrade again (idempotency). A broken up/down fails.
+  migrate:
+    image: ${TEST_IMAGE:-bamf-test:local}
+    working_dir: /app/alembic
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://bamf:bamf-test@postgres:5432/bamf_test"
+    command: >
+      sh -c "alembic upgrade head && alembic downgrade base && alembic upgrade head"
+    depends_on:
+      postgres:
+        condition: service_healthy

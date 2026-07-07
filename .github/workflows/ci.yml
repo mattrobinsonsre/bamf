@@ -145,6 +145,18 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - run: scripts/test.sh python
 
+  # A broken Alembic migration otherwise merges green (CI never ran it). This
+  # runs the full upgrade → downgrade base → upgrade round-trip against Postgres.
+  migration-check:
+    name: Migration Check
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - run: scripts/test.sh migrations
+
   python-security:
     name: Python Security (pip-audit)
     needs: prepare
@@ -444,6 +456,7 @@ jobs:
       - go-security
       - python-lint
       - python-test
+      - migration-check
       - python-security
       - web-lint
       - helm-lint
@@ -656,6 +669,7 @@ jobs:
       - go-security
       - python-lint
       - python-test
+      - migration-check
       - python-security
       - web-lint
       - web-build
@@ -682,6 +696,7 @@ jobs:
             "${{ needs.go-security.result }}"
             "${{ needs.python-lint.result }}"
             "${{ needs.python-test.result }}"
+            "${{ needs.migration-check.result }}"
             "${{ needs.python-security.result }}"
             "${{ needs.web-lint.result }}"
             "${{ needs.web-build.result }}"

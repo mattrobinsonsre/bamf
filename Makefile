@@ -14,6 +14,7 @@
 	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset proto \
+	migration-check \
 	help
 
 # ── Variables (for build-local only) ─────────────────────
@@ -48,6 +49,9 @@ test-go:            ## Test Go only (Docker)
 
 test-python:        ## Test Python only (Docker)
 	scripts/test.sh python
+
+migration-check:    ## Alembic upgrade→downgrade→upgrade round-trip (Docker)
+	scripts/test.sh migrations
 
 # ── Build ─────────────────────────────────────────────────
 build:              ## Cross-compile Go binaries for all platforms (Docker)
