@@ -254,6 +254,10 @@ jobs:
             echo "all 4 topologies rendered"
           '
 
+      # Enforce "secrets never land in a ConfigMap" (AGENTS.md) across topologies.
+      - name: Helm config contract (no secrets in ConfigMaps)
+        run: scripts/helm-config-contract.sh
+
   # ── Security ────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
