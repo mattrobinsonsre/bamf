@@ -86,12 +86,57 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
 - **Outpost deployments** — data-plane components deployed close to targets.
   [docs/architecture/outpost-deployments.md](docs/architecture/outpost-deployments.md).
 
+## Enabling features (operator quick-reference)
+
+How each capability is switched on. **Platform** features are Helm values (see
+[helm/bamf/values.yaml](helm/bamf/values.yaml) + its `values.schema.json`);
+**per-resource** features are the agent resource `type:`; **per-role** features
+are RBAC. Always confirm exact keys in the linked doc + `values.yaml`.
+
+Platform (Helm values):
+
+| Capability | How to enable | Doc |
+|---|---|---|
+| Deployment topology | `core.enabled` / `outpost.enabled` / `agent.enabled` (combine for platform / remote outpost / agent-only) | [deployment](docs/admin/deployment.md) |
+| SSO (OIDC/SAML) | `core.auth.sso.oidc.<name>` / `core.auth.sso.saml.<name>` + client secret via `secretKeyRef`/`existingSecret` | [sso](docs/admin/sso.md) |
+| Local password auth | `core.auth.local.enabled` (disable in prod) | [sso](docs/admin/sso.md) |
+| Postgres: bundled vs external | `core.postgresql.bundled.enabled` XOR `core.postgresql.external.enabled` | [deployment](docs/admin/deployment.md) |
+| Redis: bundled vs external | `core.redis.bundled.enabled` XOR `core.redis.external.enabled` | [deployment](docs/admin/deployment.md) |
+| Ingress rate limiting | `gateway.rateLimit` | [security-hardening](docs/admin/security-hardening.md) |
+| App rate limiting (`/auth/*` tier) | `core.api.config.rate_limit` | [security-hardening](docs/admin/security-hardening.md) |
+| Audit retention pruning | `core.api.config.audit.retention_days` (`0` = keep forever) | [security-hardening](docs/admin/security-hardening.md) |
+| API self-audit | `core.api.config.audit.api_audit_enabled` | [security-hardening](docs/admin/security-hardening.md) |
+| Certificate lifetimes | `core.api.config.certificates.{user,agent,bridge}_ttl_hours` | [certificates](docs/admin/certificates.md) |
+| Public TLS (cert-manager) | `tls.certManager.issuerRef` | [deployment](docs/admin/deployment.md) |
+| Prometheus metrics | `metrics.enabled` + `metrics.serviceMonitor.enabled` | [monitoring](docs/operations/monitoring.md) |
+| Gateway provider | `gateway.provider` = `traefik` \| `istio` | [deployment](docs/admin/deployment.md) |
+| kubamf UI | `kubamf.enabled` | [kubernetes](docs/guides/kubernetes.md) |
+
+Per-resource (agent config `resources[].type`) and per-role (RBAC):
+
+| Capability | How to enable | Doc |
+|---|---|---|
+| SSH (plain / recorded) | `type: ssh` / `type: ssh-audit` | [ssh](docs/guides/ssh.md) |
+| Database (plain / query-audit) | `type: postgres`\|`mysql` / `type: postgres-audit`\|`mysql-audit` | [databases](docs/guides/databases.md) |
+| Web app (plain / recorded) | `type: http` / `type: http-audit` | [web-apps](docs/guides/web-apps.md) |
+| Kubernetes | `type: kubernetes` | [kubernetes](docs/guides/kubernetes.md) |
+| Webhook passthrough | per-resource `webhooks:` list | [web-apps](docs/guides/web-apps.md) |
+| K8s group mapping | role `kubernetes_groups` | [rbac](docs/admin/rbac.md) |
+| Access for everyone | resource label `access: everyone` | [rbac](docs/admin/rbac.md) |
+| Require SSO for a role | `require_external_sso_for_roles` (API config, not a Helm value) | [sso](docs/admin/sso.md) |
+
 ## Operations
 
-- [docs/operations/upgrading.md](docs/operations/upgrading.md),
+- [docs/operations/production-checklist.md](docs/operations/production-checklist.md)
+  (go-live gate),
+  [docs/operations/runbooks.md](docs/operations/runbooks.md) (incident
+  playbooks),
+  [docs/admin/security-hardening.md](docs/admin/security-hardening.md),
+  [docs/operations/disaster-recovery.md](docs/operations/disaster-recovery.md),
   [docs/operations/backup-restore.md](docs/operations/backup-restore.md),
   [docs/operations/scaling.md](docs/operations/scaling.md),
-  [docs/operations/monitoring.md](docs/operations/monitoring.md).
+  [docs/operations/monitoring.md](docs/operations/monitoring.md),
+  [docs/operations/upgrading.md](docs/operations/upgrading.md).
 
 ## Conventions that constrain changes (see AGENTS.md for the full text)
 
