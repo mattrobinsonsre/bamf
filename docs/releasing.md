@@ -19,7 +19,13 @@ first; then follow the steps here.
    the third-party review (which scales with the diff).
 3. **`main` CI is green** on the commit you're about to tag. **Never tag a red
    main.** (`gh run watch` the main-branch run to exit 0 first — "it'll probably
-   pass" is not sufficient.)
+   pass" is not sufficient.) This is enforced by discipline, not by CI: image
+   builds gate only on `prepare`, so a commit whose lint/test failed can still
+   have images in GHCR. A tag on that commit sees `images_exist=true`, **skips**
+   re-validation, and the release gate accepts the skip — so a red commit *can*
+   be released via a tag. (Terrapod's pipeline has the same shape; closing this
+   would mean gating image builds on the full validation set and slowing every
+   main-push publish.)
 
 ## Cutting the release
 
