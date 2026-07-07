@@ -41,6 +41,7 @@ from bamf.api.dependencies import (
     require_admin,
     require_admin_or_audit,
 )
+from bamf.api.lifecycle import shutdown_event
 from bamf.api.models.agents import (
     AgentRegisterRequest,
     AgentRegisterResponse,
@@ -692,8 +693,6 @@ async def agent_events(
     queue_key = command_queue_key(agent_id_str, instance_id)
 
     async def event_generator() -> AsyncGenerator[str]:
-        from bamf.api.app import shutdown_event
-
         keepalive_counter = 0
 
         while not shutdown_event.is_set():
