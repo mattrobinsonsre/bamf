@@ -64,6 +64,7 @@ nav:
       - SSO: admin/sso.md
       - Users: admin/users.md
       - Certificates: admin/certificates.md
+      - Security Hardening: admin/security-hardening.md
   - Architecture:
       - Overview: architecture/overview.md
       - Authentication: architecture/authentication.md
@@ -71,9 +72,12 @@ nav:
       - Security: architecture/security.md
       - Outpost Deployments: architecture/outpost-deployments.md
   - Operations:
+      - Production Checklist: operations/production-checklist.md
+      - Runbooks: operations/runbooks.md
       - Monitoring: operations/monitoring.md
       - Scaling: operations/scaling.md
       - Backup & Restore: operations/backup-restore.md
+      - Disaster Recovery: operations/disaster-recovery.md
       - Upgrading: operations/upgrading.md
   - Reference:
       - CLI: reference/cli.md

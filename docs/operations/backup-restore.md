@@ -53,40 +53,15 @@ velero restore create --from-backup bamf-backup
 
 ## Disaster Recovery
 
-### Full Recovery from Database Backup
+The full break-glass procedure — restoring PostgreSQL, letting the API recover
+the CA from the database, and bringing components back online — lives on its own
+page: [Disaster Recovery](disaster-recovery.md).
 
-1. Provision new PostgreSQL instance
-2. Restore backup: `pg_restore -d bamf bamf-backup.dump`
-3. Deploy BAMF with `ca.provider: bootstrap-from-db`
-4. API extracts CA from database, creates K8s Secret
-5. Verify: agents reconnect, users can log in
-
-### CA Key Recovery
-
-If the K8s Secret containing the CA is deleted but PostgreSQL is intact:
-
-```zsh
-# API auto-recovers on startup: detects missing Secret, reads CA from DB
-kubectl -n bamf rollout restart deployment/bamf-api
-```
-
-Or manually extract:
-```zsh
-bamf admin ca export --output ca.crt --key ca.key
-kubectl -n bamf create secret generic bamf-ca \
-  --from-file=ca.crt --from-file=ca.key
-```
-
-### Partial Recovery
-
-If only Redis is lost (restart, eviction):
-- No action needed — all components reconnect and re-register
-- Active tunnel sessions will disconnect; users reconnect
-
-If only individual pods are lost:
-- Kubernetes restarts them automatically
-- Bridges re-register; agents reconnect
-- Active tunnels migrate via reliable stream protocol
+In brief: PostgreSQL is the only thing you must restore (it holds users, roles,
+the audit log, and the CA). If the `bamf-ca` Secret is gone but the database is
+intact, the API recreates it from the database on the next start
+(`kubectl -n bamf rollout restart deployment/bamf-api`). If only Redis is lost,
+do nothing — bridges re-register, agents reconnect, and users re-login.
 
 ## Testing Restores
 
