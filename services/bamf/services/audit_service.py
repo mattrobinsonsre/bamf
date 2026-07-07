@@ -128,37 +128,45 @@ async def prune_audit_logs(
     return total
 
 
-async def prune_audit_logs_loop(interval_seconds: int = _PRUNE_INTERVAL_SECONDS) -> None:
-    """Background task: periodically prune audit_logs past the retention window.
+async def _prune_once() -> int:
+    """Run a single retention sweep if this replica wins the lock.
 
-    Multi-replica safe: a Redis ``SET NX`` lock elects one pruner per interval so
-    replicas don't all issue the same DELETE. The delete is idempotent regardless,
-    so a lost lock or expired holder never corrupts state — at worst a sweep is
-    skipped and retried next interval.
+    Returns the number of rows deleted — 0 when pruning is disabled
+    (``retention_days <= 0``), when another replica holds the lock, or when
+    nothing was expired. Multi-replica safe: a Redis ``SET NX`` lock elects one
+    pruner per interval so replicas don't all issue the same DELETE. The delete
+    is idempotent regardless, so a lost lock or expired holder never corrupts
+    state — at worst a sweep is skipped and retried next interval.
     """
     from bamf.config import settings
     from bamf.db.session import async_session_factory
     from bamf.redis.client import get_redis_client
 
+    retention_days = settings.audit.retention_days
+    if retention_days <= 0:
+        return 0
+    acquired = await get_redis_client().set(
+        _PRUNE_LOCK_KEY, "1", nx=True, ex=_PRUNE_LOCK_TTL_SECONDS
+    )
+    if not acquired:
+        return 0
+    async with async_session_factory() as db:
+        deleted = await prune_audit_logs(db, retention_days)
+    if deleted:
+        logger.info(
+            "pruned expired audit logs",
+            deleted=deleted,
+            retention_days=retention_days,
+        )
+    return deleted
+
+
+async def prune_audit_logs_loop(interval_seconds: int = _PRUNE_INTERVAL_SECONDS) -> None:
+    """Background task: periodically prune audit_logs past the retention window."""
     while True:
         try:
             await asyncio.sleep(interval_seconds)
-            retention_days = settings.audit.retention_days
-            if retention_days <= 0:
-                continue
-            acquired = await get_redis_client().set(
-                _PRUNE_LOCK_KEY, "1", nx=True, ex=_PRUNE_LOCK_TTL_SECONDS
-            )
-            if not acquired:
-                continue
-            async with async_session_factory() as db:
-                deleted = await prune_audit_logs(db, retention_days)
-            if deleted:
-                logger.info(
-                    "pruned expired audit logs",
-                    deleted=deleted,
-                    retention_days=retention_days,
-                )
+            await _prune_once()
         except asyncio.CancelledError:
             raise
         except Exception:
