@@ -80,3 +80,28 @@ def test_session_cert_san_contract():
         resource_type="ssh-audit",
     )
     assert _san_uris(fresh) == fixture_sans
+
+
+def test_tunnel_command_contract():
+    """The dial/redial command payload is read off an untyped map by the Go agent
+    (pkg/agent/agent.go handleTunnelRequest). Current producer output must match
+    the committed golden the Go test reads — a key rename on either side breaks
+    its assertions.
+    """
+    from bamf.api.agent_commands import build_tunnel_command
+
+    golden = json.loads((CONTRACTS / "dial_command.json").read_text())
+    produced = build_tunnel_command(
+        command="dial",
+        session_id="s",
+        bridge_host="h",
+        bridge_port=8443,
+        resource_name="r",
+        resource_type="ssh-audit",
+        session_cert="c",
+        session_key="k",
+        ca_certificate="ca",
+    )
+    assert set(produced) == set(golden)
+    # bridge_port is a number — the agent decodes it as a JSON number (float64).
+    assert isinstance(golden["bridge_port"], int)

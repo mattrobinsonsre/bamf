@@ -50,7 +50,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bamf.api.agent_commands import enqueue_agent_command
+from bamf.api.agent_commands import build_tunnel_command, enqueue_agent_command
 from bamf.api.dependencies import get_current_user
 from bamf.api.models.connect import ConnectRequest, ConnectResponse
 from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
@@ -533,17 +533,17 @@ async def _issue_session(
         r,
         agent_id,
         instance_id,
-        {
-            "command": command,
-            "session_id": session_id,
-            "bridge_host": agent_bridge_host,
-            "bridge_port": agent_bridge_port,
-            "resource_name": resource_name,
-            "resource_type": resource_type,
-            "session_cert": serialize_certificate(agent_cert).decode(),
-            "session_key": serialize_private_key(agent_key).decode(),
-            "ca_certificate": ca.ca_cert_pem,
-        },
+        build_tunnel_command(
+            command=command,
+            session_id=session_id,
+            bridge_host=agent_bridge_host,
+            bridge_port=agent_bridge_port,
+            resource_name=resource_name,
+            resource_type=resource_type,
+            session_cert=serialize_certificate(agent_cert).decode(),
+            session_key=serialize_private_key(agent_key).decode(),
+            ca_certificate=ca.ca_cert_pem,
+        ),
     )
 
     # Increment instance tunnel count for load-balancing selection
