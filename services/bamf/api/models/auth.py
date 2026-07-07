@@ -7,13 +7,6 @@ from pydantic import Field
 from .common import BAMFBaseModel
 
 
-class LoginRequest(BAMFBaseModel):
-    """Local authentication login request (POST /auth/local/login form data)."""
-
-    email: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
-
-
 class LocalAuthorizeRequest(BAMFBaseModel):
     """Local auth request combining credentials + PKCE in a single JSON call.
 

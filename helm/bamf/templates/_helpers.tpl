@@ -250,13 +250,6 @@ Validate configuration
 {{- end -}}
 
 {{/*
-Bridge StatefulSet name
-*/}}
-{{- define "bamf.bridge.statefulsetName" -}}
-{{ include "bamf.fullname" . }}-bridge
-{{- end }}
-
-{{/*
 Bridge pod name for a given ordinal
 Usage: {{ include "bamf.bridge.podName" (dict "root" . "ordinal" 0) }}
 */}}

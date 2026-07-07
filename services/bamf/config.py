@@ -209,7 +209,6 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = Field(default="bamf-api")
     debug: bool = Field(default=False)
     log_level: str = Field(default="INFO")
     json_logs: bool = Field(default=True, description="JSON logging in production")

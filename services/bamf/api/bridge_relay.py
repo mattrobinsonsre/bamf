@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
-
 from bamf.api.agent_commands import enqueue_agent_command
 from bamf.auth.ca import get_ca
 from bamf.config import settings
@@ -27,26 +25,6 @@ logger = get_logger(__name__)
 # Bridge internal health/relay port
 BRIDGE_INTERNAL_PORT = 8080
 
-# Shared httpx client for bridge relay requests.
-# Module-level to avoid per-request client creation (prevents GC from
-# killing streaming connections and enables connection pooling).
-_bridge_client: httpx.AsyncClient | None = None
-
-
-def _get_bridge_client() -> httpx.AsyncClient:
-    global _bridge_client
-    if _bridge_client is None:
-        _bridge_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=10.0),
-            limits=httpx.Limits(
-                max_connections=30,
-                max_keepalive_connections=10,
-                keepalive_expiry=30.0,
-            ),
-        )
-    return _bridge_client
-
-
 # How long to wait for a relay connection to establish after sending relay_connect.
 # The agent typically connects in <100ms; 1 second is generous.
 RELAY_CONNECT_WAIT_SECONDS = 1
@@ -56,29 +34,6 @@ RELAY_READY_TIMEOUT_SECONDS = 10
 
 # Polling interval when waiting for relay readiness
 RELAY_POLL_INTERVAL_SECONDS = 0.5
-
-
-async def forward_to_bridge(
-    method: str,
-    url: str,
-    headers: dict[str, str],
-    body: bytes,
-) -> httpx.Response | None:
-    """Forward an HTTP request to the bridge relay endpoint."""
-    try:
-        client = _get_bridge_client()
-        return await client.request(
-            method=method,
-            url=url,
-            headers=headers,
-            content=body,
-        )
-    except httpx.ConnectError:
-        logger.warning("Bridge connection failed", url=url)
-        return None
-    except httpx.TimeoutException:
-        logger.warning("Bridge request timed out", url=url)
-        return None
 
 
 async def assign_relay_bridge(r, agent_id: str, outpost_name: str | None = None) -> str | None:
@@ -217,37 +172,7 @@ async def ensure_relay_connected(
     return False
 
 
-def build_bridge_relay_url(
-    relay_bridge: str,
-    agent_name: str,
-    path: str,
-    query: str | None = None,
-) -> str:
-    """Build the internal bridge relay URL for forwarding requests."""
-    headless_svc = settings.bridge_headless_service
-    url = (
-        f"http://{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
-        f":{BRIDGE_INTERNAL_PORT}/relay/{agent_name}{path}"
-    )
-    if query:
-        url += f"?{query}"
-    return url
-
-
 def build_bridge_relay_host(relay_bridge: str) -> str:
     """Return the FQDN of a bridge pod's internal relay endpoint."""
     headless_svc = settings.bridge_headless_service
     return f"{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
-
-
-async def dial_bridge_relay(
-    relay_bridge: str,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """Open a raw TCP connection to a bridge pod's internal relay port.
-
-    Used for WebSocket upgrade requests where we need a persistent
-    bidirectional connection rather than request/response HTTP.
-    No TLS needed — bridge:8080 is internal cluster network.
-    """
-    host = build_bridge_relay_host(relay_bridge)
-    return await asyncio.open_connection(host, BRIDGE_INTERNAL_PORT)

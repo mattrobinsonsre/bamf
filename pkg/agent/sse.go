@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -176,17 +174,4 @@ func (c *SSEClient) Connect(ctx context.Context) (<-chan SSEEvent, error) {
 	}()
 
 	return eventCh, nil
-}
-
-// backoff calculates the delay for a given attempt using exponential backoff
-// with jitter: min(baseDelay * 2^attempt, maxDelay) + random jitter.
-func (c *SSEClient) backoff(attempt int) time.Duration {
-	delay := float64(c.cfg.BaseDelay) * math.Pow(2, float64(attempt))
-	if delay > float64(c.cfg.MaxDelay) {
-		delay = float64(c.cfg.MaxDelay)
-	}
-
-	// Add random jitter
-	jitter := delay * c.cfg.JitterRatio * rand.Float64()
-	return time.Duration(delay + jitter)
 }

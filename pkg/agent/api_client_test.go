@@ -94,23 +94,6 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAPIClient_UpdateStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/v1/agents/agent-123/status", r.URL.Path)
-
-		var body map[string]string
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		require.Equal(t, "online", body["status"])
-
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, slog.Default())
-	err := c.UpdateStatus(context.Background(), "agent-123", "online")
-	require.NoError(t, err)
-}
-
 func TestAPIClient_DrainInstance(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/v1/agents/agent-123/drain", r.URL.Path)
