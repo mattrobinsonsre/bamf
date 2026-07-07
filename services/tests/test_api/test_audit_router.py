@@ -240,22 +240,3 @@ class TestGetRecording:
     async def test_get_nonexistent(self, audit_client):
         resp = await audit_client.get(f"/api/v1/audit/recordings/{uuid4()}")
         assert resp.status_code == 404
-
-
-class TestGetSessionRecording:
-    @pytest.mark.asyncio
-    async def test_get_by_session_id(self, audit_client, db_session):
-        session_id = uuid4()
-        await _create_recording(db_session, session_id=session_id)
-        resp = await audit_client.get(f"/api/v1/audit/sessions/{session_id}/recording")
-        assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_by_invalid_session_id(self, audit_client):
-        resp = await audit_client.get("/api/v1/audit/sessions/not-a-uuid/recording")
-        assert resp.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_get_by_nonexistent_session_id(self, audit_client):
-        resp = await audit_client.get(f"/api/v1/audit/sessions/{uuid4()}/recording")
-        assert resp.status_code == 404

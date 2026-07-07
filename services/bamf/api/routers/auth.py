@@ -22,7 +22,6 @@ Consumers:
         GET  /api/v1/auth/authorize         — start SSO flow (redirect-based)
         POST /api/v1/auth/token             — exchange bamf_code for session
         POST /api/v1/auth/logout            — revoke session
-        GET  /api/v1/auth/ca/public         — download BAMF CA cert
 
 Changes to response shapes must be coordinated with web UI auth code.
 """
@@ -755,24 +754,6 @@ async def logout_all(request: Request) -> JSONResponse:
 
 
 # --- CA public key ---
-
-
-@router.get("/ca/public")
-async def get_ca_certificate() -> dict[str, str]:
-    """Get the BAMF CA public certificate.
-
-    Used by CLI and agents to bootstrap trust for tunnel connections.
-    """
-    from bamf.auth.ca import get_ca
-
-    try:
-        ca = get_ca()
-        return {"certificate": ca.ca_cert_pem}
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="CA not initialized",
-        ) from e
 
 
 # --- Helpers ---

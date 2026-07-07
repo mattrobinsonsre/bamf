@@ -20,7 +20,6 @@ All endpoints are prefixed with `/api/v1` unless otherwise noted.
 | GET | `/auth/callback` | No | OIDC/SAML callback handler |
 | POST | `/auth/saml/acs` | No | SAML assertion consumer service |
 | POST | `/auth/token` | No | Exchange code + PKCE verifier for session |
-| GET | `/auth/ca/public` | No | Download BAMF CA public certificate |
 | GET | `/auth/sessions` | Yes | List current user's sessions |
 | GET | `/auth/sessions/all` | Admin | List all active sessions |
 | DELETE | `/auth/sessions/user/{email}` | Admin | Revoke all sessions for a user |
@@ -104,7 +103,6 @@ CRUD API for resources — they are managed through agent configuration.
 | GET | `/agents/{id}` | Admin/Audit | Get agent (by UUID or name) |
 | DELETE | `/agents/{id}` | Admin | Delete agent |
 | POST | `/agents/{id}/heartbeat` | Cert | Agent heartbeat |
-| POST | `/agents/{id}/status` | Cert | Update agent status |
 | POST | `/agents/{id}/renew` | Cert | Renew agent certificate |
 | POST | `/agents/{id}/drain` | Cert | Mark an agent instance draining |
 | POST | `/agents/{id}/instance/{iid}/offline` | Cert | Remove a shut-down instance |
@@ -176,7 +174,6 @@ revocation targets the long-lived service certs.
 |--------|------|------|-------------|
 | GET | `/audit/recordings` | Admin/Audit | List session recordings |
 | GET | `/audit/recordings/{id}` | Admin/Audit | Get recording by ID (includes full data) |
-| GET | `/audit/sessions/{session_id}/recording` | Admin/Audit | Get recording by session ID |
 
 **List Query Parameters:**
 - `limit` — Page size (default 50)
