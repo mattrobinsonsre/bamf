@@ -15,7 +15,7 @@
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
-	docs docs-serve \
+	docs docs-serve content-hygiene \
 	help
 
 # ── Variables (for build-local only) ─────────────────────
@@ -65,6 +65,9 @@ docs-serve:         ## Live-preview the docs site at http://localhost:8000
 
 helm-config-contract: ## Assert no secrets land in a rendered ConfigMap
 	scripts/helm-config-contract.sh
+
+content-hygiene:    ## Fail if a tracked file leaks an internal identifier (public repo)
+	scripts/content-hygiene.sh
 
 # ── Build ─────────────────────────────────────────────────
 build:              ## Cross-compile Go binaries for all platforms (Docker)

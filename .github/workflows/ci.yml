@@ -204,6 +204,19 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - run: scripts/docs.sh build
 
+  # Automates the AGENTS.md content-hygiene HARD gate: fails if a tracked file
+  # leaks a company name / internal hostname / private tailnet host into this
+  # public repo. Was a manual pre-release step.
+  content-hygiene:
+    name: Content Hygiene
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - run: scripts/content-hygiene.sh
+
   # ── Web ─────────────────────────────────────────────────
   web-lint:
     name: Web Lint
@@ -500,6 +513,7 @@ jobs:
       - web-lint
       - docs-xref
       - docs-build
+      - content-hygiene
       - helm-lint
       - sast
       - secret-scan
@@ -719,6 +733,7 @@ jobs:
       - python-security
       - docs-xref
       - docs-build
+      - content-hygiene
       - web-lint
       - web-build
       - web-audit
@@ -751,6 +766,7 @@ jobs:
             "${{ needs.web-audit.result }}"
             "${{ needs.docs-xref.result }}"
             "${{ needs.docs-build.result }}"
+            "${{ needs.content-hygiene.result }}"
             "${{ needs.helm-lint.result }}"
             "${{ needs.sast.result }}"
             "${{ needs.secret-scan.result }}"
