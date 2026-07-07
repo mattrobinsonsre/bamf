@@ -500,6 +500,10 @@ func (a *Agent) handleRelayConnect(data map[string]interface{}) {
 	}
 }
 
+// CONTRACT: these keys are produced by services/bamf/api/agent_commands.py
+// (build_tunnel_command); a rename on either side silently yields nil here.
+// Guarded by the golden services/tests/contracts/dial_command.json
+// (pkg/agent/contract_test.go + test_contract_fixtures.py).
 func (a *Agent) handleTunnelRequest(ctx context.Context, data map[string]interface{}) {
 	command, _ := data["command"].(string)
 	sessionID, _ := data["session_id"].(string)

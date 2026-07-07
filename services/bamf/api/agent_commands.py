@@ -31,6 +31,39 @@ def command_queue_key(agent_id: str, instance_id: str) -> str:
     return f"agent:{agent_id}:instance:{instance_id}:commands"
 
 
+def build_tunnel_command(
+    *,
+    command: str,
+    session_id: str,
+    bridge_host: str,
+    bridge_port: int,
+    resource_name: str,
+    resource_type: str,
+    session_cert: str,
+    session_key: str,
+    ca_certificate: str,
+) -> dict:
+    """Build a dial/redial tunnel-request payload for an agent.
+
+    CONTRACT: consumed by pkg/agent/agent.go handleTunnelRequest, which reads
+    these keys off an untyped map (bridge_port as a JSON number, the rest
+    strings). Guarded by the golden services/tests/contracts/dial_command.json
+    (test_contract_fixtures.py asserts these keys; cmd-side Go test asserts the
+    agent's expected keys resolve). Keep the key names in sync with the parser.
+    """
+    return {
+        "command": command,
+        "session_id": session_id,
+        "bridge_host": bridge_host,
+        "bridge_port": bridge_port,
+        "resource_name": resource_name,
+        "resource_type": resource_type,
+        "session_cert": session_cert,
+        "session_key": session_key,
+        "ca_certificate": ca_certificate,
+    }
+
+
 async def enqueue_agent_command(
     r: aioredis.Redis, agent_id: str, instance_id: str, payload: dict
 ) -> None:

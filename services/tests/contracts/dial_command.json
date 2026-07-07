@@ -1,0 +1,11 @@
+{
+  "command": "dial",
+  "session_id": "sess-fixture-0001",
+  "bridge_host": "bamf-bridge-0.bamf.svc.cluster.local",
+  "bridge_port": 8443,
+  "resource_name": "web-01",
+  "resource_type": "ssh-audit",
+  "session_cert": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n",
+  "session_key": "-----BEGIN PRIVATE KEY-----\nMIIB...\n-----END PRIVATE KEY-----\n",
+  "ca_certificate": "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----\n"
+}
