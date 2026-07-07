@@ -193,6 +193,18 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - run: scripts/docs-xref.sh
 
+  # Builds the mkdocs site with --strict: a broken internal link or an
+  # orphaned/missing nav page fails CI instead of silently 404-ing on the site.
+  docs-build:
+    name: Docs Build
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - run: scripts/docs.sh build
+
   # ── Web ─────────────────────────────────────────────────
   web-lint:
     name: Web Lint
@@ -490,6 +502,7 @@ jobs:
       - python-security
       - web-lint
       - docs-xref
+      - docs-build
       - helm-lint
       - sast
       - secret-scan
@@ -703,6 +716,7 @@ jobs:
       - migration-check
       - python-security
       - docs-xref
+      - docs-build
       - web-lint
       - web-build
       - web-audit
@@ -734,6 +748,7 @@ jobs:
             "${{ needs.web-build.result }}"
             "${{ needs.web-audit.result }}"
             "${{ needs.docs-xref.result }}"
+            "${{ needs.docs-build.result }}"
             "${{ needs.helm-lint.result }}"
             "${{ needs.sast.result }}"
             "${{ needs.secret-scan.result }}"

@@ -15,6 +15,7 @@
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
+	docs docs-serve \
 	help
 
 # ── Variables (for build-local only) ─────────────────────
@@ -55,6 +56,12 @@ migration-check:    ## Alembic upgrade→downgrade→upgrade round-trip (Docker)
 
 docs-xref:          ## Fail if a docs/ or AGENTS.md file reference is stale
 	scripts/docs-xref.sh
+
+docs:               ## Build the docs site with strict validation (broken links/nav gaps fail)
+	scripts/docs.sh build
+
+docs-serve:         ## Live-preview the docs site at http://localhost:8000
+	scripts/docs.sh serve
 
 helm-config-contract: ## Assert no secrets land in a rendered ConfigMap
 	scripts/helm-config-contract.sh

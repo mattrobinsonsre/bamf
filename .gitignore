@@ -98,3 +98,4 @@ helm/bamf/values-local.yaml
 
 # Pen test reports
 reports/
+site/
