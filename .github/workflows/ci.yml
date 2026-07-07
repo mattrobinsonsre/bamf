@@ -105,14 +105,28 @@ jobs:
       - run: scripts/test.sh go
 
   go-build:
-    name: Go Build
+    name: Go Build (${{ matrix.platform }})
     needs: prepare
     if: needs.prepare.outputs.images_exist != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    # Sharded one runner per target platform. The single-job build cross-compiled
+    # all 6 platforms serially (~330s, the CI long pole); per-platform shards run
+    # in parallel (~55s each). This is a compile check only — the release job
+    # builds the shipped binaries (incl. the macOS universal fat binary) itself.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+          - darwin/amd64
+          - darwin/arm64
+          - windows/amd64
+          - windows/arm64
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - run: scripts/build.sh binaries
+      - run: scripts/build.sh binaries --platform=${{ matrix.platform }}
 
   go-security:
     name: Go Security (govulncheck)

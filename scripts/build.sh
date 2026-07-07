@@ -7,11 +7,13 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 PUSH=false
+PLATFORM=""
 TARGETS=()
 
 for arg in "$@"; do
   case "$arg" in
     --push) PUSH=true ;;
+    --platform=*) PLATFORM="${arg#--platform=}" ;;
     *)      TARGETS+=("$arg") ;;
   esac
 done
@@ -41,25 +43,38 @@ build_binaries() {
       GOOS=$os GOARCH=$arch go build -buildvcs=false -ldflags="$LDFLAGS" -o "$out" "./cmd/$cmd"
     }
 
-    # CLI + Agent: all 6 platforms
-    for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
-      os="${platform%%/*}"
-      arch="${platform##*/}"
+    PLATFORM_FILTER="'"$PLATFORM"'"
+    if [[ -n "$PLATFORM_FILTER" ]]; then
+      # Single-platform compile check (CI shards one runner per platform).
+      # No macOS universal binary here — the fat step needs both darwin arches
+      # and is a release concern, not a compile check.
+      os="${PLATFORM_FILTER%%/*}"
+      arch="${PLATFORM_FILTER##*/}"
       build "$os" "$arch" bamf bamf
       build "$os" "$arch" bamf-agent bamf-agent
-    done
+      [[ "$os" == "linux" ]] && build "$os" "$arch" bamf-bridge bamf-bridge
+      echo "Single-platform compile check ($PLATFORM_FILTER) done."
+    else
+      # CLI + Agent: all 6 platforms
+      for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+        os="${platform%%/*}"
+        arch="${platform##*/}"
+        build "$os" "$arch" bamf bamf
+        build "$os" "$arch" bamf-agent bamf-agent
+      done
 
-    # Bridge: Linux only (container-only)
-    for arch in amd64 arm64; do
-      build linux "$arch" bamf-bridge bamf-bridge
-    done
+      # Bridge: Linux only (container-only)
+      for arch in amd64 arm64; do
+        build linux "$arch" bamf-bridge bamf-bridge
+      done
 
-    # Create macOS universal binary for CLI (replaces arch-specific binaries)
-    echo "  Creating universal binary: dist/bamf-darwin-universal..."
-    go run ./tools/makefat dist/bamf-darwin-universal dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
-    rm dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
+      # Create macOS universal binary for CLI (replaces arch-specific binaries)
+      echo "  Creating universal binary: dist/bamf-darwin-universal..."
+      go run ./tools/makefat dist/bamf-darwin-universal dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
+      rm dist/bamf-darwin-amd64 dist/bamf-darwin-arm64
 
-    echo "Done."
+      echo "Done."
+    fi
   '
 
   success "Binaries written to dist/"
