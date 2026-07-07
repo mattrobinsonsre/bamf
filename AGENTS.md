@@ -211,6 +211,19 @@ boundary pointing at the peer.
   (`podSecurityContext`, `nodeSelector`, `affinity`, `tolerations`) use schema
   `type: object` with no property restrictions. Secrets flow via `secretKeyRef`
   / `existingSecret`, never into a ConfigMap.
+- **Endpoint authentication (hard requirement)** — every **state-changing**
+  route (`POST`/`PUT`/`PATCH`/`DELETE`) and every credential-bearing stream
+  (e.g. the agent SSE, which carries session certs) MUST enforce authentication
+  via a recognized dependency: `get_current_session`/`get_current_user`,
+  `require_admin`/`require_admin_or_audit`, `get_agent_identity`,
+  `get_bridge_identity`, or `verify_internal_token`. An agent may only act as
+  itself (assert the cert CN matches the path agent, like
+  `agents.py:_require_cert_matches_agent`). This is enforced in CI by
+  `services/tests/test_api/test_endpoint_auth.py`, which fails on any mutating
+  route lacking auth — a genuinely public route (login/join flow) must be added
+  to its `PUBLIC_ROUTES` allowlist **with a reason**, which a reviewer sees.
+  (Reject-by-default; see issue #193, where agent endpoints once shipped
+  unauthenticated and enabled tunnel hijack.)
 
 ## Release discipline
 

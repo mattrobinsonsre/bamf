@@ -110,6 +110,20 @@ async def resolve_agent_id(agent_id_or_name: str, db: AsyncSession) -> tuple[UUI
     )
 
 
+def _require_cert_matches_agent(agent_identity: AgentIdentity, agent: Agent) -> None:
+    """An agent may only act as itself — the cert CN must match the resolved agent.
+
+    Guards the agent-self endpoints (heartbeat/status/events/drain/offline/renew)
+    against one agent's cert being used to manipulate another's state or receive
+    its tunnel commands (which carry session certs). See test_agent_endpoint_auth.
+    """
+    if agent_identity.name != agent.name:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Certificate CN '{agent_identity.name}' does not match agent '{agent.name}'",
+        )
+
+
 # ── Heartbeat request/resource models ─────────────────────────────────
 
 
@@ -289,6 +303,7 @@ async def agent_heartbeat(
     body: AgentHeartbeatRequest | None = None,
     db: AsyncSession = Depends(get_db),
     r: aioredis.Redis = Depends(get_redis),
+    agent_identity: AgentIdentity = Depends(get_agent_identity),
 ) -> SuccessResponse:
     """Agent heartbeat — refreshes TTL in Redis and updates resource catalog.
 
@@ -302,6 +317,7 @@ async def agent_heartbeat(
     )
 
     resolved_id, agent = await resolve_agent_id(agent_id, db)
+    _require_cert_matches_agent(agent_identity, agent)
     agent_id_str = str(resolved_id)
     agent_key = f"agent:{agent_id_str}:status"
 
@@ -381,12 +397,14 @@ async def update_agent_status(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
     r: aioredis.Redis = Depends(get_redis),
+    agent_identity: AgentIdentity = Depends(get_agent_identity),
 ) -> SuccessResponse:
     """Update agent status.
 
     The agent_id can be either a UUID or the agent name.
     """
-    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    resolved_id, agent = await resolve_agent_id(agent_id, db)
+    _require_cert_matches_agent(agent_identity, agent)
     agent_key = f"agent:{resolved_id}:status"
     await r.setex(agent_key, AGENT_TTL_SECONDS, "online")
 
@@ -650,6 +668,7 @@ async def agent_events(
     instance_id: str = Query(..., description="Unique instance identifier for this agent pod"),
     db: AsyncSession = Depends(get_db_read),
     r: aioredis.Redis = Depends(get_redis),
+    agent_identity: AgentIdentity = Depends(get_agent_identity),
 ) -> StreamingResponse:
     """SSE stream for delivering tunnel commands to agents.
 
@@ -685,7 +704,8 @@ async def agent_events(
     The agent_id can be either a UUID or the agent name (for Go agent compatibility
     when loading cached certificates where the CN contains the name).
     """
-    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    resolved_id, agent = await resolve_agent_id(agent_id, db)
+    _require_cert_matches_agent(agent_identity, agent)
     agent_id_str = str(resolved_id)
     # Reliable per-instance command queue (drained via BLPOP). A command enqueued
     # while this stream was down waits here (bounded by TTL) and is delivered on
@@ -743,6 +763,7 @@ async def drain_agent_instance(
     body: AgentDrainRequest,
     db: AsyncSession = Depends(get_db_read),
     r: aioredis.Redis = Depends(get_redis),
+    agent_identity: AgentIdentity = Depends(get_agent_identity),
 ) -> SuccessResponse:
     """Mark an agent instance as draining (shutting down).
 
@@ -752,7 +773,8 @@ async def drain_agent_instance(
     """
     from bamf.services.agent_instances import drain_instance
 
-    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    resolved_id, agent = await resolve_agent_id(agent_id, db)
+    _require_cert_matches_agent(agent_identity, agent)
     agent_id_str = str(resolved_id)
 
     await drain_instance(r, agent_id_str, body.instance_id)
@@ -766,6 +788,7 @@ async def remove_agent_instance(
     instance_id: str,
     db: AsyncSession = Depends(get_db_read),
     r: aioredis.Redis = Depends(get_redis),
+    agent_identity: AgentIdentity = Depends(get_agent_identity),
 ) -> SuccessResponse:
     """Remove an agent instance that has fully shut down.
 
@@ -774,7 +797,8 @@ async def remove_agent_instance(
     """
     from bamf.services.agent_instances import remove_instance
 
-    resolved_id, _ = await resolve_agent_id(agent_id, db)
+    resolved_id, agent = await resolve_agent_id(agent_id, db)
+    _require_cert_matches_agent(agent_identity, agent)
     agent_id_str = str(resolved_id)
 
     await remove_instance(r, agent_id_str, instance_id)
