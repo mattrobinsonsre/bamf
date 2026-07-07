@@ -405,6 +405,11 @@ class CertificateAuthority:
                 x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]),
                 critical=False,
             )
+            # CONTRACT: these SAN URIs are the bridge's sole authorization input,
+            # parsed by pkg/bridge/server.go (extractSessionInfo). Adding/renaming
+            # one requires updating the parser + the golden fixture
+            # services/tests/contracts/session_cert.pem (guarded by
+            # pkg/bridge/contract_test.go + test_contract_fixtures.py).
             .add_extension(
                 x509.SubjectAlternativeName(
                     [
