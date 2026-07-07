@@ -30,7 +30,7 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
 - `make build` — cross-compile the Go binaries; `make build-local` for the host.
 - `make dev` / `make dev-down` — local Kubernetes dev stack (Tilt on Rancher
   Desktop); see [docs/development.md](docs/development.md).
-- `make db-migrate` — Alembic migrations. `make proto` — regenerate protobuf.
+- `make db-migrate` — Alembic migrations.
 - `make security-scan` — govulncheck + pip-audit. `make pentest` — SAST + Trivy + DAST.
 - Deploy: Helm chart at `helm/bamf/` — see [docs/admin/deployment.md](docs/admin/deployment.md).
 - Release: tag `vX.Y.Z` → automated GitHub Actions pipeline (images + Helm chart
@@ -48,7 +48,6 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
   `apiclient` (typed HTTP client for the Python API — the Go-side API contract),
   `config`.
 - `web/` — Next.js 16 + React 19 + TypeScript frontend.
-- `proto/` → `pkg/pb/` — gRPC/protobuf.
 - `alembic/` — DB migrations. `helm/bamf/` — Helm chart. `docker/` — Dockerfiles.
 - `docs/` — documentation. `pentest/` — SAST/Trivy/DAST config.
 

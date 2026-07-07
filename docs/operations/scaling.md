@@ -25,7 +25,7 @@ Kubernetes access). If proxy traffic is heavy, increase `maxReplicas`.
 
 ### Bridge
 
-Bridges are stateful — they hold gRPC streams to agents. Scale on tunnel count:
+Bridges are stateful — they hold persistent mTLS relay/tunnel connections to agents. Scale on tunnel count:
 
 ```yaml
 outpost:
