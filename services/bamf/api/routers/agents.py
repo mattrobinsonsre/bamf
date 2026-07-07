@@ -8,7 +8,6 @@ Consumers:
     Go agent (pkg/agent/api_client.go):
         POST /api/v1/agents/join           — Join()
         POST /api/v1/agents/{id}/heartbeat — Heartbeat()
-        POST /api/v1/agents/{id}/status    — UpdateStatus()
         POST /api/v1/agents/{id}/renew     — RenewCertificate()
     Go agent (pkg/agent/sse.go):
         GET  /api/v1/agents/{id}/events    — SSEClient.Connect()
@@ -388,25 +387,6 @@ async def agent_heartbeat(
             await r.setex(f"agent:{agent_id_str}:cluster_internal", AGENT_TTL_SECONDS, "1")
         else:
             await r.delete(f"agent:{agent_id_str}:cluster_internal")
-
-    return SuccessResponse(message="OK")
-
-
-@router.post("/{agent_id}/status", response_model=SuccessResponse)
-async def update_agent_status(
-    agent_id: str,
-    db: AsyncSession = Depends(get_db),
-    r: aioredis.Redis = Depends(get_redis),
-    agent_identity: AgentIdentity = Depends(get_agent_identity),
-) -> SuccessResponse:
-    """Update agent status.
-
-    The agent_id can be either a UUID or the agent name.
-    """
-    resolved_id, agent = await resolve_agent_id(agent_id, db)
-    _require_cert_matches_agent(agent_identity, agent)
-    agent_key = f"agent:{resolved_id}:status"
-    await r.setex(agent_key, AGENT_TTL_SECONDS, "online")
 
     return SuccessResponse(message="OK")
 

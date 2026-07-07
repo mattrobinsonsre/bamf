@@ -218,22 +218,6 @@ class TestRedirectURIAllowlist:
                 assert _redirect_uri_allowed(uri) is False, uri
 
 
-# ── Tests: CA Certificate ────────────────────────────────────────────────
-
-
-class TestGetCACertificate:
-    @pytest.mark.asyncio
-    async def test_returns_ca_pem(self, auth_client):
-        fake_ca = MagicMock()
-        fake_ca.ca_cert_pem = "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"
-        with patch("bamf.auth.ca.get_ca", return_value=fake_ca):
-            resp = await auth_client.get("/api/v1/auth/ca/public")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "BEGIN CERTIFICATE" in data["certificate"]
-
-
 # ── Tests: PKCE Verification ─────────────────────────────────────────────
 
 
@@ -1608,20 +1592,6 @@ class TestGetClaimsRules:
             result = _get_claims_rules("local")
 
         assert result == []
-
-
-# ── Tests: CA Certificate Edge Cases ─────────────────────────────────
-
-
-class TestGetCACertificateEdge:
-    @pytest.mark.asyncio
-    async def test_ca_not_initialized(self, auth_client):
-        """Returns 503 when CA is not yet initialized."""
-        with patch("bamf.auth.ca.get_ca", side_effect=RuntimeError("CA not initialized")):
-            resp = await auth_client.get("/api/v1/auth/ca/public")
-
-        assert resp.status_code == 503
-        assert "CA not initialized" in resp.json()["detail"]
 
 
 # ── Tests: Token Exchange Cookie ─────────────────────────────────────

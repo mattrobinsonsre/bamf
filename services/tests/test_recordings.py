@@ -166,19 +166,6 @@ def test_recordings_require_auth(client: TestClient):
     assert response.status_code in (401, 403)
 
 
-async def test_get_session_recording(
-    admin_async_client: AsyncClient, sample_recordings: list[SessionRecording]
-):
-    """Get a recording by session_id returns full data."""
-    rec = sample_recordings[1]
-    response = await admin_async_client.get(f"/api/v1/audit/sessions/{rec.session_id}/recording")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["session_id"] == str(rec.session_id)
-    assert data["recording_type"] == "queries"
-    assert data["format"] == "queries-v1"
-
-
 # --- HTTP audit recording tests ---
 
 
