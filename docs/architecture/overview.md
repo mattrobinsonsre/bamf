@@ -128,7 +128,7 @@ CLI ──mTLS──▶ Bridge ◀──mTLS── Agent ──TCP──▶ Targ
 ### HTTP Proxy (Web Apps, Kubernetes)
 
 ```
-Browser ──HTTPS──▶ API (proxy) ──HTTP──▶ Bridge ──gRPC──▶ Agent ──HTTP──▶ Target
+Browser ──HTTPS──▶ API (proxy) ──HTTP──▶ Bridge ──mTLS relay──▶ Agent ──HTTP──▶ Target
                   (auth, RBAC,          (relay)           (forward)
                    rewrite)
 ```
@@ -136,7 +136,7 @@ Browser ──HTTPS──▶ API (proxy) ──HTTP──▶ Bridge ──gRPC�
 1. Browser hits `*.tunnel.bamf.example.com`
 2. API authenticates (session cookie), checks RBAC
 3. API rewrites headers, forwards to assigned bridge
-4. Bridge relays to agent via gRPC stream
+4. Bridge relays to agent over its persistent mTLS relay connection
 5. Agent forwards to target web app
 
 ## State Management

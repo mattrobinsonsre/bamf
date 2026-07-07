@@ -35,7 +35,6 @@ restrictions.
 | `cmd/` | Go binaries: `bamf` (CLI), `bamf-bridge` (tunnel gateway), `bamf-agent` (target-side agent). | Go |
 | `pkg/` | Shared Go packages: `bridge`, `agent`, `ssh`, `dbproxy`, `tunnel`, `certs`, `apiclient` (typed HTTP client for the Python API), `config`. | Go |
 | `web/` | Next.js 16 frontend (React 19, TypeScript). | TypeScript |
-| `proto/` | Protobuf/gRPC definitions; generated code under `pkg/pb/`. | proto |
 | `alembic/` | Async Alembic database migrations. | Python |
 | `helm/bamf/` | The Helm chart (the primary, supported deployment mechanism). | YAML |
 | `docker/` | One Dockerfile per component (`api`, `bridge`, `agent`, `web`). | Dockerfile |
@@ -59,7 +58,6 @@ make dev-down      # stop the dev stack
 make security-scan # govulncheck (Go) + pip-audit (Python)
 make pentest       # SAST + image CVE scan + DAST (DAST needs a running stack)
 make db-migrate    # run Alembic migrations
-make proto         # regenerate protobuf code
 ```
 
 Per-surface verification before you push (lint alone is **not** enough):
@@ -180,7 +178,6 @@ boundary pointing at the peer.
 | **Agent SSE command set** (`dial`/`redial`/`relay_connect`/`revoke` → event type; the dial/redial payload keys) | producer `services/bamf/api/agent_commands.py` (`build_tunnel_command`), `routers/agents.py` ↔ consumer `pkg/agent/sse.go`, `agent.go` (`handleTunnelRequest`) | **Golden** `services/tests/contracts/dial_command.json` — the Go agent's expected keys/types must resolve (`pkg/agent/contract_test.go`) and current `build_tunnel_command` must emit the same keys (`test_contract_fixtures.py`). A key rename fails both. Producer maps `command`→event, consumer switches on it. |
 | **Helm values ↔ schema ↔ templates** | `helm/bamf/values.yaml` ↔ `values.schema.json` ↔ `templates/` | `helm lint` (schema `additionalProperties:false`) + the 4-topology render matrix in CI. |
 | **Redis session-key namespaces** — `session:{id}` (tunnel) vs `bamf:session:{token}` (user); merging them is catastrophic | builders `services/bamf/redis_keys.py` (`tunnel_session_key`) ↔ user prefix `services/bamf/auth/sessions.py` (`SESSION_PREFIX`) | `services/tests/test_redis_keys.py` locks the formats, asserts the two namespaces stay distinct, and bans raw `f"session:{...}"` literals outside the module. *(agent/bridge key families: migrate to `redis_keys.py` incrementally.)* |
-| **proto ↔ `pkg/pb/`** | `proto/` ↔ generated `pkg/pb/` | *(TODO: `make proto` regenerate-and-diff, or delete if orphaned.)* |
 
 ## Conventions
 

@@ -13,7 +13,7 @@
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
-	db-migrate db-rollback db-reset proto \
+	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
 	help
 
@@ -138,12 +138,6 @@ db-rollback:        ## Rollback last migration
 db-reset:           ## Reset database (drop and recreate)
 	cd services && poetry run alembic downgrade base
 	cd services && poetry run alembic upgrade head
-
-# ── Proto (local dev — requires protoc) ──────────────────
-proto:              ## Regenerate protobuf code
-	protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		proto/*.proto
 
 # ── Utility ──────────────────────────────────────────────
 clean:              ## Clean build artifacts

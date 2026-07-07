@@ -151,7 +151,7 @@ the key enabler for "any outpost can serve any resource."
 1. Agent starts, connects to API via SSE
 2. API sends the agent relay assignments per outpost:
    `{outpost: "eu", bridge: "bridge-0"}, {outpost: "us-east", bridge: "bridge-2"}`
-3. Agent dials each assigned bridge and establishes a gRPC relay stream
+3. Agent dials each assigned bridge and establishes an mTLS relay connection
 4. When an outpost's bridge pool changes, API sends updated assignments via SSE
 5. Each outpost's bridges now have relay access to the agent
 
@@ -169,7 +169,7 @@ outpost has the relay to the target agent.
 
 With S outposts and A agents: S×A relay connections total, distributed across
 all bridges. For 3 outposts with 2 bridges each and 100 agents: 300 relay
-connections total, ~50 per bridge. Relay connections are lightweight idle gRPC
+connections total, ~50 per bridge. Relay connections are lightweight idle mTLS
 streams.
 
 ## Routing
