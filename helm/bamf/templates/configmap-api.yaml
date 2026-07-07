@@ -23,6 +23,7 @@ data:
     # Audit configuration
     audit:
       retention_days: {{ .Values.core.api.config.audit.retention_days }}
+      api_audit_enabled: {{ .Values.core.api.config.audit.api_audit_enabled }}
 
     # Application-level rate limiting
     rate_limit:

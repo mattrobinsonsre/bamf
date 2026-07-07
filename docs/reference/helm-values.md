@@ -68,7 +68,8 @@ core:
         agent_ttl_hours: 8760        # Agent cert lifetime (1 year)
         bridge_ttl_hours: 24         # Bridge cert lifetime
       audit:
-        retention_days: 90           # Audit log retention
+        retention_days: 90           # Audit log retention; 0 disables pruning (keep forever)
+        api_audit_enabled: true      # Record API self-audit request/response exchanges
       rate_limit:                    # Application-level rate limiting (see below)
         enabled: true
         requests_per_minute: 100     # Per-IP limit for unauthenticated requests

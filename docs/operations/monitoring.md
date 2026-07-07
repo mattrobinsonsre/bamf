@@ -137,5 +137,7 @@ curl "https://bamf.example.com/api/v1/audit?limit=100"
 curl "https://bamf.example.com/api/v1/audit?limit=100&cursor=${NEXT_CURSOR}"
 ```
 
-Audit log retention is configurable (default: 90 days). Older entries are
-automatically purged via time-based table partitioning.
+Audit log retention is configurable via `core.api.config.audit.retention_days`
+(default: 90 days). A background sweep in the API periodically deletes audit
+rows older than the window in batches; set `retention_days: 0` to disable
+pruning and keep audit rows indefinitely.

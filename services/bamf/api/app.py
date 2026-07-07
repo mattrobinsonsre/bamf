@@ -75,6 +75,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     revocation_reconcile_task = asyncio.create_task(reconcile_revoked_loop())
 
+    # Enforce the audit-log retention window (settings.audit.retention_days).
+    # Without this the window was advisory — expired rows accumulated forever.
+    from bamf.services.audit_service import prune_audit_logs_loop
+
+    audit_prune_task = asyncio.create_task(prune_audit_logs_loop())
+
     init_connectors()
     logger.info("SSO connectors initialized")
 
@@ -83,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Shutdown — signal SSE generators to close before tearing down connections
     logger.info("Shutting down BAMF API server")
     revocation_reconcile_task.cancel()
+    audit_prune_task.cancel()
     shutdown_event.set()
     # Brief pause so SSE generators see the event and close cleanly
     await asyncio.sleep(0.5)

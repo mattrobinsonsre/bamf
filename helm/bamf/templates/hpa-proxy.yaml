@@ -22,12 +22,4 @@ spec:
           type: Utilization
           averageUtilization: {{ .Values.outpost.proxy.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.outpost.proxy.autoscaling.targetMemoryUtilizationPercentage }}
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.outpost.proxy.autoscaling.targetMemoryUtilizationPercentage }}
-    {{- end }}
 {{- end }}
