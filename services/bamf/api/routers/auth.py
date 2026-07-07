@@ -753,9 +753,6 @@ async def logout_all(request: Request) -> JSONResponse:
     return response
 
 
-# --- CA public key ---
-
-
 # --- Helpers ---
 
 

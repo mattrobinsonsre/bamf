@@ -5,14 +5,16 @@ inside the window is kept, retention_days=0 disables pruning, and the batched
 delete loop drains a backlog larger than one batch.
 """
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.db.models import AuditLog
-from bamf.services.audit_service import prune_audit_logs
+from bamf.services.audit_service import _prune_once, prune_audit_logs
 
 
 async def _add_entry(db: AsyncSession, ts: datetime) -> None:
@@ -70,4 +72,55 @@ async def test_prune_drains_backlog_larger_than_one_batch(db_session: AsyncSessi
     deleted = await prune_audit_logs(db_session, retention_days=90, batch_size=3)
 
     assert deleted == 7
+    assert await _count(db_session) == 0
+
+
+# ── _prune_once: the loop-body decision logic (lock election + gating) ──────
+
+
+@pytest.mark.asyncio
+async def test_prune_once_disabled_when_retention_zero(monkeypatch):
+    """retention_days=0 short-circuits before touching Redis or the DB."""
+    monkeypatch.setattr("bamf.config.settings.audit.retention_days", 0)
+    redis_mock = AsyncMock()
+    monkeypatch.setattr("bamf.redis.client.get_redis_client", lambda: redis_mock)
+
+    assert await _prune_once() == 0
+    redis_mock.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_once_skips_when_lock_not_acquired(monkeypatch):
+    """A replica that loses the SET NX race does not prune."""
+    monkeypatch.setattr("bamf.config.settings.audit.retention_days", 90)
+    redis_mock = AsyncMock()
+    redis_mock.set = AsyncMock(return_value=None)  # lock held elsewhere
+    monkeypatch.setattr("bamf.redis.client.get_redis_client", lambda: redis_mock)
+
+    def _no_session():
+        raise AssertionError("prune must not run without the lock")
+
+    monkeypatch.setattr("bamf.db.session.async_session_factory", _no_session)
+
+    assert await _prune_once() == 0
+
+
+@pytest.mark.asyncio
+async def test_prune_once_prunes_when_lock_acquired(db_session: AsyncSession, monkeypatch):
+    """The lock winner runs the sweep and reports the count."""
+    await _add_entry(db_session, datetime.now(UTC) - timedelta(days=200))
+    await db_session.commit()
+
+    monkeypatch.setattr("bamf.config.settings.audit.retention_days", 90)
+    redis_mock = AsyncMock()
+    redis_mock.set = AsyncMock(return_value=True)  # lock won
+    monkeypatch.setattr("bamf.redis.client.get_redis_client", lambda: redis_mock)
+
+    @asynccontextmanager
+    async def _fake_factory():
+        yield db_session
+
+    monkeypatch.setattr("bamf.db.session.async_session_factory", _fake_factory)
+
+    assert await _prune_once() == 1
     assert await _count(db_session) == 0
