@@ -59,6 +59,7 @@ from bamf.config import settings
 from bamf.db.session import get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
+from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
 from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource
@@ -250,7 +251,7 @@ async def _handle_reconnect(
     session_id = request.reconnect_session_id
 
     # ── 1. Validate existing session ──────────────────────────────────
-    raw = await r.get(f"session:{session_id}")
+    raw = await r.get(tunnel_session_key(session_id))
     if not raw:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -481,7 +482,7 @@ async def _issue_session(
     if outpost_name:
         session_info["outpost_name"] = outpost_name
     session_data = json.dumps(session_info)
-    await r.setex(f"session:{session_id}", session_ttl, session_data)
+    await r.setex(tunnel_session_key(session_id), session_ttl, session_data)
 
     # Track session in active set for dashboard queries
     await r.sadd("sessions:active", session_id)
@@ -505,7 +506,7 @@ async def _issue_session(
     api_bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
     api_bridge_port = settings.bridge_internal_tunnel_port
     await r.setex(
-        f"session:{session_id}:client_creds",
+        tunnel_session_creds_key(session_id),
         session_ttl,
         json.dumps(
             {

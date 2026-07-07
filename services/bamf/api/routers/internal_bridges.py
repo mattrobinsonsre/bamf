@@ -57,6 +57,7 @@ from bamf.db.models import Outpost, SessionRecording, utc_now
 from bamf.db.session import async_session_factory_read, get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
+from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -362,7 +363,7 @@ async def validate_session(
     {session_token} with X-Bamf-Client-Cert header and reads the full
     SessionValidateResponse.
     """
-    session_key = f"session:{request.session_token}"
+    session_key = tunnel_session_key(request.session_token)
     session_data = await r.get(session_key)
 
     if not session_data:
@@ -403,7 +404,7 @@ async def establish_tunnel(
     the response into AgentConnectionInfo struct.
     """
     # Look up session for resource/agent details
-    session_key = f"session:{request.session_token}"
+    session_key = tunnel_session_key(request.session_token)
     session_data = await r.get(session_key)
 
     if not session_data:
@@ -450,7 +451,7 @@ async def tunnel_established(
     Go contract: pkg/bridge/api_client.go:NotifyTunnelEstablished() sends
     {session_token, tunnel_id} with X-Bamf-Client-Cert header.
     """
-    session_key = f"session:{request.session_token}"
+    session_key = tunnel_session_key(request.session_token)
     session_data = await r.get(session_key)
 
     user_email = None
@@ -525,7 +526,7 @@ async def tunnel_closed(
     bridge_id = None
 
     if request.session_token:
-        session_key = f"session:{request.session_token}"
+        session_key = tunnel_session_key(request.session_token)
         session_data = await r.get(session_key)
         if session_data:
             session = json.loads(session_data)
@@ -547,7 +548,7 @@ async def tunnel_closed(
 
         # Clean up client credentials (used for web terminal reconnection)
         if request.session_token:
-            await r.delete(f"session:{request.session_token}:client_creds")
+            await r.delete(tunnel_session_creds_key(request.session_token))
 
     # Decrement instance tunnel count so select_agent_instance stays accurate
     if agent_id and instance_id:
@@ -645,7 +646,7 @@ async def drain_bridge(
             continue
 
         # Look up session data in Redis
-        raw = await r.get(f"session:{session_token}")
+        raw = await r.get(tunnel_session_key(session_token))
         if not raw:
             errors.append(f"Session {session_token[:8]}... not found")
             continue
@@ -747,7 +748,7 @@ async def upload_session_recording(
     # Look up session info from Redis (may already be cleaned up)
     user_email = "unknown"
     resource_name = "unknown"
-    session_key = f"session:{session_id}"
+    session_key = tunnel_session_key(session_id)
     session_data = await r.get(session_key)
     if session_data:
         session = json.loads(session_data)

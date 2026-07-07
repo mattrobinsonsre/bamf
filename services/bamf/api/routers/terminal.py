@@ -29,6 +29,7 @@ from bamf.auth.sessions import Session
 from bamf.db.session import get_db_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis, get_redis_client
+from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource
 
@@ -73,7 +74,7 @@ async def create_ticket(
     from fastapi import HTTPException
 
     # Verify the session exists and belongs to this user
-    raw = await r.get(f"session:{request.session_id}")
+    raw = await r.get(tunnel_session_key(request.session_id))
     if not raw:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -195,7 +196,7 @@ async def _terminal_relay(websocket: WebSocket, session_id: str, resource_type: 
         return
 
     # Load client creds from Redis (stored by connect.py _issue_session)
-    creds_raw = await r.get(f"session:{session_id}:client_creds")
+    creds_raw = await r.get(tunnel_session_creds_key(session_id))
     if not creds_raw:
         await websocket.close(code=4002, reason="Session credentials not found")
         return
@@ -230,7 +231,7 @@ async def _terminal_relay(websocket: WebSocket, session_id: str, resource_type: 
         # Read original resource type from session data to determine audit mode.
         # The session stores both "protocol" (web-ssh/web-db) and
         # "original_resource_type" (ssh, ssh-audit, postgres, etc.).
-        session_raw = await r.get(f"session:{session_id}")
+        session_raw = await r.get(tunnel_session_key(session_id))
         original_resource_type = None
         if session_raw:
             session_info = json.loads(session_raw)

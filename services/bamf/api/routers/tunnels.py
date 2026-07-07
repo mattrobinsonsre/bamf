@@ -22,6 +22,7 @@ from bamf.auth.sessions import Session
 from bamf.db.session import get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
+from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/tunnels", tags=["tunnels"])
@@ -51,7 +52,7 @@ async def list_active_tunnels(
         )
 
     # 2. Pipeline MGET for all session keys
-    session_keys = [f"session:{sid}" for sid in session_ids]
+    session_keys = [tunnel_session_key(sid) for sid in session_ids]
     raw_values = await r.mget(*session_keys)
 
     # 3. Parse results, collect stale IDs
@@ -138,7 +139,7 @@ async def terminate_tunnel(
 
     Users can terminate their own tunnels. Admins can terminate any tunnel.
     """
-    session_key = f"session:{session_id}"
+    session_key = tunnel_session_key(session_id)
     raw = await r.get(session_key)
     if not raw:
         raise HTTPException(
@@ -166,7 +167,7 @@ async def terminate_tunnel(
     # Clean up Redis state
     await r.delete(session_key)
     await r.srem("sessions:active", session_id)
-    await r.delete(f"session:{session_id}:client_creds")
+    await r.delete(tunnel_session_creds_key(session_id))
 
     # Decrement instance tunnel count
     if agent_id and instance_id:
