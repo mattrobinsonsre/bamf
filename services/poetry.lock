@@ -3378,4 +3378,4 @@ geoip = ["geoip2"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "4c31747d70cf1b306ffb2e40a78b605b478a68dde7304d866c937d62325c0bc8"
+content-hash = "b6195fef6ad9ede708e9c93d6b706d1fa06ff53398a78b67a71a57408666ece4"
