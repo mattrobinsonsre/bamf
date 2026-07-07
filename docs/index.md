@@ -4,9 +4,9 @@ BAMF (Bridge Access Management Fabric) — secure, audited infrastructure access
 with short-lived certificates, session recording, and zero-trust tunnels. An
 open-source (MPL-2.0) alternative to Teleport.
 
-New to the project? Read the [README](../README.md) first, then
+New to the project? Read the [README](https://github.com/mattrobinsonsre/bamf/blob/main/README.md) first, then
 [Getting started](getting-started.md). Building or contributing? See
-[AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+[AGENTS.md](https://github.com/mattrobinsonsre/bamf/blob/main/AGENTS.md) and [CONTRIBUTING.md](https://github.com/mattrobinsonsre/bamf/blob/main/CONTRIBUTING.md).
 
 ## Getting started
 

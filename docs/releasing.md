@@ -5,7 +5,7 @@ Releases are **fully automated via GitHub Actions**: pushing a semver tag
 attaches the Go binaries + SBOMs, and creates the GitHub Release. This page is
 the mechanical how-to; the **quality gates** that must pass *before* you tag —
 the pre-release audit and the independent third-party review — live in
-[`AGENTS.md` → Release discipline](../AGENTS.md#release-discipline). Do those
+[`AGENTS.md` → Release discipline](https://github.com/mattrobinsonsre/bamf/blob/main/AGENTS.md#release-discipline). Do those
 first; then follow the steps here.
 
 ## Before tagging
@@ -13,7 +13,7 @@ first; then follow the steps here.
 1. **All intended PRs are merged with green CI.** Don't tag a release with
    unmerged work that was meant for it.
 2. **Run the pre-release audit (A–H) and the third-party review** described in
-   [`AGENTS.md`](../AGENTS.md#release-discipline), and land any fixes as a
+   [`AGENTS.md`](https://github.com/mattrobinsonsre/bamf/blob/main/AGENTS.md#release-discipline), and land any fixes as a
    dedicated `docs:`/`chore:` PR. Minor/major releases require the full audit;
    patch releases still run the content-hygiene (D) and live-smoke (F) gates and
    the third-party review (which scales with the diff).
@@ -56,9 +56,9 @@ patch (`vX.Y.Z+1`). The criterion is "did the pipeline succeed and publish?" —
 if `cleanup.yml` deleted the tag, the version is free to reuse; otherwise it is
 frozen.
 
-All release logic is in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml);
+All release logic is in [`.github/workflows/ci.yml`](https://github.com/mattrobinsonsre/bamf/blob/main/.github/workflows/ci.yml);
 GHCR retention cleanup is in
-[`.github/workflows/cleanup.yml`](../.github/workflows/cleanup.yml).
+[`.github/workflows/cleanup.yml`](https://github.com/mattrobinsonsre/bamf/blob/main/.github/workflows/cleanup.yml).
 
 ## Published artifacts
 

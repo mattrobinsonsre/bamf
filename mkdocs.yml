@@ -1,0 +1,86 @@
+site_name: BAMF
+site_description: Bridge Access Management Fabric — open-source secure infrastructure access
+site_url: https://mattrobinsonsre.github.io/bamf
+repo_url: https://github.com/mattrobinsonsre/bamf
+repo_name: mattrobinsonsre/bamf
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - SSH & SCP: guides/ssh.md
+      - Databases: guides/databases.md
+      - Kubernetes: guides/kubernetes.md
+      - Web Applications: guides/web-apps.md
+      - Web Terminal: guides/web-terminal.md
+      - File Shares: guides/file-shares.md
+      - Agents: guides/agents.md
+  - Administration:
+      - Deployment: admin/deployment.md
+      - RBAC: admin/rbac.md
+      - SSO: admin/sso.md
+      - Users: admin/users.md
+      - Certificates: admin/certificates.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Authentication: architecture/authentication.md
+      - Tunnels: architecture/tunnels.md
+      - Security: architecture/security.md
+      - Outpost Deployments: architecture/outpost-deployments.md
+  - Operations:
+      - Monitoring: operations/monitoring.md
+      - Scaling: operations/scaling.md
+      - Backup & Restore: operations/backup-restore.md
+      - Upgrading: operations/upgrading.md
+  - Reference:
+      - CLI: reference/cli.md
+      - REST API: reference/api.md
+      - Helm Values: reference/helm-values.md
+      - Agent Config: reference/agent-config.md
+  - Project:
+      - Comparison: comparison.md
+      - Development: development.md
+      - Releasing: releasing.md
