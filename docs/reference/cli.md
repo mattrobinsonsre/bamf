@@ -6,9 +6,7 @@ The `bamf` CLI is a single static binary for secure infrastructure access.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--config` | `~/.bamf/config.yaml` | Config file path |
-| `--api` | From config | BAMF API server URL |
-| `--debug` | `false` | Enable debug logging |
+| `--api` | `$BAMF_API_URL`, else the saved credential | BAMF API server URL |
 | `--json` | `false` | Machine-readable JSON output |
 
 ## Authentication
@@ -23,7 +21,7 @@ bamf login [--provider NAME] [--no-browser]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--provider` | From config (`default_provider`) | Auth provider name |
+| `--provider` | server default | Auth provider name; when omitted the server picks its configured default |
 | `--no-browser` | `false` | Print login URL instead of opening browser |
 
 After login, credentials are stored in `~/.bamf/credentials.json`.
@@ -247,20 +245,16 @@ Print version, git commit, and build time.
 bamf version
 ```
 
-## Configuration File
-
-`~/.bamf/config.yaml`:
-
-```yaml
-api: https://bamf.example.com
-# provider: auth0  # default auth provider
-```
-
 ## Credential Storage
 
 ```
 ~/.bamf/
-├── config.yaml        # CLI configuration
-├── credentials.json   # Session token, cert, key, CA (0600)
-└── known_hosts        # SSH host key cache
+├── credentials.json   # session token, email, roles, api_url (0600)
+└── known_hosts        # SSH host key cache (written by ssh, via UserKnownHostsFile)
 ```
+
+`credentials.json` holds only the opaque session token and login metadata. The
+per-tunnel session certificate and key are fetched from the API on each
+connection and kept in memory — they are never written to disk. There is no
+`~/.bamf/config.yaml`; the API URL comes from `--api` / `$BAMF_API_URL` / the
+saved credential.

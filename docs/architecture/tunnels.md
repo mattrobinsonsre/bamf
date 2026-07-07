@@ -26,6 +26,7 @@ SAN URIs:
   bamf://resource/{resource_name}   — target resource
   bamf://bridge/{bridge_id}         — which bridge to connect to
   bamf://role/{role_name}           — authorized role (one per role)
+  bamf://type/{resource_type}       — resource type (recording/audit routing)
 ```
 
 The bridge validates the cert chain against the BAMF CA, reads the SAN URIs,

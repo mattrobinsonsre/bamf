@@ -83,6 +83,14 @@
     }
   },
   "properties": {
+    "nameOverride": {
+      "type": "string",
+      "description": "Override the chart name used in resource names (see _helpers.tpl bamf.name)."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Override the fully-qualified release name used for all resources (see _helpers.tpl bamf.fullname)."
+    },
     "global": {
       "type": "object",
       "additionalProperties": false,
