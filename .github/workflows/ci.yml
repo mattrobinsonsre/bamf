@@ -712,9 +712,14 @@ jobs:
             "${{ needs.release.result }}"
           )
 
+          # A required job passes only if it succeeded, or was legitimately
+          # skipped by the images-exist short-circuit on a tag re-push. Anything
+          # else — failure, cancelled (incl. timeout), or an unexpected state —
+          # must fail the gate. (Previously only "failure" failed, so a cancelled
+          # or timed-out required job silently counted as green.)
           for r in "${results[@]}"; do
-            if [[ "$r" == "failure" ]]; then
-              echo "One or more jobs failed"
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "A required job did not pass (result: '$r')"
               exit 1
             fi
           done
