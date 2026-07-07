@@ -68,13 +68,13 @@ type heartbeatWebhook struct {
 // heartbeatResource matches the Python HeartbeatResource model
 // (services/bamf/api/routers/agents.py).
 type heartbeatResource struct {
-	Name           string              `json:"name"`
-	ResourceType   string              `json:"resource_type"`
-	Labels         map[string]string   `json:"labels"`
-	Hostname       string              `json:"hostname,omitempty"`
-	Port           int                 `json:"port,omitempty"`
-	TunnelHostname string              `json:"tunnel_hostname,omitempty"`
-	Webhooks       []heartbeatWebhook  `json:"webhooks,omitempty"`
+	Name           string             `json:"name"`
+	ResourceType   string             `json:"resource_type"`
+	Labels         map[string]string  `json:"labels"`
+	Hostname       string             `json:"hostname,omitempty"`
+	Port           int                `json:"port,omitempty"`
+	TunnelHostname string             `json:"tunnel_hostname,omitempty"`
+	Webhooks       []heartbeatWebhook `json:"webhooks,omitempty"`
 }
 
 // heartbeatRequest matches the Python AgentHeartbeatRequest model
@@ -116,16 +116,6 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 	}
 
 	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID), body, nil)
-}
-
-// UpdateStatus updates the agent status.
-// Calls: POST /api/v1/agents/{id}/status
-func (c *APIClient) UpdateStatus(ctx context.Context, agentID, status string) error {
-	body := map[string]any{
-		"status": status,
-	}
-
-	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/status", agentID), body, nil)
 }
 
 // DrainInstance notifies the API that this instance is draining (shutting down).
