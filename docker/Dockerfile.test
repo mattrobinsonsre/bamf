@@ -22,6 +22,9 @@ RUN poetry config virtualenvs.create false \
 COPY services/bamf ./bamf
 COPY services/tests ./tests
 COPY alembic ./alembic
+# values.yaml is needed by tests/test_config_channel.py, which asserts the
+# Helm core.api.config block maps onto real Settings fields.
+COPY helm/bamf/values.yaml ./helm/bamf/values.yaml
 
 # CA data directory for tests
 RUN mkdir -p /var/lib/bamf/ca
