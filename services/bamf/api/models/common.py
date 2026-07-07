@@ -51,7 +51,14 @@ class PaginationParams(BAMFBaseModel):
 
 
 class CursorPage[T](BAMFBaseModel):
-    """Cursor-based pagination response."""
+    """Cursor-based pagination response.
+
+    CONTRACT: this is the wire shape every list endpoint returns. The Go CLI
+    decodes the ``items`` key (cmd/bamf/cmd/agents.go, tokens.go); a rename here
+    silently empties those lists. Guarded by the golden fixture
+    services/tests/contracts/agents_list.json (test_contract_fixtures.py +
+    cmd/bamf/cmd/contract_test.go).
+    """
 
     items: list[T]
     next_cursor: str | None = Field(
