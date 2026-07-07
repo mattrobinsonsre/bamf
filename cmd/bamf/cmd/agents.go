@@ -86,7 +86,10 @@ func runAgents(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("API error: %s", resp.Status)
 	}
 
-	// The API paginates list endpoints with a CursorPage envelope: {"items":[...]}.
+	// CONTRACT: the API paginates list endpoints with a CursorPage envelope
+	// ({"items":[...]}, services/bamf/api/models/common.py). Decoding any other
+	// key silently yields an empty list (was bug #120). Guarded by the golden
+	// fixture in contract_test.go / services/tests/contracts/agents_list.json.
 	var result struct {
 		Items []agent `json:"items"`
 	}

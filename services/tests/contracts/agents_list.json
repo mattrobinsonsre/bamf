@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "name": "web-prod-01",
+      "id": "019f380f-7a0c-7f8d-851e-4682b70cbc35",
+      "labels": { "env": "prod", "team": "platform" },
+      "status": "online",
+      "last_heartbeat": "2026-07-07T12:00:00Z",
+      "connected_bridge_id": "bamf-bridge-0",
+      "certificate_expires_at": "2027-07-07T12:00:00Z",
+      "resource_count": 3,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-07-07T12:00:00Z"
+    }
+  ],
+  "next_cursor": "d2ViLXByb2QtMDE=",
+  "has_more": false
+}

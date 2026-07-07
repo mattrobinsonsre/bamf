@@ -164,6 +164,24 @@ Routing rules of thumb:
 - A **behaviour-changing fix for a reported bug** → a regression test named
   after the failure mode that fails pre-fix and passes after.
 
+## Cross-component contract registry
+
+Every cross-language coupling below is joined by **hand-copied string literals**
+across Go/Python/TS that are tested in isolation — so a test can stay green while
+encoding a contract the peer never honored (this shipped two live bugs: the
+`bamf agents` / `bamf tokens list` envelope drift). When you touch one side of a
+row, update the other side **and** its guard. Add a `CONTRACT:` comment at each
+boundary pointing at the peer.
+
+| Contract | Sides (file:line) | Kept in sync by |
+|---|---|---|
+| **List-envelope** `CursorPage{items,next_cursor,has_more}` | producer `services/bamf/api/models/common.py` (`CursorPage`) ↔ CLI `cmd/bamf/cmd/agents.go`, `tokens.go` (`Items` structs) | **Golden fixture** `services/tests/contracts/agents_list.json` — validated by `services/tests/test_api/test_contract_fixtures.py` (producer) **and** `cmd/bamf/cmd/contract_test.go` (consumer). A key/field drift fails both. |
+| **Session-cert SAN URIs** (`bamf://session|resource|bridge|role|type`) | issued `services/bamf/auth/ca.py` (`issue_session_certificate`) ↔ parsed `pkg/bridge/server.go` (`extractSessionInfo`) | Go table tests in `pkg/bridge/server_test.go` (`TestExtractSessionInfo`); keep the 5-URI set in sync. *(Golden-cert fixture: TODO.)* |
+| **Agent SSE command set** (`dial`/`redial`/`relay_connect`/`revoke` → event type) | producer `services/bamf/api/agent_commands.py`, `routers/agents.py` ↔ consumer `pkg/agent/sse.go`, `agent.go` | `CONTRACT:` markers on `agent_commands.py`; producer maps `command`→event, consumer switches on it. *(Guard: TODO.)* |
+| **Helm values ↔ schema ↔ templates** | `helm/bamf/values.yaml` ↔ `values.schema.json` ↔ `templates/` | `helm lint` (schema `additionalProperties:false`) + the 4-topology render matrix in CI. |
+| **Redis key schemas** | scattered f-strings across `services/bamf/**` | *(TODO: a `bamf/redis_keys.py` builder module + an introspection test banning raw `f"session:{`/`f"bridge:{` literals. Note `session:{id}` (tunnel) vs `bamf:session:{token}` (user session) are distinct — merging them would be catastrophic.)* |
+| **proto ↔ `pkg/pb/`** | `proto/` ↔ generated `pkg/pb/` | *(TODO: `make proto` regenerate-and-diff, or delete if orphaned.)* |
+
 ## Conventions
 
 - **Issue-first** — every change beyond a genuinely trivial tweak (typo,
