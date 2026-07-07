@@ -71,8 +71,10 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://internal-api.tunnel.bamf.example.com/api/health
 ```
 
-For CI/CD pipelines, set the `BAMF_TOKEN` environment variable with a
-pre-issued API token, which is used automatically by all HTTP clients.
+Browser access uses the BAMF session cookie set at login. Programmatic access
+(scripts, CI) presents the session token as `Authorization: Bearer <token>` on
+each request, as shown above — there is no separate auto-detected `BAMF_TOKEN`
+environment variable for the web-app proxy.
 
 This is useful for:
 - Scripts and automation that need to reach internal HTTP services

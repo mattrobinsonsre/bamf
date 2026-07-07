@@ -21,7 +21,7 @@ var kubeCmd = &cobra.Command{
 
 Subcommands:
   login           Write kubeconfig entry for a K8s cluster
-  credentials     Exec credential plugin for kubectl (internal use)`,
+  kube-credentials  Exec credential plugin for kubectl (internal use)`,
 }
 
 var kubeLoginCmd = &cobra.Command{

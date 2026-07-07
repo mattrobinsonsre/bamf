@@ -48,7 +48,7 @@ core:
       repository: ghcr.io/mattrobinsonsre/bamf-api
       tag: ""                        # Defaults to Chart appVersion
     resources:
-      requests: { cpu: 250m, memory: 512Mi }
+      requests: { cpu: 500m, memory: 1Gi }
       limits: { cpu: "1", memory: 1Gi }
     autoscaling:
       enabled: true
@@ -104,7 +104,7 @@ outpost:
       repository: ghcr.io/mattrobinsonsre/bamf-bridge
       tag: ""
     resources:
-      requests: { cpu: 250m, memory: 256Mi }
+      requests: { cpu: "1", memory: 1Gi }
       limits: { cpu: "2", memory: 1Gi }
     tunnelPort: 8443                 # Single port for all tunnel protocols
     autoscaling:
@@ -133,7 +133,7 @@ core:
       repository: ghcr.io/mattrobinsonsre/bamf-web
       tag: ""
     resources:
-      requests: { cpu: 50m, memory: 64Mi }
+      requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: 200m, memory: 128Mi }
 ```
 
@@ -147,8 +147,8 @@ agent:
     repository: ghcr.io/mattrobinsonsre/bamf-agent
     tag: ""
   resources:
-    requests: { cpu: 50m, memory: 64Mi }
-    limits: { cpu: 200m, memory: 128Mi }
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 200m, memory: 256Mi }
   config:
     name: ""                       # Agent name (required when enabled)
     labels: {}                     # Agent labels (key: value)

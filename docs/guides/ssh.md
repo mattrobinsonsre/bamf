@@ -87,8 +87,9 @@ After this, plain `ssh user@web-prod-01.prod` routes through BAMF automatically.
 
 ## Host Key Verification
 
-Agents present host certificates signed by the BAMF CA. After `bamf login`,
-the CA is added to `~/.bamf/known_hosts`:
+Agents present host certificates signed by the BAMF CA. `bamf ssh` passes
+`UserKnownHostsFile ~/.bamf/known_hosts` to native ssh. To skip per-host TOFU
+prompts, add the BAMF CA as a cert-authority to that file yourself:
 
 ```
 @cert-authority * <BAMF CA public key>

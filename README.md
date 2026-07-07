@@ -212,10 +212,10 @@ helm install bamf-agent oci://ghcr.io/mattrobinsonsre/bamf \
   --set agent.platformUrl=https://bamf.example.com \
   --set agent.joinToken=${TOKEN}
 
-# Or deploy on a VM
+# Or deploy on a VM (config comes from env vars or --config <agent.yaml>)
 curl -L https://github.com/mattrobinsonsre/bamf/releases/latest/download/bamf-agent-linux-amd64 \
   -o /usr/local/bin/bamf-agent && chmod +x /usr/local/bin/bamf-agent
-bamf-agent --platform-url https://bamf.example.com --join-token ${TOKEN}
+BAMF_PLATFORM_URL=https://bamf.example.com BAMF_JOIN_TOKEN=${TOKEN} bamf-agent
 ```
 
 See [Agent Guide](docs/guides/agents.md) for configuration and resource setup.

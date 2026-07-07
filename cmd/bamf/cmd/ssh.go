@@ -20,7 +20,7 @@ port forwarding, jump hosts, control sockets, and everything else works
 because it IS ssh.
 
 The resource name is used as the SSH hostname. The ProxyCommand
-"bamf pipe %h" translates it into a tunnel connection.
+"bamf pipe %h %r" translates it into a tunnel connection.
 
 Examples:
   # Interactive shell
@@ -37,7 +37,7 @@ Examples:
 
 This can also be configured manually in ~/.ssh/config:
   Host *.prod
-    ProxyCommand bamf pipe %h
+    ProxyCommand bamf pipe %h %r
     UserKnownHostsFile ~/.bamf/known_hosts`,
 	DisableFlagParsing: true,
 	RunE:               runSSH,

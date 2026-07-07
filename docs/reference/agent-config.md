@@ -210,7 +210,7 @@ authenticated users.
 | `BAMF_DATA_DIR` | Data directory (overrides config) |
 | `BAMF_CLUSTER_INTERNAL` | Use in-cluster bridge hostnames (`true`/`false`) |
 | `BAMF_LABELS` | Agent labels (key=value,key=value) |
-| `BAMF_RESOURCES` | Resource definitions (JSON) |
+| `BAMF_RESOURCES` | Resource definitions, `name:type:host:port` comma-separated |
 | `BAMF_HEARTBEAT_INTERVAL` | Heartbeat interval (e.g., `60s`) |
 | `BAMF_RECONNECT_BASE_DELAY` | Reconnect base delay (e.g., `1s`) |
 | `BAMF_RECONNECT_MAX_DELAY` | Reconnect max delay (e.g., `5m`) |

@@ -106,7 +106,12 @@ CRUD API for resources — they are managed through agent configuration.
 | POST | `/agents/{id}/heartbeat` | Cert | Agent heartbeat |
 | POST | `/agents/{id}/status` | Cert | Update agent status |
 | POST | `/agents/{id}/renew` | Cert | Renew agent certificate |
+| POST | `/agents/{id}/drain` | Cert | Mark an agent instance draining |
+| POST | `/agents/{id}/instance/{iid}/offline` | Cert | Remove a shut-down instance |
 | GET | `/agents/{id}/events` | Cert | SSE stream for tunnel commands |
+
+Agent endpoints require the agent's certificate (`X-Bamf-Client-Cert`) whose CN
+matches the target agent — an agent may only act as itself.
 
 *Join endpoint requires a valid join token in the request body.
 
@@ -136,7 +141,7 @@ CRUD API for resources — they are managed through agent configuration.
 |--------|------|------|-------------|
 | GET | `/certificates/ca` | No | Get CA public certificate |
 | POST | `/certificates/user` | Yes | Issue user identity certificate |
-| POST | `/certificates/service` | Yes | Issue service certificate |
+| POST | `/certificates/service` | Admin | Issue service certificate |
 | POST | `/certificates/revoke` | Admin | Revoke a certificate by SHA-256 fingerprint |
 | GET | `/certificates/revoked` | Admin/Audit | List revoked certificates |
 
@@ -189,12 +194,12 @@ revocation targets the long-lived service certs.
 
 ## Kubernetes Proxy
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| * | `/kube/{resource}/{path}` | Yes | Proxy to K8s API |
-
-Supports all HTTP methods. The path after the resource name is forwarded to the
-Kubernetes API.
+Kubernetes API access is **not** served by this API server — it is handled by
+the standalone **proxy service** (`bamf-proxy`), the same tier that serves web
+app access. `bamf kube login` writes a kubeconfig whose server points at the
+proxy; requests are authenticated per-request and relayed to the agent, which
+impersonates the user against the K8s API. See the
+[Kubernetes guide](../guides/kubernetes.md).
 
 ## Internal Endpoints
 
@@ -213,7 +218,11 @@ Used by bridges and agents, not end users.
 
 ## Pagination
 
-All list endpoints use cursor-based pagination:
+Large collections (`/users`, `/agents`, `/tokens`, `/audit`) use cursor-based
+pagination with the `{items, next_cursor, has_more}` envelope below. Some
+smaller list endpoints (`/resources`, `/role-assignments`, `/certificates/revoked`,
+`/auth/sessions`) return a flat array or a custom envelope instead. The
+cursor-paginated form:
 
 ```
 GET /api/v1/users?limit=50&cursor=eyJpZCI6ICIxMjMifQ==

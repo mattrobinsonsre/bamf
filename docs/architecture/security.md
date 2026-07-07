@@ -43,11 +43,11 @@ surface.
               ▼                      ▼
 ┌─────────────────────┐  ┌──────────────────────────────┐
 │  BOUNDARY 1: API    │  │  BOUNDARY 2: Bridge          │
-│  Authenticates all  │  │  Validates BAMF CA certs     │
-│  requests. Issues   │  │  only. Zero runtime deps.    │
-│  certs. Enforces    │  │  Never calls API/DB/Redis.   │
-│  RBAC. Writes audit.│  │  Byte-level relay only.      │
-│  Holds CA key.      │  │                              │
+│  Authenticates all  │  │  Validates BAMF CA certs.    │
+│  requests. Issues   │  │  No DB/Redis access; calls   │
+│  certs. Enforces    │  │  API only for register/      │
+│  RBAC. Writes audit.│  │  heartbeat/recording, never  │
+│  Holds CA key.      │  │  during byte-relay.          │
 └────────┬────────────┘  └──────────────────────────────┘
          │                           │
          ▼                           ▼
@@ -140,7 +140,7 @@ PostgreSQL stores identity and audit history. Redis stores runtime state.
 touch the data layer. The proxy communicates with the API via internal HTTP
 endpoints authenticated by a shared secret.
 
-**If PostgreSQL is compromised**: The attacker gets user records (bcrypt-hashed
+**If PostgreSQL is compromised**: The attacker gets user records (PBKDF2-SHA256-hashed
 passwords for local users), role definitions, audit history, session recordings,
 and the CA key backup. They cannot directly access resources (no live session
 tokens — those are in Redis).
@@ -216,6 +216,7 @@ x509 Certificate (signed by BAMF CA):
     bamf://resource/orders-db     — authorized resource
     bamf://bridge/bamf-bridge-0   — assigned bridge pod
     bamf://role/developer         — authorized role (one per role)
+    bamf://type/ssh-audit         — resource type (recording/audit routing)
   Not After: 30 seconds (extended on successful connection)
   Key Usage: Client Authentication
 ```
@@ -331,18 +332,22 @@ kubectl → [HTTPS] → Proxy → API (authorize) → Proxy → Bridge → Agent
 
 ### Scenario: Compromised user workstation
 
-**Impact**: Attacker gets `~/.bamf/credentials.json` (session token) and
-`~/.bamf/keys/` (identity cert).
+**Impact**: Attacker gets `~/.bamf/credentials.json` (the opaque session token
+plus login metadata). Per-tunnel session certs are fetched from the API on each
+connection and held in memory only — there is no long-lived identity cert on
+disk to steal.
 
 **What they can do**: Authenticate as the user, request tunnels, access
-resources within the user's RBAC permissions.
+resources within the user's RBAC permissions — for as long as the session
+token stays valid.
 
 **What they can't do**: Escalate beyond the user's roles, access resources
 denied by RBAC, delete audit logs.
 
 **Response**: Admin revokes all sessions for the user
-(`DELETE /api/v1/auth/sessions/user/user@corp.com`). Identity cert expires
-within 12 hours. Session token is instantly invalidated.
+(`DELETE /api/v1/auth/sessions/user/user@corp.com`), which instantly
+invalidates the session token. Any in-flight tunnel session cert expires within
+its 30-second TTL.
 
 ### Scenario: Compromised join token
 

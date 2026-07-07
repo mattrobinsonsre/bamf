@@ -113,8 +113,7 @@ How it works:
 - **Fails open** — if Redis is unavailable the check fails open (consistent with
   the rate limiter); the periodic re-seed bounds the exposure window.
 - **Scope** — revocation targets the long-lived service certs. User access is
-  revoked separately by deleting the session (`DELETE /api/v1/auth/sessions/{id}`
-  or `revoke_all_user_sessions`), and per-tunnel session certs are 30-second TTL,
+  revoked separately (`DELETE /api/v1/auth/sessions/user/{email}`, admin), and per-tunnel session certs are 30-second TTL,
   so a revoked identity simply stops getting new ones.
 
 Fingerprints are normalized on ingest (lowercase, colons/spaces stripped), so

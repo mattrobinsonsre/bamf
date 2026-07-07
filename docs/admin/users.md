@@ -5,7 +5,7 @@ BAMF has two types of users: local users (managed in the database) and SSO users
 
 ## Local Users
 
-Local users are created by admins and stored in the `users` table with bcrypt
+Local users are created by admins and stored in the `users` table with PBKDF2-SHA256 (100k iterations)
 password hashes.
 
 ### Create a User
