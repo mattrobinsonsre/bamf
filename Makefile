@@ -14,7 +14,7 @@
 	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset proto \
-	migration-check docs-xref \
+	migration-check docs-xref helm-config-contract \
 	help
 
 # ── Variables (for build-local only) ─────────────────────
@@ -55,6 +55,9 @@ migration-check:    ## Alembic upgrade→downgrade→upgrade round-trip (Docker)
 
 docs-xref:          ## Fail if a docs/ or AGENTS.md file reference is stale
 	scripts/docs-xref.sh
+
+helm-config-contract: ## Assert no secrets land in a rendered ConfigMap
+	scripts/helm-config-contract.sh
 
 # ── Build ─────────────────────────────────────────────────
 build:              ## Cross-compile Go binaries for all platforms (Docker)
