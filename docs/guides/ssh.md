@@ -217,6 +217,6 @@ User certificates are valid for 12 hours by default.
 
 **SSH flags not working** — BAMF passes all flags through to the native `ssh`
 command. If a flag works with `ssh` directly, it works with `bamf ssh`. If
-you're having trouble, try running with `--debug` to see the actual `ssh`
-command being executed.
+you're having trouble, add `ssh`'s own `-v` (or `-vvv`) verbose flag to see the
+connection details, including the `bamf pipe %h %r` ProxyCommand BAMF injects.
 
