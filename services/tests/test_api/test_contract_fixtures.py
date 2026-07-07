@@ -17,6 +17,8 @@ from pathlib import Path
 
 from bamf.api.models.agents import AgentResponse
 from bamf.api.models.common import CursorPage
+from bamf.api.models.tokens import JoinTokenResponse
+from bamf.api.routers.resources import ResourceListResponse, ResourceResponse
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts"
 
@@ -38,6 +40,45 @@ def test_agents_list_envelope_contract():
     # thus the Go consumer test) to be updated in lockstep.
     item = data["items"][0]
     dumped = json.loads(AgentResponse.model_validate(item).model_dump_json())
+    assert set(dumped) == set(item)
+
+
+def test_tokens_list_envelope_contract():
+    """`bamf tokens list` (cmd/bamf/cmd/tokens.go) decodes the CursorPage
+    ``items`` envelope of JoinTokenResponse — the surface #120 explicitly named.
+    Same both-sides guard as agents: the golden is validated here against the
+    real response model and in Go against the CLI's decode struct.
+    """
+    raw = (CONTRACTS / "tokens_list.json").read_text()
+
+    page = CursorPage[JoinTokenResponse].model_validate_json(raw)
+    assert len(page.items) == 1
+
+    data = json.loads(raw)
+    assert set(data) == {"items", "next_cursor", "has_more"}
+
+    item = data["items"][0]
+    dumped = json.loads(JoinTokenResponse.model_validate(item).model_dump_json())
+    assert set(dumped) == set(item)
+
+
+def test_resources_list_envelope_contract():
+    """`bamf resources`/`bamf ls` (cmd/bamf/cmd/resources.go) decodes the custom
+    ``resources`` envelope (ResourceListResponse), not the CursorPage ``items``
+    shape. Pinning it here + in Go stops a producer-side key rename from
+    silently emptying the CLI the way #120 emptied ``bamf agents``.
+    """
+    raw = (CONTRACTS / "resources_list.json").read_text()
+
+    page = ResourceListResponse.model_validate_json(raw)
+    assert len(page.resources) == 1
+
+    data = json.loads(raw)
+    # The custom envelope key is exactly what the Go CLI decodes.
+    assert set(data) == {"resources"}
+
+    item = data["resources"][0]
+    dumped = json.loads(ResourceResponse.model_validate(item).model_dump_json())
     assert set(dumped) == set(item)
 
 

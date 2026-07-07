@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "019f380f-7a0c-7f8d-851e-4682b70cbc35",
+      "name": "prod-agents",
+      "expires_at": "2026-07-08T12:00:00Z",
+      "max_uses": 10,
+      "use_count": 2,
+      "agent_labels": { "env": "prod" },
+      "is_revoked": false,
+      "created_at": "2026-07-07T12:00:00Z",
+      "created_by": "admin@example.com"
+    }
+  ],
+  "next_cursor": "cHJvZC1hZ2VudHM=",
+  "has_more": false
+}

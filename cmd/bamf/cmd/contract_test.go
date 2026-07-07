@@ -43,3 +43,44 @@ func TestAgentsListEnvelopeContract(t *testing.T) {
 	require.Equal(t, "prod", a.Labels["env"])
 	require.NotNil(t, a.LastHeartbeat)
 }
+
+// TestTokensListEnvelopeContract guards the same CursorPage "items" envelope for
+// `bamf tokens list` — the surface #120 explicitly named alongside `bamf agents`.
+// The decode struct here mirrors runTokensList in tokens.go.
+func TestTokensListEnvelopeContract(t *testing.T) {
+	var page struct {
+		Items []joinToken `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(contractFixture(t, "tokens_list.json"), &page))
+	require.Len(t, page.Items, 1,
+		"CLI must decode the CursorPage 'items' envelope, not a bare or renamed key")
+
+	tok := page.Items[0]
+	require.Equal(t, "prod-agents", tok.Name)
+	require.Equal(t, 2, tok.UseCount)
+	require.False(t, tok.IsRevoked)
+	require.NotNil(t, tok.MaxUses)
+	require.Equal(t, 10, *tok.MaxUses)
+	require.Equal(t, "prod", tok.AgentLabels["env"])
+	require.False(t, tok.ExpiresAt.IsZero())
+}
+
+// TestResourcesListEnvelopeContract guards the CUSTOM "resources" envelope for
+// `bamf resources`/`bamf ls` (runResources in resources.go decodes
+// {"resources": [...]}, not the CursorPage "items" key). A producer rename of
+// this key would silently empty the CLI the way #120 emptied `bamf agents`.
+func TestResourcesListEnvelopeContract(t *testing.T) {
+	var result struct {
+		Resources []resource `json:"resources"`
+	}
+	require.NoError(t, json.Unmarshal(contractFixture(t, "resources_list.json"), &result))
+	require.Len(t, result.Resources, 1,
+		"CLI must decode the custom 'resources' envelope, not a bare or renamed key")
+
+	r := result.Resources[0]
+	require.Equal(t, "web-prod-01", r.Name)
+	require.Equal(t, "ssh", r.ResourceType)
+	require.Equal(t, "available", r.Status)
+	require.Equal(t, "datacenter-agent-01", r.AgentName)
+	require.Equal(t, "prod", r.Labels["env"])
+}

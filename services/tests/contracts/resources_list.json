@@ -1,0 +1,16 @@
+{
+  "resources": [
+    {
+      "name": "web-prod-01",
+      "resource_type": "ssh",
+      "labels": { "env": "prod", "team": "platform" },
+      "agent_id": "019f380f-7a0c-7f8d-851e-4682b70cbc35",
+      "agent_name": "datacenter-agent-01",
+      "status": "available",
+      "hostname": "web-prod-01.internal",
+      "port": 22,
+      "connect_url": null,
+      "kubamf_url": null
+    }
+  ]
+}
