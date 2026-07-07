@@ -1,0 +1,47 @@
+name: GHCR login (with retry)
+description: |
+  Authenticate the Docker CLI (and optionally Helm) against ghcr.io with
+  exponential backoff so transient GHCR / Docker Hub blips don't fail an
+  otherwise-healthy build. Replaces docker/login-action, which has no retry
+  knob. Requires the repository to be checked out (uses .github/scripts).
+
+inputs:
+  token:
+    description: GHCR token (typically secrets.GITHUB_TOKEN)
+    required: true
+  username:
+    description: GHCR username (typically github.actor)
+    required: true
+  helm:
+    description: Also run `helm registry login` (set 'true' for jobs that push the Helm chart)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: docker login ghcr.io (with retry)
+      shell: bash
+      env:
+        GHCR_TOKEN: ${{ inputs.token }}
+        GHCR_USER: ${{ inputs.username }}
+        ALSO_HELM: ${{ inputs.helm }}
+      run: |
+        set -u
+        # docker / helm don't accept stdin pipes cleanly when invoked via
+        # with-retry.sh's `"$@"`, so wrap each login in a shell function.
+        do_docker_login() {
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+        }
+        do_helm_login() {
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
+        }
+        export -f do_docker_login do_helm_login
+
+        "$GITHUB_WORKSPACE/.github/scripts/with-retry.sh" "docker login" -- \
+          bash -c do_docker_login
+
+        if [ "$ALSO_HELM" = "true" ]; then
+          "$GITHUB_WORKSPACE/.github/scripts/with-retry.sh" "helm login" -- \
+            bash -c do_helm_login
+        fi
