@@ -15,15 +15,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+# Shutdown event lives in a leaf module so routers can import it without an
+# app → routers → app import cycle. Re-exported here for existing references.
+from bamf.api.lifecycle import shutdown_event
 from bamf.auth.ca import init_ca
 from bamf.auth.connectors import init_connectors
 from bamf.config import settings
 from bamf.db.session import close_db, init_db
 from bamf.logging_config import configure_logging, get_logger
 from bamf.redis.client import close_redis, init_redis
-
-# Shutdown event — SSE generators check this to close promptly during shutdown.
-shutdown_event = asyncio.Event()
 
 from .health import router as health_router
 from .routers.agents import router as agents_router
