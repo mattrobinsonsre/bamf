@@ -19,19 +19,29 @@ test_python() {
   success "Python tests passed"
 }
 
+test_migrations() {
+  info "Checking Alembic migrations (upgrade → downgrade base → upgrade)..."
+  ensure_test_image
+  docker compose -f "$REPO_ROOT/docker-compose.test.yml" run --rm migrate
+  docker compose -f "$REPO_ROOT/docker-compose.test.yml" down -v >/dev/null 2>&1 || true
+  success "Migrations round-trip cleanly"
+}
+
 target="${1:-all}"
 
 case "$target" in
-  go)     test_go ;;
-  python) test_python ;;
+  go)         test_go ;;
+  python)     test_python ;;
+  migrations) test_migrations ;;
   all)
     test_go
     test_python
+    test_migrations
     success "All tests passed"
     ;;
   *)
     error "Unknown target: $target"
-    echo "Usage: $0 [go|python|all]"
+    echo "Usage: $0 [go|python|migrations|all]"
     exit 1
     ;;
 esac
