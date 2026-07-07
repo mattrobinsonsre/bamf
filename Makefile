@@ -14,7 +14,7 @@
 	pentest pentest-dast pentest-images pentest-sast \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset proto \
-	migration-check \
+	migration-check docs-xref \
 	help
 
 # ── Variables (for build-local only) ─────────────────────
@@ -52,6 +52,9 @@ test-python:        ## Test Python only (Docker)
 
 migration-check:    ## Alembic upgrade→downgrade→upgrade round-trip (Docker)
 	scripts/test.sh migrations
+
+docs-xref:          ## Fail if a docs/ or AGENTS.md file reference is stale
+	scripts/docs-xref.sh
 
 # ── Build ─────────────────────────────────────────────────
 build:              ## Cross-compile Go binaries for all platforms (Docker)

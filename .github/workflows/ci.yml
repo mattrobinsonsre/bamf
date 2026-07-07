@@ -167,6 +167,18 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - run: scripts/security-scan.sh python
 
+  # A source comment or contract-registry row pointing at a moved/renamed file
+  # is a silent lie; this fails CI when a docs/ or AGENTS.md path stops resolving.
+  docs-xref:
+    name: Docs Xref
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - run: scripts/docs-xref.sh
+
   # ── Web ─────────────────────────────────────────────────
   web-lint:
     name: Web Lint
@@ -459,6 +471,7 @@ jobs:
       - migration-check
       - python-security
       - web-lint
+      - docs-xref
       - helm-lint
       - sast
       - secret-scan
@@ -671,6 +684,7 @@ jobs:
       - python-test
       - migration-check
       - python-security
+      - docs-xref
       - web-lint
       - web-build
       - web-audit
@@ -701,6 +715,7 @@ jobs:
             "${{ needs.web-lint.result }}"
             "${{ needs.web-build.result }}"
             "${{ needs.web-audit.result }}"
+            "${{ needs.docs-xref.result }}"
             "${{ needs.helm-lint.result }}"
             "${{ needs.sast.result }}"
             "${{ needs.secret-scan.result }}"
