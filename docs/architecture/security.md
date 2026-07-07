@@ -436,8 +436,9 @@ All security-relevant events are recorded:
 - Admin actions (user/role/token CRUD, with before/after state)
 
 Events include actor identity, timestamp, request ID, and source IP. Audit
-logs are stored in PostgreSQL with time-based partitioning and configurable
-retention (default 90 days).
+logs are stored in PostgreSQL with a configurable retention window (default 90
+days); a background sweep in the API prunes rows past the window (set
+`retention_days: 0` to keep them indefinitely).
 
 See [Monitoring](../operations/monitoring.md) for querying the audit log.
 

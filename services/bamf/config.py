@@ -192,7 +192,11 @@ class RateLimitConfig(BaseModel):
 class AuditConfig(BaseSettings):
     """Audit log configuration."""
 
-    retention_days: int = Field(default=90, description="Audit log retention in days")
+    retention_days: int = Field(
+        default=90,
+        description="Audit log retention in days; expired rows are pruned by a "
+        "background sweep. Set to 0 to disable pruning (keep audit rows forever).",
+    )
     api_audit_enabled: bool = Field(default=True, description="Enable API self-audit middleware")
     api_audit_body_max_bytes: int = Field(
         default=65536, description="Max request/response body size to capture in API audit (bytes)"

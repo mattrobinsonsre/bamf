@@ -52,7 +52,8 @@ core:
         agent_ttl_hours: 8760
         bridge_ttl_hours: 24
       audit:
-        retention_days: 90
+        retention_days: 90              # 0 disables pruning (keep audit rows forever)
+        api_audit_enabled: true         # record API self-audit exchanges
       # Application-level rate limiting (Redis sliding window; complements the
       # ingress-level gateway.rateLimit). Per-tier limit 0 = unlimited.
       rate_limit:

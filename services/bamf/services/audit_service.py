@@ -1,13 +1,27 @@
 """Audit logging service."""
 
+import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.db.models import AuditLog
 
 logger = structlog.get_logger(__name__)
+
+# Audit-log retention pruning. The documented contract is a fixed retention
+# window (default 90 days); nothing pruned expired rows before, so the window
+# was advisory. This loop enforces it. A retention of 0 (or negative) disables
+# pruning entirely — audit rows are then kept indefinitely.
+_PRUNE_INTERVAL_SECONDS = (
+    6 * 3600
+)  # sweep every 6h; each sweep is a cheap no-op when nothing expired
+_PRUNE_LOCK_KEY = "bamf:audit:prune:lock"
+_PRUNE_LOCK_TTL_SECONDS = 1800
+_PRUNE_BATCH_SIZE = 5000
 
 
 async def log_audit_event(
@@ -84,3 +98,69 @@ async def log_audit_event(
     )
 
     return entry
+
+
+async def prune_audit_logs(
+    db: AsyncSession,
+    retention_days: int,
+    *,
+    batch_size: int = _PRUNE_BATCH_SIZE,
+) -> int:
+    """Delete audit_logs older than ``retention_days``; return the count removed.
+
+    Deletes in batches (committing each) so a large backlog never holds a long
+    lock on the table. A ``retention_days`` of 0 or less is a no-op (retention
+    disabled), so callers can turn pruning off via config without special-casing.
+    """
+    if retention_days <= 0:
+        return 0
+
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    total = 0
+    while True:
+        expired_ids = select(AuditLog.id).where(AuditLog.timestamp < cutoff).limit(batch_size)
+        result = await db.execute(delete(AuditLog).where(AuditLog.id.in_(expired_ids)))
+        deleted = result.rowcount or 0
+        await db.commit()
+        total += deleted
+        if deleted < batch_size:
+            break
+    return total
+
+
+async def prune_audit_logs_loop(interval_seconds: int = _PRUNE_INTERVAL_SECONDS) -> None:
+    """Background task: periodically prune audit_logs past the retention window.
+
+    Multi-replica safe: a Redis ``SET NX`` lock elects one pruner per interval so
+    replicas don't all issue the same DELETE. The delete is idempotent regardless,
+    so a lost lock or expired holder never corrupts state — at worst a sweep is
+    skipped and retried next interval.
+    """
+    from bamf.config import settings
+    from bamf.db.session import async_session_factory
+    from bamf.redis.client import get_redis_client
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            retention_days = settings.audit.retention_days
+            if retention_days <= 0:
+                continue
+            acquired = await get_redis_client().set(
+                _PRUNE_LOCK_KEY, "1", nx=True, ex=_PRUNE_LOCK_TTL_SECONDS
+            )
+            if not acquired:
+                continue
+            async with async_session_factory() as db:
+                deleted = await prune_audit_logs(db, retention_days)
+            if deleted:
+                logger.info(
+                    "pruned expired audit logs",
+                    deleted=deleted,
+                    retention_days=retention_days,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Never let a transient DB/Redis error kill the pruner.
+            logger.warning("audit prune iteration failed", exc_info=True)

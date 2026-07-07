@@ -145,7 +145,7 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "retention_days": { "type": "integer", "minimum": 1 },
+                    "retention_days": { "type": "integer", "minimum": 0 },
                     "api_audit_enabled": { "type": "boolean" }
                   }
                 },
