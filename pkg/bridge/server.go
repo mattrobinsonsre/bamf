@@ -1366,7 +1366,7 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 	}
 
 	// Signal ready to client.
-	if err := fw.WriteStatus("ready"); err != nil {
+	if err := fw.WriteStatus(webterm.StatusReady); err != nil {
 		logger.Error("failed to send ready", "error", err)
 		channel.Close()
 		clientConn.Close()
@@ -1591,7 +1591,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	}
 
 	// Signal ready.
-	if err := fw.WriteStatus("ready"); err != nil {
+	if err := fw.WriteStatus(webterm.StatusReady); err != nil {
 		logger.Error("failed to send ready", "error", err)
 		_ = proc.Kill()
 		clientConn.Close()

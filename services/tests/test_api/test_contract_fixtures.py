@@ -180,3 +180,17 @@ def test_tunnel_command_contract():
     assert set(produced) == set(golden)
     # bridge_port is a number — the agent decodes it as a JSON number (float64).
     assert isinstance(golden["bridge_port"], int)
+
+
+def test_terminal_status_contract():
+    """The web-terminal handshake status vocabulary is shared between the bridge
+    (which emits the status frames) and the API relay (which accepts them). The
+    relay's accepted set must match the committed golden the Go test also reads —
+    a drift is exactly bug #123, where the bridge emitted "resumed" while the
+    relay only accepted "ready" and closed the socket with 4004.
+    """
+    from bamf.api.routers.terminal import STATUS_ERROR_PREFIX, TERMINAL_READY_STATUSES
+
+    golden = json.loads((CONTRACTS / "terminal_status.json").read_text())
+    assert TERMINAL_READY_STATUSES == set(golden["ready_statuses"])
+    assert STATUS_ERROR_PREFIX == golden["error_prefix"]

@@ -10,7 +10,7 @@
 //
 //	Type 0x01: Terminal data (payload = raw bytes)
 //	Type 0x02: Resize (payload = 2-byte cols + 2-byte rows, big-endian)
-//	Type 0x03: Status (payload = UTF-8 string: "ready", "error:msg", "detached", "resumed")
+//	Type 0x03: Status (payload = UTF-8 string: "ready", "resumed", or "error:<msg>")
 package webterm
 
 import (
@@ -29,6 +29,16 @@ const (
 
 // MaxFramePayload is the maximum allowed payload size (64KB).
 const MaxFramePayload = 65535
+
+// Status frame payloads (type 0x03) the bridge emits to the API relay after the
+// connect/credentials phase. CONTRACT: this vocabulary is shared with the API
+// relay — see services/bamf/api/routers/terminal.py — and pinned by
+// services/tests/contracts/terminal_status.json.
+const (
+	StatusReady       = "ready"   // fresh session authenticated and started
+	StatusResumed     = "resumed" // reattached to an existing detached session
+	StatusErrorPrefix = "error:"  // followed by the error message
+)
 
 // FrameWriter writes framed messages to a writer.
 type FrameWriter struct {

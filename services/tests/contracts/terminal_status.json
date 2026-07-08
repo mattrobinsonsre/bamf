@@ -1,0 +1,5 @@
+{
+  "_comment": "Shared web-terminal handshake status vocabulary. Producer: bridge (pkg/bridge/webterm/frame.go StatusReady/StatusResumed/StatusErrorPrefix). Consumer: API relay (services/bamf/api/routers/terminal.py TERMINAL_READY_STATUSES / STATUS_ERROR_PREFIX). A drift in either side fails its contract test.",
+  "ready_statuses": ["ready", "resumed"],
+  "error_prefix": "error:"
+}
