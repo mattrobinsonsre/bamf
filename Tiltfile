@@ -207,6 +207,12 @@ k8s_yaml(helm(
         'core.web.image.tag=latest',
         'core.web.image.pullPolicy=Never',
         'core.web.standalone=true',
+        # next dev + Turbopack spikes past 1Gi compiling routes on the first
+        # requests (the startup probe hitting `/`), which OOMKills the pod into
+        # a crashloop. Give the local dev server headroom. Committed here (not
+        # in the gitignored values-local.yaml) so every `tilt up` gets it.
+        'core.web.resources.requests.memory=768Mi',
+        'core.web.resources.limits.memory=2Gi',
         'core.postgresql.bundled.enabled=true',
         'core.postgresql.external.enabled=false',
         'core.redis.bundled.enabled=true',
