@@ -158,9 +158,10 @@ replication, and failover.
 
 ### Bundled (Dev/Staging Only)
 
-The bundled option deploys a single-replica PostgreSQL via the bitnami subchart.
-**Do not use this in production** — it has no replication, no automated backups,
-and data lives on a single PVC.
+The bundled option deploys a single-replica PostgreSQL as a StatefulSet directly
+from the chart (a configurable image under `core.postgresql.bundled.image`, not
+a third-party subchart). **Do not use this in production** — it has no
+replication, no automated backups, and data lives on a single PVC.
 
 ```yaml
 core:
@@ -260,8 +261,9 @@ resilient Redis cluster to avoid unnecessary disruption.
 
 ### Bundled (Dev/Staging Only)
 
-The bundled option deploys a single-replica Redis via the bitnami subchart.
-**Do not use this in production.**
+The bundled option deploys a single-replica Redis as a StatefulSet directly from
+the chart (a configurable image under `core.redis.bundled.image`, not a
+third-party subchart). **Do not use this in production.**
 
 ```yaml
 core:
