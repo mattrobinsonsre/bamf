@@ -1,8 +1,23 @@
 # BAMF vs Teleport
 
 BAMF is an open-source alternative to [Teleport](https://goteleport.com/) for
-secure infrastructure access. This page compares the two projects to help you
-decide which is right for your team.
+secure infrastructure access. This page compares BAMF to Teleport in depth (its
+closest full-featured peer) and, more briefly, to
+[other open-source options](#other-open-source-options).
+
+## What makes BAMF different
+
+Two things stand out:
+
+1. **It's trivial to build and run.** BAMF is pure Go, Python, and TypeScript —
+   no C toolchain, no Rust, no protobuf codegen, no custom build tooling. Static
+   Go binaries cross-compile with `CGO_ENABLED=0`, the API is standard
+   FastAPI, and the UI is standard Next.js, so a clean build takes minutes on a
+   laptop (see [Build complexity](#build-complexity)).
+2. **It's genuinely free, with no strings.** MPL-2.0 (file-level copyleft), no
+   employee or revenue caps, no CLA, and embedding or reselling is permitted.
+   Full SSO — Auth0, Okta, Google, Microsoft Entra ID, Keycloak, and generic
+   OIDC/SAML — is in the open-source release, not behind an enterprise license.
 
 ## License
 
@@ -192,6 +207,43 @@ BAMF is a younger project. Features that Teleport has and BAMF does not:
 - **GitHub SSO** — Teleport Community supports GitHub as an SSO provider.
   BAMF supports OIDC and SAML providers but does not have a dedicated GitHub
   connector yet.
+
+## Other open-source options
+
+Teleport is BAMF's closest feature peer, so it gets the detailed comparison
+above. Two other well-regarded open-source projects solve overlapping problems
+with different scope and trade-offs — both are actively developed and worth
+evaluating on their own merits:
+
+- **[Warpgate](https://github.com/warp-tech/warpgate)** — a smart bastion for
+  SSH, HTTP(S), and databases, written in Rust and shipped as a single binary
+  under Apache-2.0. It's lightweight and easy to run, with a web admin UI and
+  session recording. Its scope is deliberately narrower than BAMF's — a protocol
+  bastion rather than a full access platform (for example, it doesn't provide
+  Kubernetes access). If you want the smallest possible SSH/DB bastion, Warpgate
+  is an excellent fit.
+- **[JumpServer](https://github.com/jumpserver/jumpserver)** — a mature, broad
+  open-source PAM / bastion (GPLv3 core, with a separate commercial edition),
+  written in Python and Go. It covers a very wide surface — SSH, RDP, VNC,
+  databases, Kubernetes, web apps, organizations, and a rich web console. It is
+  more feature-complete than BAMF today, and correspondingly heavier to operate.
+  If you need RDP/VNC or broad PAM features in one open-source product,
+  JumpServer is worth a look.
+
+At a glance (a high-level orientation, not an exhaustive matrix — check each
+project's own docs for current specifics):
+
+| | BAMF | Warpgate | JumpServer |
+|---|---|---|---|
+| License | MPL-2.0 (no caps) | Apache-2.0 | GPLv3 (+ commercial edition) |
+| Language | Go + Python + TypeScript | Rust | Python + Go |
+| Positioning | Full access platform, trivial build | Lightweight protocol bastion | Broad, feature-rich PAM |
+| RDP / VNC | No | No | Yes |
+
+BAMF's niche sits between them: Teleport-like breadth (SSH, databases,
+Kubernetes, web apps, session recording, RBAC) with Warpgate-like build and
+operational simplicity, plus SSO in the open-source release — all under a
+permissive, cap-free license.
 
 ## When to Choose BAMF
 
