@@ -86,6 +86,25 @@ func TestUsersListEnvelopeContract(t *testing.T) {
 	require.False(t, u.CreatedAt.IsZero())
 }
 
+// TestRolesListEnvelopeContract guards the CursorPage "items" envelope for
+// `bamf roles list` (cmd/bamf/cmd/roles.go), including the nested allow/deny
+// PermissionsBlock shape.
+func TestRolesListEnvelopeContract(t *testing.T) {
+	var page struct {
+		Items []roleInfo `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(contractFixture(t, "roles_list.json"), &page))
+	require.Len(t, page.Items, 1,
+		"CLI must decode the CursorPage 'items' envelope, not a bare or renamed key")
+
+	r := page.Items[0]
+	require.Equal(t, "developer", r.Name)
+	require.False(t, r.IsBuiltin)
+	require.Equal(t, []string{"developers", "view"}, r.KubernetesGroups)
+	require.Equal(t, []string{"dev", "staging"}, r.Allow.Labels["env"])
+	require.Equal(t, []string{"staging-secrets-db"}, r.Deny.Names)
+}
+
 // TestResourcesListEnvelopeContract guards the CUSTOM "resources" envelope for
 // `bamf resources`/`bamf ls` (runResources in resources.go decodes
 // {"resources": [...]}, not the CursorPage "items" key). A producer rename of

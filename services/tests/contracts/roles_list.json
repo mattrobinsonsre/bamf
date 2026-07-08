@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "name": "developer",
+      "description": "Developers: dev + staging access",
+      "is_builtin": false,
+      "allow": { "labels": { "env": ["dev", "staging"] }, "names": ["prod-debug-jumpbox"] },
+      "deny": { "labels": {}, "names": ["staging-secrets-db"] },
+      "kubernetes_groups": ["developers", "view"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-07-07T12:00:00Z"
+    }
+  ],
+  "next_cursor": "ZGV2ZWxvcGVy",
+  "has_more": false
+}
