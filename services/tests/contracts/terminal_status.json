@@ -1,5 +1,6 @@
 {
-  "_comment": "Shared web-terminal handshake status vocabulary. Producer: bridge (pkg/bridge/webterm/frame.go StatusReady/StatusResumed/StatusErrorPrefix). Consumer: API relay (services/bamf/api/routers/terminal.py TERMINAL_READY_STATUSES / STATUS_ERROR_PREFIX). A drift in either side fails its contract test.",
+  "_comment": "Shared web-terminal handshake status vocabulary. Producer: bridge (pkg/bridge/webterm/frame.go StatusAuthRequired/StatusReady/StatusResumed/StatusErrorPrefix). Consumer: API relay (services/bamf/api/routers/terminal.py STATUS_AUTH_REQUIRED / TERMINAL_READY_STATUSES / STATUS_ERROR_PREFIX). The bridge speaks first: 'auth-required' on a fresh session (relay then sends credentials), 'resumed' on a reattach (relay sends nothing), 'ready' once the fresh session is live. A drift in either side fails its contract test.",
+  "auth_required": "auth-required",
   "ready_statuses": ["ready", "resumed"],
   "error_prefix": "error:"
 }

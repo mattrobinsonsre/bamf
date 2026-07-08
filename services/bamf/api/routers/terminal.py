@@ -42,14 +42,18 @@ FRAME_DATA = 0x01
 FRAME_RESIZE = 0x02
 FRAME_STATUS = 0x03
 
-# Handshake statuses the bridge may emit after the connect/credentials phase:
-# "ready" on a fresh session, "resumed" when it reattaches to a detached one.
-# CONTRACT: this vocabulary is shared with the bridge — see
-# pkg/bridge/webterm (frame.go / status constants) and pinned by
-# services/tests/contracts/terminal_status.json.
+# Web-terminal handshake status vocabulary. The bridge speaks first: it emits
+# "auth-required" on a fresh session (awaiting handshake + credentials) or
+# "resumed" when it reattaches to a detached one; after credentials it emits
+# "ready". The relay reads that status before sending anything, so credentials
+# are never forwarded into a resumed session (#233).
+# CONTRACT: shared with the bridge — see pkg/bridge/webterm (frame.go status
+# constants) and pinned by services/tests/contracts/terminal_status.json.
+STATUS_AUTH_REQUIRED = "auth-required"
 STATUS_READY = "ready"
 STATUS_RESUMED = "resumed"
 STATUS_ERROR_PREFIX = "error:"
+# Statuses that mean "the session is live" — forwarded to the browser as connected.
 TERMINAL_READY_STATUSES = frozenset({STATUS_READY, STATUS_RESUMED})
 
 # Ticket TTL in seconds
@@ -164,6 +168,70 @@ async def _read_frame(
     return frame_type, payload
 
 
+async def _terminal_handshake(
+    websocket: WebSocket,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    msg: dict,
+    resource_type: str,
+    *,
+    is_audit: bool,
+) -> str | None:
+    """Perform the bridge-first web-terminal handshake.
+
+    The bridge speaks first (#233): it emits ``auth-required`` on a fresh session
+    or ``resumed`` on a reattach. Credentials are forwarded to the bridge ONLY
+    after ``auth-required`` — never into a resumed session, regardless of what
+    the browser sent. This is the sole guard against injecting the SSH key / DB
+    password into a live session; the browser must not be trusted to decide it.
+
+    Returns the live status (``ready`` or ``resumed``) for the caller to relay to
+    the browser, or ``None`` if the websocket was already closed (error / EOF).
+    """
+
+    async def read_status() -> str | None:
+        frame = await _read_frame(reader)
+        if frame is None:
+            await websocket.close(code=4004, reason="Bridge disconnected")
+            return None
+        frame_type, payload = frame
+        if frame_type != FRAME_STATUS:
+            await websocket.close(code=4004, reason="Expected status frame")
+            return None
+        return payload.decode("utf-8")
+
+    async def forward_error(status: str) -> None:
+        await websocket.send_text(
+            json.dumps({"type": "error", "message": status[len(STATUS_ERROR_PREFIX) :]})
+        )
+        await websocket.close(code=4005, reason=status)
+
+    status_msg = await read_status()
+    if status_msg is None:
+        return None
+    if status_msg.startswith(STATUS_ERROR_PREFIX):
+        await forward_error(status_msg)
+        return None
+
+    if status_msg == STATUS_AUTH_REQUIRED:
+        # Fresh session — the bridge asked for the handshake + credentials.
+        await _send_credentials_to_bridge(writer, msg, resource_type, audit=is_audit)
+        status_msg = await read_status()
+        if status_msg is None:
+            return None
+        if status_msg.startswith(STATUS_ERROR_PREFIX):
+            await forward_error(status_msg)
+            return None
+        if status_msg != STATUS_READY:
+            await websocket.close(code=4004, reason=f"Unexpected status: {status_msg}")
+            return None
+    elif status_msg != STATUS_RESUMED:
+        await websocket.close(code=4004, reason=f"Unexpected status: {status_msg}")
+        return None
+
+    return status_msg
+
+
 @router.websocket("/ssh/{session_id}")
 async def terminal_ssh(websocket: WebSocket, session_id: str):
     """WebSocket relay for SSH web terminal sessions."""
@@ -255,37 +323,13 @@ async def _terminal_relay(websocket: WebSocket, session_id: str, resource_type: 
             is_audit=is_audit,
         )
 
-        # On reconnect the bridge reattaches to the existing detached session and
-        # emits "resumed" — it does NOT read credentials again. Re-sending them
-        # would inject the SSH key / DB password into the live stream. So forward
-        # credentials only on a fresh connect (the browser sets msg["reconnect"]).
-        is_reconnect = bool(msg.get("reconnect"))
-        if not is_reconnect:
-            await _send_credentials_to_bridge(writer, msg, resource_type, audit=is_audit)
-
-        # Wait for the bridge handshake status: "ready" (fresh) or "resumed"
-        # (reattached), else "error:...".
-        frame = await _read_frame(reader)
-        if frame is None:
-            await websocket.close(code=4004, reason="Bridge disconnected")
+        status_msg = await _terminal_handshake(
+            websocket, reader, writer, msg, resource_type, is_audit=is_audit
+        )
+        if status_msg is None:
             return
 
-        frame_type, payload = frame
-        status_msg = STATUS_READY
-        if frame_type == FRAME_STATUS:
-            status_msg = payload.decode("utf-8")
-            if status_msg.startswith(STATUS_ERROR_PREFIX):
-                await websocket.send_text(
-                    json.dumps({"type": "error", "message": status_msg[len(STATUS_ERROR_PREFIX) :]})
-                )
-                await websocket.close(code=4005, reason=status_msg)
-                return
-            if status_msg not in TERMINAL_READY_STATUSES:
-                await websocket.close(code=4004, reason=f"Unexpected status: {status_msg}")
-                return
-
-        # Relay the actual handshake status so the browser distinguishes a fresh
-        # connect ("ready") from a resumed session ("resumed").
+        # Tell the browser the session is live: "ready" (fresh) or "resumed".
         await websocket.send_text(json.dumps({"type": "status", "status": status_msg}))
 
         # Enter relay loop

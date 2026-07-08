@@ -10,7 +10,13 @@
 //
 //	Type 0x01: Terminal data (payload = raw bytes)
 //	Type 0x02: Resize (payload = 2-byte cols + 2-byte rows, big-endian)
-//	Type 0x03: Status (payload = UTF-8 string: "ready", "resumed", or "error:<msg>")
+//	Type 0x03: Status (payload = UTF-8 string: "auth-required", "ready",
+//	           "resumed", or "error:<msg>")
+//
+// The bridge speaks first: on a fresh session it emits "auth-required" before
+// reading the client's handshake + credentials; on a reattach it emits
+// "resumed". The relay reads that status before sending anything, so it never
+// forwards credentials into a resumed session (see #233).
 package webterm
 
 import (
@@ -35,9 +41,10 @@ const MaxFramePayload = 65535
 // relay — see services/bamf/api/routers/terminal.py — and pinned by
 // services/tests/contracts/terminal_status.json.
 const (
-	StatusReady       = "ready"   // fresh session authenticated and started
-	StatusResumed     = "resumed" // reattached to an existing detached session
-	StatusErrorPrefix = "error:"  // followed by the error message
+	StatusAuthRequired = "auth-required" // fresh session: bridge awaits handshake + credentials
+	StatusReady        = "ready"         // fresh session authenticated and started
+	StatusResumed      = "resumed"       // reattached to an existing detached session
+	StatusErrorPrefix  = "error:"        // followed by the error message
 )
 
 // FrameWriter writes framed messages to a writer.

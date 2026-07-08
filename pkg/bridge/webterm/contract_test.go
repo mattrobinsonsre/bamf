@@ -26,12 +26,15 @@ func TestTerminalStatusContract(t *testing.T) {
 	require.NoError(t, err, "shared terminal-status fixture must exist")
 
 	var fixture struct {
+		AuthRequired  string   `json:"auth_required"`
 		ReadyStatuses []string `json:"ready_statuses"`
 		ErrorPrefix   string   `json:"error_prefix"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &fixture))
 
-	// The bridge's status constants must be exactly the fixture's ready set.
+	// The bridge's status constants must match the shared fixture exactly.
+	require.Equal(t, fixture.AuthRequired, StatusAuthRequired,
+		"bridge auth-required constant must match the shared fixture")
 	require.ElementsMatch(t, []string{StatusReady, StatusResumed}, fixture.ReadyStatuses,
 		"bridge ready-status constants must match the shared fixture")
 	require.Equal(t, fixture.ErrorPrefix, StatusErrorPrefix,
