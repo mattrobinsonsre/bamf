@@ -189,8 +189,13 @@ def test_terminal_status_contract():
     a drift is exactly bug #123, where the bridge emitted "resumed" while the
     relay only accepted "ready" and closed the socket with 4004.
     """
-    from bamf.api.routers.terminal import STATUS_ERROR_PREFIX, TERMINAL_READY_STATUSES
+    from bamf.api.routers.terminal import (
+        STATUS_AUTH_REQUIRED,
+        STATUS_ERROR_PREFIX,
+        TERMINAL_READY_STATUSES,
+    )
 
     golden = json.loads((CONTRACTS / "terminal_status.json").read_text())
+    assert STATUS_AUTH_REQUIRED == golden["auth_required"]
     assert TERMINAL_READY_STATUSES == set(golden["ready_statuses"])
     assert STATUS_ERROR_PREFIX == golden["error_prefix"]

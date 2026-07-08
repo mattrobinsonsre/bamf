@@ -1247,6 +1247,17 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 	fr := webterm.NewFrameReader(clientConn)
 	fw := webterm.NewFrameWriter(clientConn)
 
+	// Bridge speaks first on a fresh session: tell the relay to send its
+	// handshake + credentials. On a reattach the relay instead sees "resumed"
+	// (from the session's reconnect path) and sends nothing — so credentials
+	// are never forwarded into a live session (#233).
+	if err := fw.WriteStatus(webterm.StatusAuthRequired); err != nil {
+		logger.Error("failed to send auth-required", "error", err)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
+
 	// First frame: status with session parameters.
 	typ, payload, err := fr.ReadFrame()
 	if err != nil || typ != webterm.FrameStatus {
@@ -1445,6 +1456,14 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	// Read initial handshake from client via frame protocol.
 	fr := webterm.NewFrameReader(clientConn)
 	fw := webterm.NewFrameWriter(clientConn)
+
+	// Bridge speaks first on a fresh session (see handleWebTerminalSSH / #233).
+	if err := fw.WriteStatus(webterm.StatusAuthRequired); err != nil {
+		logger.Error("failed to send auth-required", "error", err)
+		clientConn.Close()
+		agentConn.Close()
+		return
+	}
 
 	typ, payload, err := fr.ReadFrame()
 	if err != nil || typ != webterm.FrameStatus {
