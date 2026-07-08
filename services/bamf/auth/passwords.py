@@ -50,9 +50,9 @@ def validate_password_strength(password: str, user_inputs: list[str] | None = No
 
 def hash_password(password: str) -> str:
     """
-    Hash a password using bcrypt-style salted hashing.
+    Hash a password with PBKDF2-SHA256 (100k iterations) and a random salt.
 
-    Uses PBKDF2-SHA256 with a random salt.
+    Returns a `pbkdf2:sha256:100000$<salt>$<hash>` string.
     """
     salt = secrets.token_hex(16)
     hash_bytes = hashlib.pbkdf2_hmac(
