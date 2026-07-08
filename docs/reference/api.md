@@ -94,6 +94,32 @@ CRUD API for resources — they are managed through agent configuration.
 }
 ```
 
+## Tunnels
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/tunnels/active` | Admin/Audit | List active tunnel sessions across all bridges |
+| DELETE | `/tunnels/{session_id}` | Yes | Terminate a tunnel session |
+
+Active tunnels are tracked in Redis (session → user, resource, bridge). A user
+can terminate their own tunnel; admins can terminate any.
+
+## Terminal
+
+Browser-based SSH and database terminals. Session state lives in the bridge; the
+API is a stateless WebSocket relay. Connecting is two steps — mint a one-time
+ticket over HTTPS, then open the WebSocket with it.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/terminal/ticket` | Yes | Issue a one-time WebSocket ticket for a session |
+| WS | `/terminal/ssh/{session_id}` | Ticket | SSH web-terminal relay |
+| WS | `/terminal/db/{session_id}` | Ticket | Database web-terminal relay |
+
+The ticket is bound to the session and user, stored in Redis with a 60s TTL, and
+consumed atomically (`GETDEL`) on connect — single-use and replay-proof. Pass it
+as the `ticket` query parameter on the WebSocket URL.
+
 ## Agents
 
 | Method | Path | Auth | Description |
@@ -132,6 +158,29 @@ matches the target agent — an agent may only act as itself.
   "agent_labels": {"env": "prod"}
 }
 ```
+
+## Outposts
+
+Regional proxy+bridge deployments that register with the central control plane.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/outposts/join` | No* | Register an outpost (returns its internal + bridge-bootstrap tokens) |
+| GET | `/outposts` | Admin/Audit | List registered outposts |
+| GET | `/outposts/{id}` | Admin/Audit | Get an outpost |
+| DELETE | `/outposts/{id}` | Admin | Deregister an outpost |
+
+*Join requires a valid outpost join token in the request body.
+
+## Outpost Tokens
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/outpost-tokens` | Admin/Audit | List outpost join tokens |
+| POST | `/outpost-tokens` | Admin | Create an outpost join token |
+| GET | `/outpost-tokens/{id}` | Admin/Audit | Get a token |
+| DELETE | `/outpost-tokens/{id}` | Admin | Revoke a token by ID |
+| POST | `/outpost-tokens/{name}/revoke` | Admin | Revoke a token by name |
 
 ## Certificates
 
@@ -200,18 +249,24 @@ impersonates the user against the K8s API. See the
 
 ## Internal Endpoints
 
-Used by bridges and agents, not end users.
+Used by bridges, agents, and the standalone proxy service — not end users.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/internal/bridges/bootstrap` | Token | Bootstrap bridge with cert |
 | POST | `/internal/bridges/register` | Cert | Register bridge |
+| POST | `/internal/bridges/renew` | Cert | Renew bridge certificate |
 | POST | `/internal/bridges/{id}/heartbeat` | Cert | Bridge heartbeat |
+| POST | `/internal/bridges/{id}/status` | Cert | Report bridge status (tunnel counts, health) |
+| POST | `/internal/bridges/{id}/drain` | Cert | Notify bridge draining for shutdown |
 | POST | `/internal/sessions/validate` | Cert | Validate session token |
 | POST | `/internal/tunnels/establish` | Cert | Get agent connection info |
 | POST | `/internal/tunnels/established` | Cert | Notify tunnel established |
 | POST | `/internal/tunnels/closed` | Cert | Notify tunnel closed |
 | POST | `/internal/sessions/{id}/recording` | Cert | Upload session recording |
+| POST | `/internal/proxy/authorize` | Token | Proxy: authorize a web/kube request |
+| POST | `/internal/proxy/audit` | Token | Proxy: record an HTTP access audit event |
+| POST | `/internal/proxy/recording` | Token | Proxy: upload an HTTP exchange recording |
 
 ## Pagination
 
