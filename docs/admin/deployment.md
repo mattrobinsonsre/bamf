@@ -102,7 +102,7 @@ core:
   api:
     replicas: 2
     resources:
-      requests: { cpu: 250m, memory: 512Mi }
+      requests: { cpu: 500m, memory: 1Gi }
       limits: { cpu: "1", memory: 1Gi }
     autoscaling:
       enabled: true
@@ -124,9 +124,8 @@ core:
 outpost:
   bridge:
     replicas: 2
-    maxReplicas: 20
     resources:
-      requests: { cpu: 250m, memory: 256Mi }
+      requests: { cpu: "1", memory: 1Gi }
       limits: { cpu: "2", memory: 1Gi }
     autoscaling:
       enabled: true
@@ -135,7 +134,8 @@ outpost:
 ```
 
 The bridge is deployed as a StatefulSet with per-pod Services for SNI routing.
-`maxReplicas` controls how many Services and TLSRoutes are pre-created.
+`outpost.bridge.autoscaling.maxReplicas` controls how many Services and
+TLSRoutes are pre-created.
 
 ### Web UI
 
