@@ -35,6 +35,10 @@ export default function WebTerminal({
   const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null)
   const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected'>('connecting')
   const reconnectAttempts = useRef(0)
+  // True once this session has connected at least once. On a subsequent
+  // (re)connect the bridge reattaches to the still-live detached session, so we
+  // tell the relay to resume instead of re-sending credentials into the stream.
+  const hasConnected = useRef(false)
   const maxReconnectAttempts = 3
   const userDisconnected = useRef(false)
 
@@ -102,8 +106,9 @@ export default function WebTerminal({
       ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
-        // Send initial credentials message
-        ws.send(JSON.stringify(credentialsRef.current))
+        // Send the initial message. On a reconnect the relay skips credential
+        // injection and the bridge resumes the existing session.
+        ws.send(JSON.stringify({ ...credentialsRef.current, reconnect: hasConnected.current }))
       }
 
       ws.onmessage = (event) => {
@@ -122,11 +127,14 @@ export default function WebTerminal({
               if (msg.status === 'ready') {
                 setStatus('connected')
                 reconnectAttempts.current = 0
+                hasConnected.current = true
                 onConnectedRef.current?.()
-              } else if (msg.status === 'detached') {
-                terminal.write('\r\n[Session detached - waiting for reconnect...]\r\n')
               } else if (msg.status === 'resumed') {
+                setStatus('connected')
+                reconnectAttempts.current = 0
+                hasConnected.current = true
                 terminal.write('\r\n[Session resumed]\r\n')
+                onConnectedRef.current?.()
               }
             } else if (msg.type === 'error') {
               onErrorRef.current?.(msg.message || 'Unknown error')

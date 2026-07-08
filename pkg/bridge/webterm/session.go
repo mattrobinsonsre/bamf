@@ -125,7 +125,7 @@ func (s *Session) Run() error {
 
 		// Drain buffered output to new client.
 		fw := NewFrameWriter(newConn)
-		if err := fw.WriteStatus("resumed"); err != nil {
+		if err := fw.WriteStatus(StatusResumed); err != nil {
 			s.logger.Warn("failed to send resumed status", "error", err)
 			continue
 		}
