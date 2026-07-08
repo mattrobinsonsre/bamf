@@ -17,6 +17,7 @@ from pathlib import Path
 
 from bamf.api.models.agents import AgentResponse
 from bamf.api.models.common import CursorPage
+from bamf.api.models.roles import RoleResponse
 from bamf.api.models.tokens import JoinTokenResponse
 from bamf.api.models.users import UserResponse
 from bamf.api.routers.resources import ResourceListResponse, ResourceResponse
@@ -76,6 +77,22 @@ def test_users_list_envelope_contract():
 
     item = data["items"][0]
     dumped = json.loads(UserResponse.model_validate(item).model_dump_json())
+    assert set(dumped) == set(item)
+
+
+def test_roles_list_envelope_contract():
+    """`bamf roles list` (cmd/bamf/cmd/roles.go) decodes the CursorPage ``items``
+    envelope of RoleResponse, including nested allow/deny blocks."""
+    raw = (CONTRACTS / "roles_list.json").read_text()
+
+    page = CursorPage[RoleResponse].model_validate_json(raw)
+    assert len(page.items) == 1
+
+    data = json.loads(raw)
+    assert set(data) == {"items", "next_cursor", "has_more"}
+
+    item = data["items"][0]
+    dumped = json.loads(RoleResponse.model_validate(item).model_dump_json())
     assert set(dumped) == set(item)
 
 

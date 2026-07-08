@@ -276,6 +276,49 @@ bamf users delete <email>
 
 All subcommands honor `--json` for machine-readable output.
 
+## Role Management
+
+Manage custom RBAC roles (admin only). Built-in roles (`admin`, `audit`,
+`everyone`) are read-only. See [RBAC](../admin/rbac.md) for the role model.
+
+### bamf roles list
+
+```
+bamf roles list
+```
+
+### bamf roles get
+
+```
+bamf roles get <name>
+```
+
+### bamf roles create
+
+Create a custom role from a YAML or JSON file (the file is the request body:
+`name`, `description`, `allow`/`deny` blocks, `kubernetes_groups`).
+
+```
+bamf roles create --from-file role.yaml
+```
+
+### bamf roles update
+
+Update a custom role from a YAML or JSON file (only the fields present are
+changed).
+
+```
+bamf roles update <name> --from-file role.yaml
+```
+
+### bamf roles delete
+
+```
+bamf roles delete <name>
+```
+
+All subcommands honor `--json`.
+
 ## Utility
 
 ### bamf version
