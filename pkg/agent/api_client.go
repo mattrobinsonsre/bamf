@@ -83,6 +83,7 @@ type heartbeatRequest struct {
 	Resources       []heartbeatResource `json:"resources"`
 	Labels          map[string]string   `json:"labels"`
 	ClusterInternal bool                `json:"cluster_internal"`
+	Zone            string              `json:"zone,omitempty"`
 	InstanceID      string              `json:"instance_id,omitempty"`
 	ActiveTunnels   int                 `json:"active_tunnels"`
 }
@@ -91,7 +92,7 @@ type heartbeatRequest struct {
 // resources, labels, cluster_internal flag, instance identifier, and
 // active tunnel count (for self-correcting Redis tunnel counts).
 // Calls: POST /api/v1/agents/{id}/heartbeat
-func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, instanceID string, activeTunnels int) error {
+func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, zone string, instanceID string, activeTunnels int) error {
 	hbResources := make([]heartbeatResource, len(resources))
 	for i, r := range resources {
 		hbResources[i] = heartbeatResource{
@@ -111,6 +112,7 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 		Resources:       hbResources,
 		Labels:          labels,
 		ClusterInternal: clusterInternal,
+		Zone:            zone,
 		InstanceID:      instanceID,
 		ActiveTunnels:   activeTunnels,
 	}

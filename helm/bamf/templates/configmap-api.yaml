@@ -46,6 +46,12 @@ data:
     tunnel_domain: {{ .Values.gateway.tunnelDomain | quote }}
     {{- end }}
 
+    {{- if and .Values.gateway.m2m.enabled .Values.gateway.m2m.tunnelDomain }}
+    # Internal (M2M) tunnel domain — agents/edges in the "internal" zone are
+    # handed bridge SNI hostnames on this domain (split-horizon ingress, #167).
+    m2m_tunnel_domain: {{ .Values.gateway.m2m.tunnelDomain | quote }}
+    {{- end }}
+
     # Bridge headless service for internal relay communication
     bridge_headless_service: {{ printf "%s-bridge-headless" (include "bamf.fullname" .) | quote }}
 

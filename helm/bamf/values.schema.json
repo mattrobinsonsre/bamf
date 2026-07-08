@@ -580,6 +580,7 @@
         "joinTokenKey": { "type": "string" },
         "platformUrl": { "type": "string" },
         "clusterInternal": { "type": "boolean" },
+        "zone": { "type": "string", "enum": ["", "in-cluster", "internal", "public"] },
         "kubernetes": {
           "type": "object",
           "additionalProperties": false,
@@ -637,6 +638,39 @@
           "additionalProperties": false,
           "properties": {
             "entryPoint": { "type": "string" }
+          }
+        },
+        "m2m": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional internal (machine-to-machine) ingress for agents/edges + bridge tunnels.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "hostname": { "type": "string" },
+            "tunnelDomain": { "type": "string" },
+            "className": { "type": "string" },
+            "annotations": { "type": "object" },
+            "traefik": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "entryPoint": { "type": "string" }
+              }
+            },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingSecret": { "type": "string" },
+                "certManager": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" }
+                  }
+                }
+              }
+            }
           }
         },
         "rateLimit": {

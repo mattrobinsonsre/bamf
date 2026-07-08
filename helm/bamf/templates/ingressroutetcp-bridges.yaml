@@ -13,6 +13,8 @@
 # else gets TLS termination.
 # SNI hostname format: {ordinal}.bridge.{tunnelDomain}
 
+{{- $m2mEnabled := and $.Values.gateway.m2m.enabled $.Values.gateway.m2m.tunnelDomain -}}
+{{- $m2mEntryPoint := $.Values.gateway.m2m.traefik.entryPoint | default $entryPoint -}}
 {{- range $i := until $maxReplicas }}
 ---
 apiVersion: traefik.io/v1alpha1
@@ -33,5 +35,30 @@ spec:
           port: {{ $tunnelPort }}
   tls:
     passthrough: true
+{{- if $m2mEnabled }}
+---
+# Internal (M2M) SNI route to the SAME bridge pod — agents/edges on the internal
+# network dial this hostname; the CLI/humans use the public one above. Both are
+# TLS-passthrough (the bridge presents its BAMF-CA cert).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ $fullName }}-bridge-m2m-{{ $i }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: bridge
+    bamf.io/bridge-ordinal: "{{ $i }}"
+    bamf.io/binding: m2m
+spec:
+  entryPoints:
+    - {{ $m2mEntryPoint }}
+  routes:
+    - match: HostSNI(`{{ include "bamf.bridge.m2mSniHostname" (dict "root" $ "ordinal" $i) }}`)
+      services:
+        - name: {{ $fullName }}-bridge-{{ $i }}
+          port: {{ $tunnelPort }}
+  tls:
+    passthrough: true
+{{- end }}
 {{- end }}
 {{- end }}

@@ -411,6 +411,50 @@ The chart creates:
 - HTTPRoute for web app proxy (`*.tunnel.bamf.example.com`)
 - TLSRoute per bridge pod for tunnel traffic (SNI passthrough)
 
+### Split-horizon (M2M) ingress
+
+By default every consumer — humans and the CLI, plus agents/edges and bridges —
+reaches BAMF through the single `gateway.hostname` / `gateway.tunnelDomain`
+above (agents can also use in-cluster Service DNS; see the agent
+[`zone`](../reference/agent-config.md)). When there is a separate **internal
+network** (e.g. a transit-gateway / VPC fabric), you can put machine-to-machine
+traffic on its own internal ingress while humans stay on the public one — enable
+the optional `gateway.m2m` binding:
+
+```yaml
+gateway:
+  hostname: bamf.example.com            # public — humans + CLI (Cloudflare / Tailscale)
+  tunnelDomain: tunnel.bamf.example.com
+  m2m:
+    enabled: true
+    hostname: bamf.internal             # internal — agents/edges + bridges
+    tunnelDomain: tunnel.bamf.internal
+    tls:
+      existingSecret: bamf-public-tls   # a TRACEABLE cert (see note)
+```
+
+When enabled the chart adds, on the internal binding, a second API route (agent /
+bridge / internal endpoints) and a second SNI-passthrough route set for the
+bridge tunnels — both to the same backends. The API then hands each requester the
+bridge dial host for **its** vantage:
+
+| Agent `zone` | Bridge dial host |
+|---|---|
+| `in-cluster` | K8s Service DNS |
+| `internal` | `*.bridge.{m2m.tunnelDomain}` |
+| `public` (default) | `*.bridge.{tunnelDomain}` |
+
+The CLI and browsers always use the public binding. Set an edge's vantage with
+`agent.zone` (or the agent's `zone:` config); `clusterInternal: true` remains a
+back-compat alias for `in-cluster`.
+
+!!! warning "The internal API cert must be traceable"
+    The internal binding's API HTTPS must present a cert from a **trusted
+    issuer** (commonly the same public cert duplicated via `existingSecret`),
+    never the BAMF internal CA — an edge validates that cert to bootstrap trust
+    *before* it has the BAMF CA. The bridge tunnel routes stay SNI-passthrough
+    (the bridge presents its BAMF-CA cert), so this applies only to the API route.
+
 ## TLS Hardening
 
 BAMF enforces TLS 1.3 by default on both the public ingress and internal

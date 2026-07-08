@@ -61,6 +61,7 @@ from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
 from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
+from bamf.services.bridge_routing import resolve_agent_bridge_endpoint
 from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource
 
@@ -520,13 +521,9 @@ async def _issue_session(
         ),
     )
 
-    agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
-    if agent_cluster_internal:
-        agent_bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
-        agent_bridge_port = settings.bridge_internal_tunnel_port
-    else:
-        agent_bridge_host = bridge_hostname
-        agent_bridge_port = bridge_port
+    agent_bridge_host, agent_bridge_port = await resolve_agent_bridge_endpoint(
+        r, agent_id, bridge_id, bridge_hostname
+    )
 
     # Enqueue the command on the selected instance's reliable delivery queue so
     # it survives a brief agent SSE reconnect (see agent_commands).

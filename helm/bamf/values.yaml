@@ -535,6 +535,13 @@ agent:
   # deployed within the same Kubernetes cluster as the platform.
   clusterInternal: false
 
+  # Network zone for split-horizon bridge routing (#167): "in-cluster",
+  # "internal", or "public". "internal" makes the API hand this agent bridge
+  # hostnames on the gateway.m2m tunnel domain (for edges on a private/TGW
+  # network). Empty falls back to clusterInternal (true → in-cluster) then
+  # "public", so existing deployments are unchanged.
+  zone: ""
+
   # Kubernetes impersonation — enable when agent provides K8s cluster access
   kubernetes:
     impersonation:
@@ -594,6 +601,39 @@ gateway:
     https: 443
   traefik:
     entryPoint: websecure  # Traefik entrypoint name for HTTPS
+
+  # ── Split-horizon M2M ingress (optional) ────────────────────────────────────
+  # A SECOND, internal ingress for machine-to-machine traffic (agents/edges and
+  # bridges reaching the API + the bridge tunnels), separate from the public
+  # `hostname`/`tunnelDomain` above that humans and the CLI use. Enable this when
+  # there is an internal network (e.g. a transit-gateway/VPC fabric) whose edges
+  # must reach BAMF over a private name rather than the public ingress.
+  #
+  # Disabled by default: edges then use the public `hostname` or the in-cluster
+  # Service DNS (see the agent's `zone`), exactly as today — nothing changes.
+  #
+  # The API HTTPS on this binding MUST present a cert from a trusted issuer (the
+  # public cert is commonly duplicated here via `tls.existingSecret`) — an edge
+  # validates it to bootstrap trust *before* it has the BAMF CA, so an
+  # internal-CA cert would break the chain. The bridge tunnel routes stay
+  # SNI-passthrough (the bridge presents its BAMF-CA cert), so the traceable-cert
+  # requirement applies only to the API/HTTP route on this binding.
+  m2m:
+    enabled: false
+    hostname: ""        # Internal API hostname, e.g. bamf.internal
+    tunnelDomain: ""    # Internal tunnel base domain, e.g. tunnel.bamf.internal
+    className: ""       # Istio gatewayClassName override (defaults to gateway.className)
+    annotations: {}
+    traefik:
+      entryPoint: ""    # Traefik entrypoint for the internal binding (defaults to gateway.traefik.entryPoint)
+    tls:
+      # Traceable cert for the internal API HTTPS. Point this at an existing
+      # secret (often the same public cert duplicated onto the internal LB).
+      existingSecret: ""
+      # Or let cert-manager issue for the internal hostname (needs resolvable DNS
+      # + a reachable ACME/issuer). Uses tls.certManager.issuerRef unless overridden.
+      certManager:
+        enabled: false
 
   # HTTP rate limiting — applied at the ingress layer (Traefik Middleware or
   # Istio EnvoyFilter). Protects API, web UI, and web app proxy routes from

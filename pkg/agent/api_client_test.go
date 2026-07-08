@@ -90,7 +90,7 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 			Labels:       map[string]string{"env": "prod"},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "inst-1", 3)
+	err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "internal", "inst-1", 3)
 	require.NoError(t, err)
 }
 
@@ -188,6 +188,6 @@ func TestAPIClient_Heartbeat_WithWebhooks(t *testing.T) {
 			},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "inst-1", 0)
+	err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "", "inst-1", 0)
 	require.NoError(t, err)
 }

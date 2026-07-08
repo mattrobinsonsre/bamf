@@ -40,6 +40,12 @@ type Config struct {
 	// hostnames for bridge connections instead of external DNS names.
 	ClusterInternal bool
 
+	// Zone is this agent's network vantage for split-horizon bridge routing
+	// (#167): "in-cluster" | "internal" | "public". Empty lets the API fall
+	// back to ClusterInternal (true → in-cluster) then "public". "internal"
+	// selects the gateway.m2m tunnel domain.
+	Zone string
+
 	// Connection settings
 	HeartbeatInterval    time.Duration
 	ReconnectBaseDelay   time.Duration
@@ -85,6 +91,7 @@ type yamlConfig struct {
 	AgentName       string            `yaml:"agent_name"`
 	DataDir         string            `yaml:"data_dir"`
 	ClusterInternal *bool             `yaml:"cluster_internal"`
+	Zone            string            `yaml:"zone"`
 	Labels          map[string]string `yaml:"labels"`
 	// Resources is parsed manually in loadYAML to support both list and map formats.
 	Resources yaml.Node `yaml:"resources"`
@@ -227,6 +234,10 @@ func (cfg *Config) loadYAML() error {
 		cfg.ClusterInternal = *yc.ClusterInternal
 	}
 
+	if yc.Zone != "" {
+		cfg.Zone = yc.Zone
+	}
+
 	// Merge labels (YAML labels are base; env vars can override later)
 	for k, v := range yc.Labels {
 		cfg.Labels[k] = v
@@ -356,6 +367,10 @@ func (cfg *Config) applyEnvOverrides() {
 
 	if v := os.Getenv("BAMF_CLUSTER_INTERNAL"); v != "" {
 		cfg.ClusterInternal = v == "true" || v == "1"
+	}
+
+	if v := os.Getenv("BAMF_ZONE"); v != "" {
+		cfg.Zone = v
 	}
 
 	// Merge env labels into existing labels (env overrides YAML per-key)

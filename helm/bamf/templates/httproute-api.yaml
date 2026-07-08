@@ -54,4 +54,36 @@ spec:
         - name: {{ include "bamf.fullname" . }}-api
           port: 8000
     {{- end }}
+{{- if .Values.gateway.m2m.enabled }}
+---
+# Internal (M2M) HTTPRoute — the same API Service on the internal hostname for
+# agents/edges + bridges. Humans/CLI stay on the public route above (#167).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "bamf.fullname" . }}-api-m2m
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: m2m
+spec:
+  parentRefs:
+    - name: {{ include "bamf.fullname" . }}
+      sectionName: https-m2m
+  hostnames:
+    - {{ required "gateway.m2m.hostname is required when gateway.m2m.enabled" .Values.gateway.m2m.hostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: PathPrefix
+            value: /health
+        - path:
+            type: PathPrefix
+            value: /ready
+      backendRefs:
+        - name: {{ include "bamf.fullname" . }}-api
+          port: 8000
+{{- end }}
 {{- end }}

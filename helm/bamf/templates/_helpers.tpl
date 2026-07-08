@@ -275,6 +275,19 @@ Usage: {{ include "bamf.bridge.sniHostname" (dict "root" . "ordinal" 0) }}
 {{- end }}
 
 {{/*
+Internal (M2M) bridge SNI hostname — same shape as bamf.bridge.sniHostname but
+built from gateway.m2m.tunnelDomain. Used for the internal bridge-SNI route set
+that agents/edges on the internal network dial.
+*/}}
+{{- define "bamf.bridge.m2mSniHostname" -}}
+{{- if .root.Values.outpost.name -}}
+{{ .ordinal }}.bridge.{{ .root.Values.outpost.name }}.{{ .root.Values.gateway.m2m.tunnelDomain }}
+{{- else -}}
+{{ .ordinal }}.bridge.{{ .root.Values.gateway.m2m.tunnelDomain }}
+{{- end -}}
+{{- end }}
+
+{{/*
 Outpost tunnel domain — the base domain for this outpost's proxy.
 gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
 When outpost.name is set: {outpost}.{tunnelDomain}
@@ -285,6 +298,18 @@ Otherwise: {tunnelDomain} (unchanged)
 {{ .Values.outpost.name }}.{{ .Values.gateway.tunnelDomain }}
 {{- else -}}
 {{ .Values.gateway.tunnelDomain }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Internal (M2M) outpost tunnel domain — mirror of bamf.outpost.tunnelDomain built
+from gateway.m2m.tunnelDomain, for the Istio internal passthrough listener.
+*/}}
+{{- define "bamf.outpost.m2mTunnelDomain" -}}
+{{- if .Values.outpost.name -}}
+{{ .Values.outpost.name }}.{{ .Values.gateway.m2m.tunnelDomain }}
+{{- else -}}
+{{ .Values.gateway.m2m.tunnelDomain }}
 {{- end -}}
 {{- end }}
 

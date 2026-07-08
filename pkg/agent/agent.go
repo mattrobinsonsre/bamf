@@ -301,7 +301,7 @@ func (a *Agent) loadCertificates(ctx context.Context) error {
 // sendHeartbeat sends a single heartbeat with current resources, labels, and
 // active tunnel count (for self-correcting Redis tunnel counts on drift).
 func (a *Agent) sendHeartbeat(ctx context.Context) error {
-	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.instanceID, a.ActiveTunnelCount())
+	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.cfg.Zone, a.instanceID, a.ActiveTunnelCount())
 }
 
 // checkAndRenewCertificate checks if the certificate is past its halfway point and renews it.
