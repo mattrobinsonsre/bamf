@@ -37,6 +37,20 @@ def _is_excluded(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _EXCLUDED_PREFIXES)
 
 
+# Strong references to in-flight fire-and-forget audit tasks. Without them,
+# asyncio may garbage-collect a task before it finishes committing (CPython
+# only keeps a weak reference to running tasks). The done-callback drops the
+# reference once the task completes.
+_audit_tasks: set[asyncio.Task] = set()
+
+
+def _fire_audit(coro) -> None:
+    """Schedule an audit-store coroutine as a retained background task."""
+    task = asyncio.create_task(coro)
+    _audit_tasks.add(task)
+    task.add_done_callback(_audit_tasks.discard)
+
+
 async def api_audit_middleware(request: Request, call_next):
     """Middleware that records API request/response exchanges for audit.
 
@@ -84,8 +98,11 @@ async def api_audit_middleware(request: Request, call_next):
                 # disconnect / cancellation), so the audit captures exactly the
                 # bytes that were sent and the true end-to-end duration. Runs as
                 # a background task so we never block the ASGI send loop.
+                # (If the iterator is never started at all the audit is skipped —
+                # the response was never sent, so there is nothing to record;
+                # the early-disconnect case still fires here via GeneratorExit.)
                 elapsed_ms = round((time.monotonic() - t0) * 1000)
-                asyncio.create_task(
+                _fire_audit(
                     _store_api_audit(
                         request=request,
                         request_body=body,
@@ -104,7 +121,7 @@ async def api_audit_middleware(request: Request, call_next):
         resp_body = response.body
     elapsed_ms = round((time.monotonic() - t0) * 1000)
 
-    asyncio.create_task(
+    _fire_audit(
         _store_api_audit(
             request=request,
             request_body=body,

@@ -1282,7 +1282,7 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 	)
 
 	if username == "" {
-		_ = fw.WriteStatus("error:username required")
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + "username required")
 		clientConn.Close()
 		agentConn.Close()
 		return
@@ -1348,7 +1348,7 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 		signer, err := ssh.ParsePrivateKey(pemBuf)
 		if err != nil {
 			logger.Error("failed to parse SSH key", "error", err)
-			_ = fw.WriteStatus("error:invalid SSH key: " + err.Error())
+			_ = fw.WriteStatus(webterm.StatusErrorPrefix + "invalid SSH key: " + err.Error())
 			// Zero the PEM buffer.
 			for i := range pemBuf {
 				pemBuf[i] = 0
@@ -1370,7 +1370,7 @@ func (s *Server) handleWebTerminalSSH(ctx context.Context, clientConn, agentConn
 	channel, recording, err := s.sshProxy.HandleDirect(agentConn, username, authMethods, int(cols), int(rows), auditSession, logger)
 	if err != nil {
 		logger.Error("SSH auth to target failed", "error", err)
-		_ = fw.WriteStatus("error:" + err.Error())
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + err.Error())
 		clientConn.Close()
 		agentConn.Close()
 		return
@@ -1508,7 +1508,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	localListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		logger.Error("failed to bind local listener", "error", err)
-		_ = fw.WriteStatus("error:internal error")
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + "internal error")
 		clientConn.Close()
 		agentConn.Close()
 		return
@@ -1544,7 +1544,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	master, slave, err := webterm.OpenPTY()
 	if err != nil {
 		logger.Error("failed to open PTY", "error", err)
-		_ = fw.WriteStatus("error:" + err.Error())
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + err.Error())
 		clientConn.Close()
 		return
 	}
@@ -1594,7 +1594,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 		// Disable SSL for same reason as PostgreSQL (see above).
 		cmd = append(cmd, "--ssl-mode=DISABLED")
 	default:
-		_ = fw.WriteStatus("error:unsupported db_type: " + dbType)
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + "unsupported db_type: " + dbType)
 		clientConn.Close()
 		return
 	}
@@ -1604,7 +1604,7 @@ func (s *Server) handleWebTerminalDB(ctx context.Context, clientConn, agentConn 
 	slave.Close() // Close slave in parent after passing to child.
 	if err != nil {
 		logger.Error("failed to spawn database client", "error", err, "cmd", cmd[0])
-		_ = fw.WriteStatus("error:failed to start " + cmd[0])
+		_ = fw.WriteStatus(webterm.StatusErrorPrefix + "failed to start " + cmd[0])
 		clientConn.Close()
 		return
 	}
