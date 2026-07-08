@@ -288,8 +288,9 @@ world-readable forever.
 - **No internal references** — commit messages, PR text, **and source comments
   / docstrings** must never reference any company, internal hostname, internal
   repo/project name, internal cluster name, or specific customer/deployment
-  (this includes `acrolinx`, `acrolinx-cloud.net`, `markup.ai`, `markupai`, and
-  anything under a private tailnet). When describing an issue motivated by a
+  (this includes `acrolinx`, `acrolinx-cloud.net`, `markup.ai`, `markupai`,
+  `markup-ai` — e.g. `markup-ai.atlassian.net` — and anything under a private
+  tailnet). When describing an issue motivated by a
   real deployment, anonymise it ("a multi-cluster estate", "an internal CI
   cluster"), never name the source. If you catch a leak in your own draft,
   scrub it before pushing.

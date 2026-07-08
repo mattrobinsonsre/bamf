@@ -12,8 +12,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Forbidden internal identifiers. `[.]` keeps the dots literal.
-patterns='acrolinx|markup[.]ai|markupai|acrolinx-cloud[.]net|[.]ts[.]net|grafana[.]net'
+# Forbidden internal identifiers. `[.]` keeps the dots literal; `markup[.-]?ai`
+# covers markupai / markup.ai / markup-ai (the org's hyphenated form appears in
+# real hostnames like markup-ai.atlassian.net).
+patterns='acrolinx|markup[.-]?ai|acrolinx-cloud[.]net|[.]ts[.]net|grafana[.]net'
 
 # Files where these terms are legitimately present: AGENTS.md defines the policy
 # by naming them, and this script lists them as the patterns to search for.
