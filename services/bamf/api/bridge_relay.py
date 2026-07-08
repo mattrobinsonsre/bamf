@@ -19,6 +19,7 @@ from bamf.api.agent_commands import enqueue_agent_command
 from bamf.auth.ca import get_ca
 from bamf.config import settings
 from bamf.logging_config import get_logger
+from bamf.services.bridge_routing import resolve_agent_bridge_endpoint
 
 logger = get_logger(__name__)
 
@@ -89,16 +90,11 @@ async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
         logger.warning("No live agent instances for relay_connect", agent_id=agent_id)
         return
 
-    agent_cluster_internal = await r.get(f"agent:{agent_id}:cluster_internal")
     bridge_info = await r.hgetall(f"bridge:{bridge_id}")
     bridge_hostname = bridge_info.get("hostname", bridge_id)
-
-    if agent_cluster_internal:
-        bridge_host = f"{bridge_id}.{settings.namespace}.svc.cluster.local"
-        bridge_port = settings.bridge_internal_tunnel_port
-    else:
-        bridge_host = bridge_hostname
-        bridge_port = settings.bridge_tunnel_port
+    bridge_host, bridge_port = await resolve_agent_bridge_endpoint(
+        r, agent_id, bridge_id, bridge_hostname
+    )
 
     # Include CA cert so the agent can verify the bridge's certificate.
     # The agent may have joined with a previous CA — always send the current one.

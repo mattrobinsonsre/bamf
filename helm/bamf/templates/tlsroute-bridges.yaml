@@ -12,6 +12,7 @@
 # The "bridge." subdomain separates bridge SNI from web app hostnames
 # (which live directly under *.{tunnelDomain}).
 
+{{- $m2mEnabled := and $.Values.gateway.m2m.enabled $.Values.gateway.m2m.tunnelDomain -}}
 {{- range $i := until $maxReplicas }}
 ---
 apiVersion: gateway.networking.k8s.io/v1alpha2
@@ -32,5 +33,28 @@ spec:
     - backendRefs:
         - name: {{ $fullName }}-bridge-{{ $i }}
           port: {{ $tunnelPort }}
+{{- if $m2mEnabled }}
+---
+# Internal (M2M) TLSRoute to the SAME bridge pod on the internal tunnel domain.
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: {{ $fullName }}-bridge-m2m-{{ $i }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/component: bridge
+    bamf.io/bridge-ordinal: "{{ $i }}"
+    bamf.io/binding: m2m
+spec:
+  parentRefs:
+    - name: {{ $fullName }}
+      sectionName: tunnel-m2m
+  hostnames:
+    - {{ include "bamf.bridge.m2mSniHostname" (dict "root" $ "ordinal" $i) | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $fullName }}-bridge-{{ $i }}
+          port: {{ $tunnelPort }}
+{{- end }}
 {{- end }}
 {{- end }}

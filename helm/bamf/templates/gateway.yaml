@@ -47,4 +47,35 @@ spec:
         kinds:
           - kind: TLSRoute
     {{- end }}
+
+    {{- if .Values.gateway.m2m.enabled }}
+    # ── Internal (M2M) split-horizon listeners (#167) ─────────────────────────
+    # Internal HTTPS for agent/edge + bridge API bootstrap. A distinct hostname
+    # lets SNI pick the (traceable) internal cert vs the public one.
+    - name: https-m2m
+      port: {{ .Values.gateway.ports.https | default 443 }}
+      protocol: HTTPS
+      hostname: {{ required "gateway.m2m.hostname is required when gateway.m2m.enabled" .Values.gateway.m2m.hostname | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.gateway.m2m.tls.existingSecret | default (printf "%s-m2m-tls" (include "bamf.fullname" .)) }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if .Values.gateway.m2m.tunnelDomain }}
+    # Internal TLS-passthrough for the bridge tunnels on the m2m domain.
+    - name: tunnel-m2m
+      port: {{ .Values.gateway.ports.https | default 443 }}
+      protocol: TLS
+      hostname: "*.bridge.{{ include "bamf.outpost.m2mTunnelDomain" . }}"
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - kind: TLSRoute
+    {{- end }}
+    {{- end }}
 {{- end }}

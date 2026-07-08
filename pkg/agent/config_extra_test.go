@@ -300,6 +300,43 @@ func TestFindYAMLFile_NoEnvVar(t *testing.T) {
 	_ = result
 }
 
+// ── Tests: LoadConfig with zone (split-horizon, #167) ────────────────
+
+func TestLoadConfig_Zone_YAML(t *testing.T) {
+	clearEnvs(t,
+		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",
+		"BAMF_JOIN_TOKEN", "BAMF_AGENT_NAME", "BAMF_DATA_DIR",
+		"BAMF_LABELS", "BAMF_RESOURCES", "BAMF_CLUSTER_INTERNAL", "BAMF_ZONE",
+	)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte("agent_name: edge\nzone: internal\n"), 0644))
+	setEnv(t, "BAMF_CONFIG_FILE", configFile)
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	require.Equal(t, "internal", cfg.Zone)
+}
+
+func TestLoadConfig_Zone_EnvOverride(t *testing.T) {
+	clearEnvs(t,
+		"BAMF_CONFIG_FILE", "BAMF_PLATFORM_URL", "BAMF_API_URL",
+		"BAMF_JOIN_TOKEN", "BAMF_AGENT_NAME", "BAMF_DATA_DIR",
+		"BAMF_LABELS", "BAMF_RESOURCES", "BAMF_CLUSTER_INTERNAL", "BAMF_ZONE",
+	)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte("agent_name: edge\nzone: public\n"), 0644))
+	setEnv(t, "BAMF_CONFIG_FILE", configFile)
+	setEnv(t, "BAMF_ZONE", "internal")
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	require.Equal(t, "internal", cfg.Zone)
+}
+
 // ── Tests: LoadConfig with cluster_internal ──────────────────────────
 
 func TestLoadConfig_ClusterInternal_YAML(t *testing.T) {

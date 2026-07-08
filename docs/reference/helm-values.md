@@ -21,6 +21,27 @@ When `provider: traefik`, the chart creates Traefik IngressRoute and
 IngressRouteTCP CRDs. When `provider: istio`, it creates Gateway API resources
 (Gateway, HTTPRoute, TLSRoute) for the Istio controller.
 
+### Split-horizon (M2M) ingress
+
+Optional second, internal ingress for agent/edge + bridge traffic, separate from
+the public `hostname`/`tunnelDomain`. See
+[Split-horizon ingress](../admin/deployment.md#split-horizon-m2m-ingress).
+
+```yaml
+gateway:
+  m2m:
+    enabled: false               # off = everything uses the public binding (default)
+    hostname: bamf.internal       # internal API hostname
+    tunnelDomain: tunnel.bamf.internal  # internal bridge tunnel domain
+    className: ""                 # Istio gatewayClass override (defaults to gateway.className)
+    traefik:
+      entryPoint: ""              # defaults to gateway.traefik.entryPoint
+    tls:
+      existingSecret: ""          # a TRACEABLE cert (often the public cert duplicated)
+      certManager:
+        enabled: false            # or let cert-manager issue for the internal hostname
+```
+
 ### Rate Limiting
 
 ```yaml
@@ -155,7 +176,8 @@ agent:
     resources: []                  # Resource definitions (list)
   platformUrl: ""                  # BAMF API URL
   joinToken: ""                    # Join token for registration
-  clusterInternal: false           # Use in-cluster API URL
+  clusterInternal: false           # Use in-cluster API URL (alias for zone: in-cluster)
+  zone: ""                         # Split-horizon vantage: in-cluster | internal | public (empty = fall back to clusterInternal then public)
   kubernetes:
     impersonation:
       enabled: false               # Create K8s impersonation RBAC

@@ -285,6 +285,14 @@ class Settings(BaseSettings):
         description="Base domain for tunnel hostnames (e.g., 'tunnel.bamf.local').",
     )
 
+    # Optional internal (M2M) tunnel domain for the split-horizon ingress (#167).
+    # When set, agents/edges whose zone is "internal" are handed bridge SNI
+    # hostnames on this domain instead of the public tunnel_domain.
+    m2m_tunnel_domain: str = Field(
+        default="",
+        description="Internal tunnel base domain for the M2M ingress (empty = no split horizon).",
+    )
+
     # Bridge headless service name — used to construct internal FQDNs for
     # relay communication (pod-name.headless-svc.namespace.svc.cluster.local).
     bridge_headless_service: str = Field(

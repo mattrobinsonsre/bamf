@@ -59,6 +59,7 @@ from bamf.db.session import get_db, get_db_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
 from bamf.services.audit_service import log_audit_event
+from bamf.services.bridge_routing import VALID_ZONES
 from bamf.services.resource_catalog import (
     ResourceInfo,
     get_agent_labels,
@@ -162,6 +163,10 @@ class AgentHeartbeatRequest(BAMFBaseModel):
     resources: list[HeartbeatResource] = Field(default_factory=list)
     labels: dict[str, str] = Field(default_factory=dict)
     cluster_internal: bool = False
+    # Network vantage for split-horizon bridge routing (#167): one of
+    # "in-cluster" | "internal" | "public". Empty falls back to cluster_internal
+    # (true → in-cluster) then "public", so older agents keep working.
+    zone: str | None = None
     instance_id: str | None = None
     active_tunnels: int = 0
 
@@ -388,6 +393,12 @@ async def agent_heartbeat(
         else:
             await r.delete(f"agent:{agent_id_str}:cluster_internal")
 
+        # Store the network zone for split-horizon bridge routing (#167).
+        if body.zone and body.zone in VALID_ZONES:
+            await r.setex(f"agent:{agent_id_str}:zone", AGENT_TTL_SECONDS, body.zone)
+        else:
+            await r.delete(f"agent:{agent_id_str}:zone")
+
     return SuccessResponse(message="OK")
 
 
@@ -609,6 +620,7 @@ async def delete_agent(
         f"agent:{agent_id_str}:instances",
         f"agent:{agent_id_str}:name",
         f"agent:{agent_id_str}:cluster_internal",
+        f"agent:{agent_id_str}:zone",
         f"agent:{agent_id_str}:relay_bridge",
     ]
     for key in keys_to_delete:

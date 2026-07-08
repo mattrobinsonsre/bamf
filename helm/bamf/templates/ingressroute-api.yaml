@@ -59,4 +59,43 @@ spec:
     options:
       name: {{ $fullName }}-hardened
       namespace: {{ .Release.Namespace }}
+{{- if .Values.gateway.m2m.enabled }}
+{{- $m2mEntryPoint := .Values.gateway.m2m.traefik.entryPoint | default $entryPoint }}
+{{- $m2mSecret := .Values.gateway.m2m.tls.existingSecret | default (printf "%s-m2m-tls" $fullName) }}
+---
+# Internal (M2M) IngressRoute — the same API Service on the internal hostname
+# for agents/edges and bridges. Humans + CLI stay on the public route above.
+# Auth is per-endpoint (cert for agent/bridge/internal routes), so exposing the
+# API here is safe. TLS must be a traceable cert (see gateway.m2m in values).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-api-m2m
+  labels:
+    {{- include "bamf.labels" . | nindent 4 }}
+    app.kubernetes.io/component: m2m
+  {{- with .Values.gateway.m2m.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  entryPoints:
+    - {{ $m2mEntryPoint }}
+  routes:
+    - match: Host(`{{ required "gateway.m2m.hostname is required when gateway.m2m.enabled" .Values.gateway.m2m.hostname }}`) && (PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/ready`))
+      kind: Rule
+      {{- if .Values.gateway.rateLimit.enabled }}
+      middlewares:
+        - name: {{ $fullName }}-rate-limit
+          namespace: {{ .Release.Namespace }}
+      {{- end }}
+      services:
+        - name: {{ $fullName }}-api
+          port: 8000
+  tls:
+    secretName: {{ $m2mSecret }}
+    options:
+      name: {{ $fullName }}-hardened
+      namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

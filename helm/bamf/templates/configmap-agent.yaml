@@ -28,6 +28,11 @@ data:
     cluster_internal: true
     {{- end }}
 
+    # Network zone for split-horizon bridge routing (#167): in-cluster | internal | public
+    {{- if .Values.agent.zone }}
+    zone: {{ .Values.agent.zone | quote }}
+    {{- end }}
+
     # Labels for RBAC matching
     {{- if .Values.agent.config.labels }}
     labels:
