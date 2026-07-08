@@ -65,6 +65,27 @@ func TestTokensListEnvelopeContract(t *testing.T) {
 	require.False(t, tok.ExpiresAt.IsZero())
 }
 
+// TestUsersListEnvelopeContract guards the CursorPage "items" envelope for
+// `bamf users list` (cmd/bamf/cmd/users.go) — a new consumer of the shared
+// list envelope, pinned the same way as agents/tokens so a producer rename
+// can't silently empty it (#120).
+func TestUsersListEnvelopeContract(t *testing.T) {
+	var page struct {
+		Items []userInfo `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(contractFixture(t, "users_list.json"), &page))
+	require.Len(t, page.Items, 1,
+		"CLI must decode the CursorPage 'items' envelope, not a bare or renamed key")
+
+	u := page.Items[0]
+	require.Equal(t, "alice@example.com", u.Email)
+	require.True(t, u.IsActive)
+	require.Len(t, u.Roles, 1)
+	require.Equal(t, "admin", u.Roles[0].Name)
+	require.Equal(t, "local", u.Roles[0].ProviderName)
+	require.False(t, u.CreatedAt.IsZero())
+}
+
 // TestResourcesListEnvelopeContract guards the CUSTOM "resources" envelope for
 // `bamf resources`/`bamf ls` (runResources in resources.go decodes
 // {"resources": [...]}, not the CursorPage "items" key). A producer rename of

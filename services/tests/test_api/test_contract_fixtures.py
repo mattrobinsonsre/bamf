@@ -18,6 +18,7 @@ from pathlib import Path
 from bamf.api.models.agents import AgentResponse
 from bamf.api.models.common import CursorPage
 from bamf.api.models.tokens import JoinTokenResponse
+from bamf.api.models.users import UserResponse
 from bamf.api.routers.resources import ResourceListResponse, ResourceResponse
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts"
@@ -59,6 +60,22 @@ def test_tokens_list_envelope_contract():
 
     item = data["items"][0]
     dumped = json.loads(JoinTokenResponse.model_validate(item).model_dump_json())
+    assert set(dumped) == set(item)
+
+
+def test_users_list_envelope_contract():
+    """`bamf users list` (cmd/bamf/cmd/users.go) decodes the CursorPage ``items``
+    envelope of UserResponse — a new consumer, pinned like agents/tokens."""
+    raw = (CONTRACTS / "users_list.json").read_text()
+
+    page = CursorPage[UserResponse].model_validate_json(raw)
+    assert len(page.items) == 1
+
+    data = json.loads(raw)
+    assert set(data) == {"items", "next_cursor", "has_more"}
+
+    item = data["items"][0]
+    dumped = json.loads(UserResponse.model_validate(item).model_dump_json())
     assert set(dumped) == set(item)
 
 
