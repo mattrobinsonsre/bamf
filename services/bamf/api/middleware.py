@@ -63,43 +63,43 @@ async def api_audit_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    # Capture response body — StreamingResponse needs wrapping
-    resp_body = b""
+    # Capture response body. A StreamingResponse's body isn't materialized yet,
+    # so wrap its iterator and fire the audit when iteration actually finishes
+    # (or the client disconnects) — never on a fixed timer. A timed guess
+    # (`sleep(0.1)`) truncates bodies that stream for longer than the timeout
+    # (large payloads, slow downstreams, SSE) and needlessly delays fast ones.
     if isinstance(response, StreamingResponse):
         chunks: list[bytes] = []
+        upstream = response.body_iterator
 
         async def body_iterator():
-            async for chunk in response.body_iterator:
-                if isinstance(chunk, str):
-                    chunk = chunk.encode("utf-8")
-                chunks.append(chunk)
-                yield chunk
+            try:
+                async for chunk in upstream:
+                    if isinstance(chunk, str):
+                        chunk = chunk.encode("utf-8")
+                    chunks.append(chunk)
+                    yield chunk
+            finally:
+                # Fires on normal completion AND on GeneratorExit (client
+                # disconnect / cancellation), so the audit captures exactly the
+                # bytes that were sent and the true end-to-end duration. Runs as
+                # a background task so we never block the ASGI send loop.
+                elapsed_ms = round((time.monotonic() - t0) * 1000)
+                asyncio.create_task(
+                    _store_api_audit(
+                        request=request,
+                        request_body=body,
+                        response=response,
+                        response_body=b"".join(chunks),
+                        elapsed_ms=elapsed_ms,
+                    )
+                )
 
         response.body_iterator = body_iterator()
-        # We need to actually consume the iterator to capture the body.
-        # The response will be sent to the client as it streams; we
-        # capture chunks in the iterator wrapper above. However, the
-        # middleware return sends the response before we can read chunks.
-        # Instead, schedule the audit as a background task that fires
-        # after the response is fully sent.
-        elapsed_ms = round((time.monotonic() - t0) * 1000)
-
-        async def _audit_after_stream():
-            # Wait briefly for the stream to complete
-            await asyncio.sleep(0.1)
-            resp_bytes = b"".join(chunks)
-            await _store_api_audit(
-                request=request,
-                request_body=body,
-                response=response,
-                response_body=resp_bytes,
-                elapsed_ms=elapsed_ms,
-            )
-
-        asyncio.create_task(_audit_after_stream())
         return response
 
     # Non-streaming response — body is available directly
+    resp_body = b""
     if hasattr(response, "body"):
         resp_body = response.body
     elapsed_ms = round((time.monotonic() - t0) * 1000)
