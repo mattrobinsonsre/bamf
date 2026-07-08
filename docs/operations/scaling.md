@@ -31,7 +31,6 @@ Bridges are stateful — they hold persistent mTLS relay/tunnel connections to a
 outpost:
   bridge:
     replicas: 2
-    maxReplicas: 20
     autoscaling:
       enabled: true
       minReplicas: 2
@@ -39,9 +38,9 @@ outpost:
       targetCPUUtilizationPercentage: 70
 ```
 
-**Important:** `outpost.bridge.maxReplicas` controls how many per-pod Services
-and TLSRoutes are pre-created. Scaling beyond `maxReplicas` requires a Helm
-upgrade.
+**Important:** `outpost.bridge.autoscaling.maxReplicas` controls how many per-pod
+Services and TLSRoutes are pre-created. Scaling beyond `maxReplicas` requires a
+Helm upgrade.
 
 Bridge scaling creates new StatefulSet pods. Each pod gets a pre-created Service
 and TLSRoute, so routing works immediately on scale-up.

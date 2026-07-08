@@ -100,7 +100,6 @@ load balancer sits in front of the ingress.
 outpost:
   bridge:
     replicas: 2                      # Initial replicas
-    maxReplicas: 20                  # HPA max; controls pre-created Services/TLSRoutes
     image:
       repository: ghcr.io/mattrobinsonsre/bamf-bridge
       tag: ""
@@ -111,7 +110,7 @@ outpost:
     autoscaling:
       enabled: true
       minReplicas: 2
-      maxReplicas: 20
+      maxReplicas: 20                # HPA max; also pre-creates Services/TLSRoutes
       targetCPUUtilizationPercentage: 70
       targetTunnelsPerPod: 50          # Custom metric scaling (requires prometheus-adapter)
       nonMigratableOversubscribeFactor: 1.5  # Oversubscription for ssh-audit sessions
