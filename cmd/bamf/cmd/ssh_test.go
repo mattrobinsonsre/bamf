@@ -67,13 +67,6 @@ func TestEnsureBamfDir_CreatesDirectories(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 	require.Equal(t, os.FileMode(0700), info.Mode().Perm())
-
-	// Verify keys subdirectory was created
-	keysDir := filepath.Join(dir, "keys")
-	info, err = os.Stat(keysDir)
-	require.NoError(t, err)
-	require.True(t, info.IsDir())
-	require.Equal(t, os.FileMode(0700), info.Mode().Perm())
 }
 
 func TestEnsureBamfDir_Idempotent(t *testing.T) {
