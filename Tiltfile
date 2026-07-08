@@ -22,6 +22,20 @@ cfg = config.parse()
 # Local TLS Certificates (mkcert)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Next.js 16 dev (Turbopack) opens many inotify instances / file descriptors.
+# The k3s node default (fs.inotify.max_user_instances=128) is too low, so the
+# web pod exhausts FDs ("No file descriptors available", CrashLoopBackOff). Raise
+# the node limits via a one-off privileged pod. Idempotent; safe to re-run.
+local_resource(
+    'raise-inotify-limits',
+    cmd='''
+kubectl --context rancher-desktop run inotify-limits --rm --attach --restart=Never \
+  --image=busybox --quiet \
+  --overrides='{"spec":{"hostPID":true,"containers":[{"name":"x","image":"busybox","command":["nsenter","--target","1","--mount","--uts","--ipc","--net","--pid","--","sh","-c","sysctl -w fs.inotify.max_user_instances=8192 fs.inotify.max_user_watches=1048576 >/dev/null && echo raised"],"securityContext":{"privileged":true}}]}}'
+''',
+    labels=['setup'],
+)
+
 local_resource(
     'setup-certificates',
     cmd='''
