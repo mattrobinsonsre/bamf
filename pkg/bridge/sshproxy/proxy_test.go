@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"strings"
@@ -40,6 +41,20 @@ func connPair(t *testing.T) (net.Conn, net.Conn) {
 	<-done
 	require.NoError(t, sErr)
 	return cConn, sConn
+}
+
+// finishSSHChannel completes a target-side response: send exit-status,
+// half-close stdout, then keep the channel open until the client has drained
+// the output + exit-status and closed its own side before tearing down. A real
+// sshd lingers likewise; closing immediately races the channel teardown ahead
+// of the buffered output/exit-status through the proxy relay, surfacing as a
+// spurious EOF in the client's session.Output()/Run() (#163). Reading to EOF
+// synchronizes on the client's readiness instead of guessing at timing.
+func finishSSHChannel(ch ssh.Channel) {
+	_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	_ = ch.CloseWrite()
+	_, _ = io.Copy(io.Discard, ch)
+	_ = ch.Close()
 }
 
 // testSSHServer runs a minimal SSH server that accepts any auth, opens a
@@ -102,9 +117,7 @@ func testSSHServer(t *testing.T, conn net.Conn) {
 								break
 							}
 						}
-						// Send exit-status 0.
-						_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
-						ch.Close()
+						finishSSHChannel(ch)
 					}()
 				case "exec":
 					if req.WantReply {
@@ -114,13 +127,7 @@ func testSSHServer(t *testing.T, conn net.Conn) {
 					var payload struct{ Command string }
 					_ = ssh.Unmarshal(req.Payload, &payload)
 					fmt.Fprintf(ch, "exec: %s\n", payload.Command)
-					// CloseWrite sends EOF on stdout without tearing down the
-					// channel, so the client finishes reading buffered data
-					// before we send exit-status. Without this, ch.Close()
-					// can race with the client read and cause spurious EOF.
-					_ = ch.CloseWrite()
-					_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
-					ch.Close()
+					finishSSHChannel(ch)
 				default:
 					if req.WantReply {
 						_ = req.Reply(false, nil)
@@ -514,9 +521,7 @@ func testSSHServerWithPubKey(t *testing.T, conn net.Conn, authorizedKey ssh.Publ
 					var payload struct{ Command string }
 					_ = ssh.Unmarshal(req.Payload, &payload)
 					fmt.Fprintf(ch, "exec: %s\n", payload.Command)
-					_ = ch.CloseWrite()
-					_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
-					ch.Close()
+					finishSSHChannel(ch)
 				case "shell":
 					if req.WantReply {
 						_ = req.Reply(true, nil)
@@ -532,8 +537,7 @@ func testSSHServerWithPubKey(t *testing.T, conn net.Conn, authorizedKey ssh.Publ
 								break
 							}
 						}
-						_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
-						ch.Close()
+						finishSSHChannel(ch)
 					}()
 				default:
 					if req.WantReply {
