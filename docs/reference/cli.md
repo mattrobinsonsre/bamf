@@ -235,6 +235,47 @@ Revoke a join token.
 bamf tokens revoke <token-name>
 ```
 
+## User Management
+
+Manage locally-managed users (admin only). SSO users are not stored locally and
+are not managed here — see [RBAC](../admin/rbac.md) for role assignment.
+
+### bamf users list
+
+```
+bamf users list
+```
+
+### bamf users get
+
+```
+bamf users get <email>
+```
+
+### bamf users create
+
+Create a local user. Omit `--password` for an SSO-only account.
+
+```
+bamf users create <email> [--password PASS] [--role ROLE]...
+```
+
+### bamf users update
+
+Update a user's password, roles (replaces the set), or active status.
+
+```
+bamf users update <email> [--password PASS] [--role ROLE]... [--active | --inactive]
+```
+
+### bamf users delete
+
+```
+bamf users delete <email>
+```
+
+All subcommands honor `--json` for machine-readable output.
+
 ## Utility
 
 ### bamf version
