@@ -46,9 +46,33 @@ BAMF's security model is documented in detail:
 
 ### Dependency Security
 
-- `govulncheck` (Go) and `pip-audit` (Python) run in CI on every pull request.
+- `govulncheck` (Go), `pip-audit` (Python), and Trivy (container images) run in
+  CI on every pull request.
 - Dependencies are reviewed weekly.
 - No CGo — the Go attack surface is limited to pure Go code.
+
+### Vulnerability suppression policy
+
+The default is to **fix**, not suppress: bump the dependency or base image. A
+scanner finding may be suppressed **only when both** of the following hold:
+
+1. no fixed release can be taken yet — there is no fix upstream, or the fix is
+   blocked by a compatibility pin we can't move; **and**
+2. it is not exploitable in BAMF's configuration (transitive/unused dependency,
+   unreachable code path, base-image package we never invoke).
+
+Every suppression lives in a committed allowlist (used identically by local runs
+and CI) and **must** carry a justification block: what it is, why it is
+safe/unavoidable, and an explicit **"drop when …"** re-evaluation condition.
+
+| Scanner | Allowlist | Format |
+|---|---|---|
+| Trivy (images) | [`pentest/trivy/.trivyignore`](pentest/trivy/.trivyignore) | one CVE per line + justification comment |
+| pip-audit (Python) | [`pentest/pip-audit/ignore-vulns.txt`](pentest/pip-audit/ignore-vulns.txt) | one ID per line + justification comment (read by `scripts/security-scan.sh`) |
+| govulncheck (Go) | none — reports only reachable code, so a finding is fixed; a genuinely unfixable, unreachable case is documented here | — |
+
+Item G of the pre-release audit (see `AGENTS.md`) re-reviews every active
+suppression on each release and drops any a version bump now fixes.
 
 ## Security-Related Configuration
 
