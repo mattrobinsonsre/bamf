@@ -235,6 +235,59 @@ Revoke a join token.
 bamf tokens revoke <token-name>
 ```
 
+## Outpost Management
+
+Manage the tokens and lifecycle for [remote outpost](../admin/deployment.md)
+deployments (admin only). Mirrors the agent-token surface above.
+
+### bamf outpost-tokens list
+
+List outpost join tokens.
+
+```
+bamf outpost-tokens list
+```
+
+### bamf outpost-tokens create
+
+Mint a join token for an outpost. The secret value is printed **once** — store
+it in the outpost's join Secret.
+
+```
+bamf outpost-tokens create <name> --outpost <outpost-name> [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--outpost` | Outpost name this token registers (required) |
+| `--region` | Human-readable region label |
+| `--ttl` | Hours until the token expires (default: `24`) |
+| `--max-uses` | Max uses (`0` = unlimited) |
+
+### bamf outpost-tokens revoke
+
+Revoke an outpost join token by name.
+
+```
+bamf outpost-tokens revoke <name>
+```
+
+### bamf outposts list
+
+List registered outposts.
+
+```
+bamf outposts list
+```
+
+### bamf outposts delete
+
+Deregister an outpost by ID.
+
+```
+bamf outposts delete <id>
+```
+
 ## User Management
 
 Manage locally-managed users (admin only). SSO users are not stored locally and
