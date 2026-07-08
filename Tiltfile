@@ -54,12 +54,12 @@ mkcert -install 2>/dev/null
 # Create cert directory
 mkdir -p "$CERT_DIR"
 
-# Generate certificates if they don't exist or are missing outpost domains
+# Generate certificates if they don't exist or are missing edge domains
 NEED_REGEN=false
 if [ ! -f "$CERT_DIR/cert.pem" ] || [ ! -f "$CERT_DIR/key.pem" ]; then
     NEED_REGEN=true
 elif ! openssl x509 -in "$CERT_DIR/cert.pem" -noout -text 2>/dev/null | grep -q "local.tunnel.bamf.local"; then
-    echo "Regenerating certs (missing outpost domains)..."
+    echo "Regenerating certs (missing edge domains)..."
     NEED_REGEN=true
 fi
 if [ "$NEED_REGEN" = true ]; then
@@ -219,13 +219,13 @@ k8s_yaml(helm(
         'core.redis.external.enabled=false',
         'core.migrations.enabled=true',
         'tls.certManager.enabled=false',
-        # Outpost component images
-        'outpost.bridge.image.repository=bamf-bridge',
-        'outpost.bridge.image.tag=latest',
-        'outpost.bridge.image.pullPolicy=Never',
-        'outpost.proxy.image.repository=bamf-proxy',
-        'outpost.proxy.image.tag=latest',
-        'outpost.proxy.image.pullPolicy=Never',
+        # Edge component images
+        'edge.bridge.image.repository=bamf-bridge',
+        'edge.bridge.image.tag=latest',
+        'edge.bridge.image.pullPolicy=Never',
+        'edge.proxy.image.repository=bamf-proxy',
+        'edge.proxy.image.tag=latest',
+        'edge.proxy.image.pullPolicy=Never',
         # Agent image overrides for local dev
         'agent.image.repository=bamf-agent',
         'agent.image.tag=latest',

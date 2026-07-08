@@ -37,22 +37,22 @@ RELAY_READY_TIMEOUT_SECONDS = 10
 RELAY_POLL_INTERVAL_SECONDS = 0.5
 
 
-async def assign_relay_bridge(r, agent_id: str, outpost_name: str | None = None) -> str | None:
+async def assign_relay_bridge(r, agent_id: str, edge_name: str | None = None) -> str | None:
     """Assign a bridge for the agent's relay connection.
 
     Picks the least-loaded bridge from the sorted set and stores
     the assignment in Redis.
 
-    When outpost_name is provided, uses the per-outpost sorted set
-    (bridges:available:{outpost_name}) and stores the assignment in
-    agent:{id}:relay:{outpost_name}. Falls back to the global
+    When edge_name is provided, uses the per-edge sorted set
+    (bridges:available:{edge_name}) and stores the assignment in
+    agent:{id}:relay:{edge_name}. Falls back to the global
     bridges:available set for backward compatibility.
     """
-    # Try outpost-specific pool first, then global
+    # Try edge-specific pool first, then global
     bridge_id = None
-    if outpost_name:
+    if edge_name:
         bridges = await r.zrangebyscore(
-            f"bridges:available:{outpost_name}", "-inf", "+inf", start=0, num=1
+            f"bridges:available:{edge_name}", "-inf", "+inf", start=0, num=1
         )
         if bridges:
             bridge_id = bridges[0]
@@ -64,15 +64,15 @@ async def assign_relay_bridge(r, agent_id: str, outpost_name: str | None = None)
         bridge_id = bridges[0]
 
     # Store assignment with agent TTL (refreshed on heartbeat)
-    if outpost_name:
-        await r.setex(f"agent:{agent_id}:relay:{outpost_name}", 180, bridge_id)
+    if edge_name:
+        await r.setex(f"agent:{agent_id}:relay:{edge_name}", 180, bridge_id)
     await r.setex(f"agent:{agent_id}:relay_bridge", 180, bridge_id)
 
     logger.info(
         "Assigned relay bridge",
         agent_id=agent_id,
         bridge_id=bridge_id,
-        outpost_name=outpost_name,
+        edge_name=edge_name,
     )
     return bridge_id
 

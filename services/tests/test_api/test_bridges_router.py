@@ -100,8 +100,8 @@ class TestBootstrapBridge:
     async def test_invalid_token(self, bridges_client):
         with patch("bamf.api.routers.internal_bridges.settings") as mock_settings:
             mock_settings.bridge_bootstrap_token = "correct-token"
-            mock_settings.default_outpost_name = None
-            # Outpost lookup returns nothing
+            mock_settings.default_edge_name = None
+            # Edge lookup returns nothing
             with patch(
                 "bamf.api.routers.internal_bridges.async_session_factory_read"
             ) as mock_factory:
@@ -141,7 +141,7 @@ class TestBootstrapBridge:
             patch("bamf.api.routers.internal_bridges.get_ssh_host_key_pem", return_value="SSH-KEY"),
         ):
             mock_settings.bridge_bootstrap_token = "correct-token"
-            mock_settings.default_outpost_name = "us-east"
+            mock_settings.default_edge_name = "us-east"
             mock_settings.namespace = "bamf"
             mock_settings.bridge_headless_service = None
 
@@ -159,7 +159,7 @@ class TestBootstrapBridge:
         assert data["certificate"] == "CERT"
         assert data["private_key"] == "KEY"
         assert data["ssh_host_key"] == "SSH-KEY"
-        assert data["outpost_name"] == "us-east"
+        assert data["edge_name"] == "us-east"
 
 
 # ── Tests: Register ──────────────────────────────────────────────────
@@ -181,18 +181,18 @@ class TestRegisterBridge:
         mock_redis.zadd.assert_called_once_with("bridges:available", {"bamf-bridge-0": 0})
 
     @pytest.mark.asyncio
-    async def test_register_with_outpost(self, bridges_client, mock_redis):
+    async def test_register_with_edge(self, bridges_client, mock_redis):
         resp = await bridges_client.post(
             "/api/v1/internal/bridges/register",
             json={
                 "bridge_id": "bamf-bridge-0",
                 "hostname": "0.bridge.eu.tunnel.example.com",
-                "outpost_name": "eu",
+                "edge_name": "eu",
             },
         )
 
         assert resp.status_code == 200
-        # Should add to both global and per-outpost sorted sets
+        # Should add to both global and per-edge sorted sets
         assert mock_redis.zadd.call_count == 2
 
 
@@ -249,7 +249,7 @@ class TestBridgeStatus:
     @pytest.mark.asyncio
     async def test_set_draining(self, bridges_client, mock_redis):
         mock_redis.exists.return_value = True
-        mock_redis.hget.return_value = ""  # outpost
+        mock_redis.hget.return_value = ""  # edge
 
         resp = await bridges_client.post(
             "/api/v1/internal/bridges/bamf-bridge-0/status",
@@ -263,7 +263,7 @@ class TestBridgeStatus:
     @pytest.mark.asyncio
     async def test_set_ready(self, bridges_client, mock_redis):
         mock_redis.exists.return_value = True
-        mock_redis.hget.side_effect = ["", "5"]  # outpost, then active_tunnels
+        mock_redis.hget.side_effect = ["", "5"]  # edge, then active_tunnels
 
         resp = await bridges_client.post(
             "/api/v1/internal/bridges/bamf-bridge-0/status",
@@ -423,7 +423,7 @@ class TestTunnelClosed:
             }
         )
         mock_redis.get.return_value = session_data
-        mock_redis.hget.return_value = ""  # outpost
+        mock_redis.hget.return_value = ""  # edge
         mock_db.commit = AsyncMock()
 
         with (

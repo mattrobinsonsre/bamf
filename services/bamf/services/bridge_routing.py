@@ -39,7 +39,7 @@ async def resolve_agent_zone(r, agent_id: str) -> str:
 def internal_bridge_host(public_hostname: str) -> str:
     """Map a bridge's public SNI hostname to its internal-ingress equivalent.
 
-    The two hostnames share the same ``{ordinal}.bridge[.{outpost}]`` prefix and
+    The two hostnames share the same ``{ordinal}.bridge[.{edge}]`` prefix and
     differ only in the trailing tunnel domain, so we swap the public
     ``tunnel_domain`` suffix for the ``m2m_tunnel_domain``. If no m2m domain is
     configured (or the hostname doesn't carry the public domain), fall back to

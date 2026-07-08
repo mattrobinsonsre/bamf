@@ -84,18 +84,18 @@ spec:
             {{- end }}
             - name: BAMF_REDIS_URL
               value: {{ include "bamf.redisUrl" . | quote }}
-            {{- if and .Values.outpost.enabled .Values.outpost.bridge.bootstrap.enabled }}
-            {{- /* Only for the co-located bridge; remote-outpost bridges auth via
+            {{- if and .Values.edge.enabled .Values.edge.bridge.bootstrap.enabled }}
+            {{- /* Only for the co-located bridge; remote-edge bridges auth via
                    DB-hashed bootstrap tokens, not this env var. Gate on
-                   outpost.enabled so a core-only install doesn't reference a
+                   edge.enabled so a core-only install doesn't reference a
                    Secret that isn't rendered. */}}
             - name: BAMF_BRIDGE_BOOTSTRAP_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.outpost.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
-                  key: {{ .Values.outpost.bridge.bootstrap.tokenKey | default "token" }}
+                  name: {{ .Values.edge.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
+                  key: {{ .Values.edge.bridge.bootstrap.tokenKey | default "token" }}
             {{- end }}
-            {{- if .Values.outpost.enabled }}
+            {{- if .Values.edge.enabled }}
             - name: BAMF_PROXY_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:

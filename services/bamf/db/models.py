@@ -209,14 +209,14 @@ class JoinToken(Base):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
 
 
-class OutpostToken(Base):
-    """Join token for outpost registration.
+class EdgeToken(Base):
+    """Join token for edge registration.
 
     Mirrors the JoinToken pattern. Each token is bound to a specific
-    outpost_name — the DNS-safe short name assigned to the outpost.
+    edge_name — the DNS-safe short name assigned to the edge.
     """
 
-    __tablename__ = "outpost_tokens"
+    __tablename__ = "edge_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid7
@@ -224,8 +224,8 @@ class OutpostToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(63), nullable=False)
 
-    # Outpost identity
-    outpost_name: Mapped[str] = mapped_column(String(63), nullable=False)
+    # Edge identity
+    edge_name: Mapped[str] = mapped_column(String(63), nullable=False)
     region: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Limits
@@ -241,15 +241,15 @@ class OutpostToken(Base):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)  # email of creator
 
 
-class Outpost(Base):
-    """Registered outpost deployment (proxy + bridge cluster).
+class Edge(Base):
+    """Registered edge deployment (proxy + bridge cluster).
 
-    Stores durable outpost identity. Bridges and proxies in the outpost
+    Stores durable edge identity. Bridges and proxies in the edge
     authenticate using the internal_token_hash and bridge_bootstrap_token_hash
     respectively. Runtime state (bridge pools, relay connections) lives in Redis.
     """
 
-    __tablename__ = "outposts"
+    __tablename__ = "edges"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=generate_uuid7

@@ -96,14 +96,14 @@ async def connect_client(connect_app):
         yield client
 
 
-def _mock_resource(name="web-01", resource_type="ssh", agent_id="agent-1", outpost=None):
+def _mock_resource(name="web-01", resource_type="ssh", agent_id="agent-1", edge=None):
     """Create a mock ResourceInfo."""
     r = MagicMock()
     r.name = name
     r.resource_type = resource_type
     r.agent_id = agent_id
     r.labels = {"env": "dev"}
-    r.outpost = outpost
+    r.edge = edge
     return r
 
 
@@ -253,13 +253,11 @@ class TestNewConnection:
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch(
-                "bamf.api.routers.connect._geoip_select_outpost", new=AsyncMock(return_value=None)
-            ),
+            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.settings") as mock_settings,
         ):
             mock_settings.target_tunnels_per_pod = 10
-            mock_settings.default_outpost_name = None
+            mock_settings.default_edge_name = None
 
             resp = await connect_client.post(
                 "/api/v1/connect",
@@ -282,16 +280,14 @@ class TestNewConnection:
 
         mock_redis.get.side_effect = get_side_effect
         mock_redis.zrangebyscore.return_value = [("bridge-0", 0)]
-        mock_redis.hgetall.return_value = {"hostname": "0.bridge.tunnel.example.com", "outpost": ""}
+        mock_redis.hgetall.return_value = {"hostname": "0.bridge.tunnel.example.com", "edge": ""}
 
         ca = _mock_ca()
 
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch(
-                "bamf.api.routers.connect._geoip_select_outpost", new=AsyncMock(return_value=None)
-            ),
+            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.get_ca", return_value=ca),
             patch("bamf.api.routers.connect.serialize_certificate", return_value=b"CERT-PEM"),
             patch("bamf.api.routers.connect.serialize_private_key", return_value=b"KEY-PEM"),
@@ -307,7 +303,7 @@ class TestNewConnection:
             mock_settings.bridge_tunnel_port = 443
             mock_settings.bridge_internal_tunnel_port = 8443
             mock_settings.namespace = "bamf"
-            mock_settings.default_outpost_name = None
+            mock_settings.default_edge_name = None
 
             resp = await connect_client.post(
                 "/api/v1/connect",
@@ -340,9 +336,7 @@ class TestNewConnection:
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch(
-                "bamf.api.routers.connect._geoip_select_outpost", new=AsyncMock(return_value=None)
-            ),
+            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.get_ca", return_value=ca),
             patch("bamf.api.routers.connect.serialize_certificate", return_value=b"CERT"),
             patch("bamf.api.routers.connect.serialize_private_key", return_value=b"KEY"),
@@ -358,7 +352,7 @@ class TestNewConnection:
             mock_settings.bridge_tunnel_port = 443
             mock_settings.bridge_internal_tunnel_port = 8443
             mock_settings.namespace = "bamf"
-            mock_settings.default_outpost_name = None
+            mock_settings.default_edge_name = None
 
             resp = await connect_client.post(
                 "/api/v1/connect",

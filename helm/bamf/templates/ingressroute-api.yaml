@@ -17,7 +17,7 @@ spec:
   entryPoints:
     - {{ $entryPoint }}
   routes:
-    {{- if .Values.outpost.enabled }}
+    {{- if .Values.edge.enabled }}
     # Kube proxy routes go to proxy service (must come before general /api)
     - match: Host(`{{ .Values.gateway.hostname }}`) && PathPrefix(`/api/v1/kube`)
       kind: Rule

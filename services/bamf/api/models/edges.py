@@ -1,6 +1,6 @@
-"""Outpost API models.
+"""Edge API models.
 
-Outposts are regional proxy+bridge clusters that register with the
+Edges are regional proxy+bridge clusters that register with the
 central API using join tokens, similar to agent registration.
 """
 
@@ -13,21 +13,21 @@ from pydantic import Field
 from bamf.api.models.common import BAMFBaseModel, NamedModel
 
 if TYPE_CHECKING:
-    from bamf.db.models import Outpost, OutpostToken
+    from bamf.db.models import Edge, EdgeToken
 
 
-# ── Outpost Token Models ────────────────────────────────────────────
+# ── Edge Token Models ────────────────────────────────────────────
 
 
-class OutpostTokenCreate(NamedModel):
-    """Request to create an outpost join token."""
+class EdgeTokenCreate(NamedModel):
+    """Request to create an edge join token."""
 
-    outpost_name: str = Field(
+    edge_name: str = Field(
         ...,
         min_length=1,
         max_length=63,
         pattern=r"^[a-z][a-z0-9-]*$",
-        description="DNS-safe outpost name (e.g., 'eu', 'us-east')",
+        description="DNS-safe edge name (e.g., 'eu', 'us-east')",
     )
     region: str | None = Field(
         default=None,
@@ -59,12 +59,12 @@ class OutpostTokenCreate(NamedModel):
     )
 
 
-class OutpostTokenResponse(BAMFBaseModel):
-    """Outpost token response (without the secret token value)."""
+class EdgeTokenResponse(BAMFBaseModel):
+    """Edge token response (without the secret token value)."""
 
     id: UUID
     name: str
-    outpost_name: str
+    edge_name: str
     region: str | None
     expires_at: datetime
     max_uses: int | None
@@ -74,12 +74,12 @@ class OutpostTokenResponse(BAMFBaseModel):
     created_by: str
 
     @classmethod
-    def from_db(cls, token: OutpostToken) -> OutpostTokenResponse:
+    def from_db(cls, token: EdgeToken) -> EdgeTokenResponse:
         """Create response from database model."""
         return cls(
             id=token.id,
             name=token.name,
-            outpost_name=token.outpost_name,
+            edge_name=token.edge_name,
             region=token.region,
             expires_at=token.expires_at,
             max_uses=token.max_uses,
@@ -90,8 +90,8 @@ class OutpostTokenResponse(BAMFBaseModel):
         )
 
 
-class OutpostTokenCreateResponse(OutpostTokenResponse):
-    """Response when creating an outpost token - includes the secret value.
+class EdgeTokenCreateResponse(EdgeTokenResponse):
+    """Response when creating an edge token - includes the secret value.
 
     The token value is only returned once at creation time.
     """
@@ -99,23 +99,23 @@ class OutpostTokenCreateResponse(OutpostTokenResponse):
     token: str = Field(description="The secret token value - only shown once!")
 
 
-# ── Outpost Models ──────────────────────────────────────────────────
+# ── Edge Models ──────────────────────────────────────────────────
 
 
-class OutpostJoinRequest(BAMFBaseModel):
-    """Request to register an outpost using a join token."""
+class EdgeJoinRequest(BAMFBaseModel):
+    """Request to register an edge using a join token."""
 
-    join_token: str = Field(description="The outpost join token")
+    join_token: str = Field(description="The edge join token")
 
 
-class OutpostJoinResponse(BAMFBaseModel):
-    """Response after successful outpost registration.
+class EdgeJoinResponse(BAMFBaseModel):
+    """Response after successful edge registration.
 
     Contains the tokens needed for proxy and bridge authentication.
     """
 
-    outpost_id: UUID
-    outpost_name: str
+    edge_id: UUID
+    edge_name: str
     region: str | None
     internal_token: str = Field(description="Token for proxy → API auth")
     bridge_bootstrap_token: str = Field(description="Token for bridge bootstrap")
@@ -123,8 +123,8 @@ class OutpostJoinResponse(BAMFBaseModel):
     tunnel_domain: str = Field(description="Base tunnel domain")
 
 
-class OutpostResponse(BAMFBaseModel):
-    """Outpost details (without secret tokens)."""
+class EdgeResponse(BAMFBaseModel):
+    """Edge details (without secret tokens)."""
 
     id: UUID
     name: str
@@ -136,15 +136,15 @@ class OutpostResponse(BAMFBaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_db(cls, outpost: Outpost) -> OutpostResponse:
+    def from_db(cls, edge: Edge) -> EdgeResponse:
         """Create response from database model."""
         return cls(
-            id=outpost.id,
-            name=outpost.name,
-            region=outpost.region,
-            latitude=outpost.latitude,
-            longitude=outpost.longitude,
-            is_active=outpost.is_active,
-            created_at=outpost.created_at,
-            updated_at=outpost.updated_at,
+            id=edge.id,
+            name=edge.name,
+            region=edge.region,
+            latitude=edge.latitude,
+            longitude=edge.longitude,
+            is_active=edge.is_active,
+            created_at=edge.created_at,
+            updated_at=edge.updated_at,
         )

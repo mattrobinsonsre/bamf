@@ -53,7 +53,7 @@ from bamf.api.models.bridges import (
 from bamf.api.models.common import SuccessResponse
 from bamf.auth.ca import get_ca, get_ssh_host_key_pem, serialize_certificate, serialize_private_key
 from bamf.config import settings
-from bamf.db.models import Outpost, SessionRecording, utc_now
+from bamf.db.models import Edge, SessionRecording, utc_now
 from bamf.db.session import async_session_factory_read, get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
@@ -82,31 +82,31 @@ async def bootstrap_bridge(
 
     Checks two sources:
     1. Co-located bootstrap token (BAMF_BRIDGE_BOOTSTRAP_TOKEN env var)
-    2. Outpost bridge bootstrap tokens (DB hash lookup)
+    2. Edge bridge bootstrap tokens (DB hash lookup)
 
     Go contract: pkg/bridge/api_client.go:Bootstrap() sends
     {bridge_id, hostname, bootstrap_token} and receives certificate material.
     """
-    outpost_name: str | None = None
+    edge_name: str | None = None
 
     # Check 1: co-located bootstrap token (env var)
     co_located_token = settings.bridge_bootstrap_token
     if co_located_token and request.bootstrap_token == co_located_token:
-        outpost_name = settings.default_outpost_name
+        edge_name = settings.default_edge_name
     else:
-        # Check 2: outpost bridge bootstrap token (DB hash lookup)
+        # Check 2: edge bridge bootstrap token (DB hash lookup)
         token_hash = hashlib.sha256(request.bootstrap_token.encode()).hexdigest()
         async with async_session_factory_read() as db:
             result = await db.execute(
-                select(Outpost).where(
-                    Outpost.bridge_bootstrap_token_hash == token_hash,
-                    Outpost.is_active == True,  # noqa: E712
+                select(Edge).where(
+                    Edge.bridge_bootstrap_token_hash == token_hash,
+                    Edge.is_active == True,  # noqa: E712
                 )
             )
-            outpost = result.scalar_one_or_none()
+            edge = result.scalar_one_or_none()
 
-        if outpost:
-            outpost_name = outpost.name
+        if edge:
+            edge_name = edge.name
         else:
             logger.warning(
                 "Invalid bridge bootstrap token",
@@ -151,7 +151,7 @@ async def bootstrap_bridge(
         ca_certificate=ca.ca_cert_pem,
         expires_at=cert.not_valid_after_utc,
         ssh_host_key=get_ssh_host_key_pem(),
-        outpost_name=outpost_name,
+        edge_name=edge_name,
     )
 
 
@@ -230,7 +230,7 @@ async def register_bridge(
     """
     bridge_key = f"bridge:{request.bridge_id}"
 
-    sat = request.outpost_name or ""
+    sat = request.edge_name or ""
     await r.hset(
         bridge_key,
         mapping={
@@ -238,14 +238,14 @@ async def register_bridge(
             "status": "ready",
             "active_tunnels": "0",
             "registered_at": str(time.time()),
-            "outpost": sat,
+            "edge": sat,
         },
     )
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Add to available bridges sorted set (score = 0 active tunnels)
     await r.zadd("bridges:available", {request.bridge_id: 0})
-    # Also add to per-outpost sorted set if outpost is known
+    # Also add to per-edge sorted set if edge is known
     if sat:
         await r.zadd(f"bridges:available:{sat}", {request.bridge_id: 0})
 
@@ -253,7 +253,7 @@ async def register_bridge(
         "Bridge registered",
         bridge_id=request.bridge_id,
         hostname=request.hostname,
-        outpost_name=sat or None,
+        edge_name=sat or None,
     )
     return SuccessResponse(message="Registered")
 
@@ -278,8 +278,8 @@ async def update_bridge_status(
 
     await r.hset(bridge_key, "status", request.status)
 
-    # Read outpost affiliation from the bridge hash
-    sat = await r.hget(bridge_key, "outpost") or ""
+    # Read edge affiliation from the bridge hash
+    sat = await r.hget(bridge_key, "edge") or ""
 
     # Remove from available set if draining/offline
     if request.status != "ready":
@@ -311,7 +311,7 @@ async def bridge_heartbeat(
     """
     bridge_key = f"bridge:{bridge_id}"
 
-    sat = request.outpost_name or ""
+    sat = request.edge_name or ""
 
     exists = await r.exists(bridge_key)
     if not exists:
@@ -325,14 +325,14 @@ async def bridge_heartbeat(
                 "status": "ready",
                 "active_tunnels": str(request.active_tunnels),
                 "registered_at": str(time.time()),
-                "outpost": sat,
+                "edge": sat,
             },
         )
 
     # Update tunnel count and refresh TTL
     await r.hset(bridge_key, "active_tunnels", str(request.active_tunnels))
     if sat:
-        await r.hset(bridge_key, "outpost", sat)
+        await r.hset(bridge_key, "edge", sat)
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)
 
     # Update sorted set score
@@ -560,8 +560,8 @@ async def tunnel_closed(
     if bridge_id:
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
-        # Also update per-outpost sorted set
-        sat = await r.hget(f"bridge:{bridge_id}", "outpost")
+        # Also update per-edge sorted set
+        sat = await r.hget(f"bridge:{bridge_id}", "edge")
         if sat:
             await r.zincrby(f"bridges:available:{sat}", -1, bridge_id)
 
@@ -670,7 +670,7 @@ async def drain_bridge(
         # Decrement old bridge tunnel count
         await r.zincrby("bridges:available", -1, bridge_id)
         await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", -1)
-        drain_sat = await r.hget(f"bridge:{bridge_id}", "outpost")
+        drain_sat = await r.hget(f"bridge:{bridge_id}", "edge")
         if drain_sat:
             await r.zincrby(f"bridges:available:{drain_sat}", -1, bridge_id)
 

@@ -83,8 +83,8 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
   Redis sliding-window limiter (`core.api.config.rate_limit`) with a strict
   `/auth/*` tier for login brute-force defence.
   [docs/reference/helm-values.md](docs/reference/helm-values.md).
-- **Outpost deployments** — data-plane components deployed close to targets.
-  [docs/architecture/outpost-deployments.md](docs/architecture/outpost-deployments.md).
+- **Edge deployments** — data-plane components deployed close to targets.
+  [docs/architecture/edge-deployments.md](docs/architecture/edge-deployments.md).
 
 ## Enabling features (operator quick-reference)
 
@@ -97,7 +97,7 @@ Platform (Helm values):
 
 | Capability | How to enable | Doc |
 |---|---|---|
-| Deployment topology | `core.enabled` / `outpost.enabled` / `agent.enabled` (combine for platform / remote outpost / agent-only) | [deployment](docs/admin/deployment.md) |
+| Deployment topology | `core.enabled` / `edge.enabled` / `agent.enabled` (combine for platform / remote edge / agent-only) | [deployment](docs/admin/deployment.md) |
 | SSO (OIDC/SAML) | `core.auth.sso.oidc.<name>` / `core.auth.sso.saml.<name>` + client secret via `secretKeyRef`/`existingSecret` | [sso](docs/admin/sso.md) |
 | Local password auth | `core.auth.local.enabled` (disable in prod) | [sso](docs/admin/sso.md) |
 | Postgres: bundled vs external | `core.postgresql.bundled.enabled` XOR `core.postgresql.external.enabled` | [deployment](docs/admin/deployment.md) |
