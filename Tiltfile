@@ -93,17 +93,23 @@ if [ -f "$CAROOT/rootCA.pem" ]; then
         --dry-run=client -o yaml | kubectl apply -f -
 fi
 
-# Verify /etc/hosts entries
-MISSING=""
-for HOST in bamf.local; do
-    if ! grep -q "$HOST" /etc/hosts; then
-        MISSING="$MISSING $HOST"
-    fi
-done
-if [ -n "$MISSING" ]; then
+# Verify /etc/hosts entries. Both IPv4 AND IPv6 are required: bamf.local is a
+# .local name, so macOS resolves it via mDNS. With only the 127.0.0.1 line, the
+# AAAA (IPv6) lookup has no answer and mDNS times out ~5s on EVERY request —
+# which makes the app crawl and breaks the Next.js dev HMR websocket handshake
+# (the login page then hangs on its Suspense fallback forever). The `::1` line
+# answers AAAA instantly and eliminates the stall.
+if ! grep -qE "^127\\.0\\.0\\.1[[:space:]]+bamf\\.local([[:space:]]|$)" /etc/hosts; then
     echo ""
-    echo "WARNING: Missing /etc/hosts entries for:$MISSING"
+    echo "WARNING: Missing IPv4 /etc/hosts entry for bamf.local"
     echo "Run: sudo sh -c 'echo \"127.0.0.1 bamf.local\" >> /etc/hosts'"
+    echo ""
+fi
+if ! grep -qE "^::1[[:space:]]+bamf\\.local([[:space:]]|$)" /etc/hosts; then
+    echo ""
+    echo "WARNING: Missing IPv6 /etc/hosts entry for bamf.local (causes a ~5s"
+    echo "         DNS stall per request on macOS — see comment in Tiltfile)."
+    echo "Run: sudo sh -c 'echo \"::1 bamf.local\" >> /etc/hosts'"
     echo ""
 fi
 ''',
