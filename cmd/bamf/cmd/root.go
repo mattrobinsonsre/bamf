@@ -14,7 +14,6 @@ var (
 	// Global flags
 	cfgFile    string
 	apiURL     string
-	debug      bool
 	jsonOutput bool
 
 	// Version info (set at build time)
@@ -44,7 +43,6 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.bamf/config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api", "", "BAMF API server URL")
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 }
 
@@ -81,12 +79,6 @@ func ensureBamfDir() (string, error) {
 
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("cannot create .bamf directory: %w", err)
-	}
-
-	// Also create keys subdirectory
-	keysDir := filepath.Join(dir, "keys")
-	if err := os.MkdirAll(keysDir, 0700); err != nil {
-		return "", fmt.Errorf("cannot create keys directory: %w", err)
 	}
 
 	return dir, nil
