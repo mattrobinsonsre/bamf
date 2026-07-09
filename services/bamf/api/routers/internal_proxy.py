@@ -482,14 +482,18 @@ async def _resolve_relay(r, resource, edge_name: str | None = None) -> RelayInfo
     # Resolve relay bridge — prefer edge-specific key, fall back to global
     relay_bridge = None
     if edge_name:
+        # For a specific edge, use ONLY that edge's relay — never fall back to
+        # another edge's bridge. That reuse was the single-relay bug: a request
+        # landing at a second edge would be handed the first edge's bridge,
+        # which has no path back to the agent from here (#194).
         relay_bridge = await r.get(f"agent:{agent_id}:relay:{edge_name}")
-    if relay_bridge is None:
+    else:
         relay_bridge = await r.get(f"agent:{agent_id}:relay_bridge")
     if relay_bridge is None:
         relay_bridge = await assign_relay_bridge(r, agent_id, edge_name)
         if relay_bridge is None:
             return None
-        ready = await ensure_relay_connected(r, agent_id, relay_bridge)
+        ready = await ensure_relay_connected(r, agent_id, relay_bridge, edge_name)
         if not ready:
             return None
 

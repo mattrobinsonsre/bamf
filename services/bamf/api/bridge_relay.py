@@ -77,7 +77,9 @@ async def assign_relay_bridge(r, agent_id: str, edge_name: str | None = None) ->
     return bridge_id
 
 
-async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
+async def send_relay_connect(
+    r, agent_id: str, bridge_id: str, edge_name: str | None = None
+) -> None:
     """Send a relay_connect SSE event to a specific agent instance via Redis pub/sub.
 
     Selects the best instance (preferring one without an active relay) and
@@ -110,6 +112,10 @@ async def send_relay_connect(r, agent_id: str, bridge_id: str) -> None:
             "bridge_host": bridge_host,
             "bridge_port": bridge_port,
             "ca_certificate": ca.ca_cert_pem,
+            # Which edge this relay is for — the agent keys its per-edge relay
+            # map on this so it holds one relay per edge (#194). Omitted (agent
+            # defaults to a single "" key) when no edge is in play.
+            **({"edge": edge_name} if edge_name else {}),
         },
     )
 
@@ -129,23 +135,26 @@ async def ensure_relay_connected(
     r,
     agent_id: str,
     relay_bridge: str,
+    edge_name: str | None = None,
 ) -> bool:
     """Ensure the agent has an active relay connection to the bridge.
 
     Uses a Redis lock to prevent duplicate relay_connect commands when
     many concurrent requests arrive for an unconnected agent (e.g. a
-    browser loading HTML + CSS + JS + favicon simultaneously).
+    browser loading HTML + CSS + JS + favicon simultaneously). The lock is
+    per-edge so concurrent requests to *different* edges each get their own
+    relay_connect (#194).
 
     Returns True if the relay is believed ready, False on timeout.
     """
-    lock_key = f"agent:{agent_id}:relay_connecting"
+    lock_key = f"agent:{agent_id}:relay_connecting:{edge_name or 'default'}"
 
     # Try to acquire the lock (NX = set-if-not-exists, EX = auto-expire)
     acquired = await r.set(lock_key, "1", nx=True, ex=RELAY_READY_TIMEOUT_SECONDS + 5)
 
     if acquired:
         # We won the race — send relay_connect and wait for it to establish.
-        await send_relay_connect(r, agent_id, relay_bridge)
+        await send_relay_connect(r, agent_id, relay_bridge, edge_name)
         await asyncio.sleep(RELAY_CONNECT_WAIT_SECONDS)
         # Clean up the lock so the next cold-start can send relay_connect.
         await r.delete(lock_key)
