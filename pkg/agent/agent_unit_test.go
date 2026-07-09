@@ -317,11 +317,13 @@ func TestServeMetrics_Routes(t *testing.T) {
 func TestHasActiveRelay_RelayNotConnected(t *testing.T) {
 	// Relay exists but has no workers (not connected)
 	a := &Agent{
-		relay: &RelayManager{
-			agentID:   "test-agent",
-			resources: nil,
-			tlsConfig: &tls.Config{},
-			logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		relays: map[string]*RelayManager{
+			"": {
+				agentID:   "test-agent",
+				resources: nil,
+				tlsConfig: &tls.Config{},
+				logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+			},
 		},
 	}
 	require.False(t, a.HasActiveRelay())
@@ -538,7 +540,7 @@ func TestHandleMetrics_WithActiveRelay(t *testing.T) {
 	a := &Agent{
 		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		tunnels: make(map[string]*TunnelHandler),
-		relay:   rm,
+		relays:  map[string]*RelayManager{"": rm},
 	}
 
 	rec := httptest.NewRecorder()
@@ -564,7 +566,7 @@ func TestHandleRelayConnect_MissingBridgeHost(t *testing.T) {
 		"bridge_port": float64(443),
 	}
 	a.handleRelayConnect(data)
-	require.Nil(t, a.relay, "relay should not be created with missing bridge_host")
+	require.Empty(t, a.relays, "no relay should be created with missing bridge_host")
 }
 
 func TestHandleRelayConnect_MissingBridgePort(t *testing.T) {
@@ -580,7 +582,7 @@ func TestHandleRelayConnect_MissingBridgePort(t *testing.T) {
 		"bridge_host": "bridge.local",
 	}
 	a.handleRelayConnect(data)
-	require.Nil(t, a.relay, "relay should not be created with missing bridge_port")
+	require.Empty(t, a.relays, "no relay should be created with missing bridge_port")
 }
 
 // ── Tests: Shutdown ──────────────────────────────────────────────────
@@ -676,4 +678,28 @@ func TestHandleRedial_ClosedTunnel(t *testing.T) {
 	// Redial for a closed tunnel should be a no-op
 	a.handleRedial("sess-1", "bridge.local", 443,
 		[]byte("cert"), []byte("key"), []byte("ca"))
+}
+
+// TestHandleRelayConnect_PerEdgeRelays is the core #194 guard: a relay_connect
+// for a second edge must create its OWN relay, not be skipped because a relay to
+// a different edge already exists. Connect fails fast against a refused port, but
+// the per-edge map entry is created regardless.
+func TestHandleRelayConnect_PerEdgeRelays(t *testing.T) {
+	a := &Agent{
+		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg:       &Config{},
+		tlsConfig: &tls.Config{},
+		relays:    make(map[string]*RelayManager),
+	}
+
+	a.handleRelayConnect(map[string]interface{}{
+		"bridge_host": "127.0.0.1", "bridge_port": float64(1), "edge": "eu",
+	})
+	a.handleRelayConnect(map[string]interface{}{
+		"bridge_host": "127.0.0.1", "bridge_port": float64(1), "edge": "us",
+	})
+
+	require.Len(t, a.relays, 2, "each edge gets its own relay")
+	require.NotNil(t, a.relays["eu"])
+	require.NotNil(t, a.relays["us"])
 }
