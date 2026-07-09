@@ -62,6 +62,11 @@ from bamf.redis.client import get_redis
 from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
 from bamf.services.bridge_routing import resolve_agent_bridge_endpoint
+from bamf.services.edge_selection import (
+    EdgeCandidate,
+    get_agent_edge_rtts,
+    select_edge,
+)
 from bamf.services.rbac_service import check_access
 from bamf.services.resource_catalog import get_resource
 
@@ -196,10 +201,16 @@ async def _handle_new_connection(
         resource_type = request.protocol
 
     # ── 5. Determine edge for bridge selection ───────────────────
-    # Priority: resource pin > default. Measured-latency nearest-edge
-    # selection is tracked under the edge flagship (#119); until then a
-    # non-pinned resource routes through the configured default edge.
-    edge_name = resource.edge or settings.default_edge_name
+    # Priority: resource pin > measured agent-nearest guess > default.
+    # A non-pinned tunnel opens on the edge nearest the *agent* — the leg we
+    # already measured for free (#246). This is the optimistic-connect "guess"
+    # of measured-latency selection (#119); the client-leg and the seamless hop
+    # to the true rendezvous edge follow in later steps. Falls back to the
+    # configured default when there is no measurement or no edge with capacity.
+    if resource.edge:
+        edge_name = resource.edge
+    else:
+        edge_name = await _select_edge_for_agent(r, agent_id) or settings.default_edge_name
 
     session_id = secrets.token_urlsafe(24)
     return await _issue_session(
@@ -217,6 +228,31 @@ async def _handle_new_connection(
         audit_action="access_granted",
         edge_name=edge_name,
     )
+
+
+async def _select_edge_for_agent(r: aioredis.Redis, agent_id: str) -> str | None:
+    """Pick the edge nearest the agent among those with a live bridge.
+
+    Reads the agent-leg RTT table (#246) and returns the lowest-latency edge
+    that also has bridge capacity — the optimistic-connect guess of
+    measured-latency selection (#119). Returns None when the agent has reported
+    no measurements or no measured edge has a bridge, so the caller falls back
+    to the configured default edge. Conservative by design: a non-default edge
+    is only ever chosen when it is both measured and confirmed to have capacity.
+    """
+    agent_rtts = await get_agent_edge_rtts(r, agent_id)
+    if not agent_rtts:
+        return None
+
+    candidates = [
+        EdgeCandidate(
+            name=edge,
+            has_capacity=await r.zcard(f"bridges:available:{edge}") > 0,
+            agent_rtt_ms=rtt_ms,
+        )
+        for edge, rtt_ms in agent_rtts.items()
+    ]
+    return select_edge(candidates, default_edge=settings.default_edge_name)
 
 
 async def _handle_reconnect(

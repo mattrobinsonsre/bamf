@@ -19,6 +19,7 @@ from bamf.api.dependencies import get_current_user
 from bamf.api.routers.connect import (
     NON_MIGRATABLE_PROTOCOLS,
     _extract_ordinal,
+    _select_edge_for_agent,
     _validate_protocol_override,
     router,
 )
@@ -425,3 +426,44 @@ class TestReconnect:
         )
 
         assert resp.status_code == 503
+
+
+class _EdgeRedis:
+    """Fake Redis for the edge-selection guess: an agent-leg RTT table plus
+    per-edge bridge capacity."""
+
+    def __init__(self, rtts: dict[str, int], capacity: dict[str, int]):
+        self._keys = {f"agent:a1:edge_rtt:{e}": str(ms) for e, ms in rtts.items()}
+        self._capacity = capacity
+
+    async def scan(self, cursor="0", match=None, count=None):
+        import fnmatch
+
+        return "0", [k for k in self._keys if fnmatch.fnmatch(k, match)]
+
+    async def get(self, key):
+        return self._keys.get(key)
+
+    async def zcard(self, key):
+        # key is "bridges:available:{edge}"
+        return self._capacity.get(key.rsplit(":", 1)[-1], 0)
+
+
+@pytest.mark.asyncio
+class TestSelectEdgeForAgent:
+    async def test_selects_agent_nearest_with_capacity(self):
+        r = _EdgeRedis({"eu": 40, "us": 12}, {"eu": 2, "us": 2})
+        assert await _select_edge_for_agent(r, "a1") == "us"
+
+    async def test_skips_nearest_without_capacity(self):
+        # us is nearer but has no bridge → eu is chosen.
+        r = _EdgeRedis({"eu": 40, "us": 12}, {"eu": 2, "us": 0})
+        assert await _select_edge_for_agent(r, "a1") == "eu"
+
+    async def test_none_when_no_measurements(self):
+        # No agent-leg data → caller falls back to the default edge.
+        assert await _select_edge_for_agent(_EdgeRedis({}, {}), "a1") is None
+
+    async def test_none_when_no_capacity_anywhere(self):
+        r = _EdgeRedis({"eu": 40, "us": 12}, {"eu": 0, "us": 0})
+        assert await _select_edge_for_agent(r, "a1") is None
