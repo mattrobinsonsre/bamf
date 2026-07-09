@@ -77,7 +77,9 @@ async def assign_relay_bridge(r, agent_id: str, edge_name: str | None = None) ->
     return bridge_id
 
 
-async def send_relay_connect(r, agent_id: str, bridge_id: str, edge_name: str | None = None) -> None:
+async def send_relay_connect(
+    r, agent_id: str, bridge_id: str, edge_name: str | None = None
+) -> None:
     """Send a relay_connect SSE event to a specific agent instance via Redis pub/sub.
 
     Selects the best instance (preferring one without an active relay) and
