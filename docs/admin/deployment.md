@@ -121,7 +121,7 @@ core:
 ### Bridge
 
 ```yaml
-outpost:
+edge:
   bridge:
     replicas: 2
     resources:
@@ -134,7 +134,7 @@ outpost:
 ```
 
 The bridge is deployed as a StatefulSet with per-pod Services for SNI routing.
-`outpost.bridge.autoscaling.maxReplicas` controls how many Services and
+`edge.bridge.autoscaling.maxReplicas` controls how many Services and
 TLSRoutes are pre-created.
 
 ### Web UI

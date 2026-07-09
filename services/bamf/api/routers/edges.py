@@ -1,6 +1,6 @@
-"""Outpost management routes.
+"""Edge management routes.
 
-Outposts are regional proxy+bridge clusters that register with the
+Edges are regional proxy+bridge clusters that register with the
 central API. The join endpoint is unauthenticated (token in body),
 management endpoints require admin access.
 """
@@ -16,47 +16,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import require_admin, require_admin_or_audit
 from bamf.api.models.common import CursorPage, PaginationParams, SuccessResponse
-from bamf.api.models.outposts import (
-    OutpostJoinRequest,
-    OutpostJoinResponse,
-    OutpostResponse,
+from bamf.api.models.edges import (
+    EdgeJoinRequest,
+    EdgeJoinResponse,
+    EdgeResponse,
 )
 from bamf.auth.ca import get_ca
 from bamf.auth.sessions import Session
 from bamf.config import settings
-from bamf.db.models import Outpost, OutpostToken
+from bamf.db.models import Edge, EdgeToken
 from bamf.db.session import get_db, get_db_read
 from bamf.logging_config import get_logger
 from bamf.services.audit_service import log_audit_event
 
-router = APIRouter(prefix="/outposts", tags=["outposts"])
+router = APIRouter(prefix="/edges", tags=["edges"])
 logger = get_logger(__name__)
 
 
 def _generate_internal_token() -> str:
     """Generate an internal proxy auth token.
 
-    Format: out_int_<32 random hex chars>.
+    Format: edge_int_<32 random hex chars>.
     """
-    return f"out_int_{secrets.token_hex(16)}"
+    return f"edge_int_{secrets.token_hex(16)}"
 
 
 def _generate_bridge_bootstrap_token() -> str:
     """Generate a bridge bootstrap token.
 
-    Format: out_brg_<32 random hex chars>.
+    Format: edge_brg_<32 random hex chars>.
     """
-    return f"out_brg_{secrets.token_hex(16)}"
+    return f"edge_brg_{secrets.token_hex(16)}"
 
 
-@router.post("/join", response_model=OutpostJoinResponse, status_code=status.HTTP_201_CREATED)
-async def join_outpost(
-    request: OutpostJoinRequest,
+@router.post("/join", response_model=EdgeJoinResponse, status_code=status.HTTP_201_CREATED)
+async def join_edge(
+    request: EdgeJoinRequest,
     db: AsyncSession = Depends(get_db),
-) -> OutpostJoinResponse:
-    """Register an outpost using a join token.
+) -> EdgeJoinResponse:
+    """Register an edge using a join token.
 
-    Validates the join token, creates or updates the outpost record,
+    Validates the join token, creates or updates the edge record,
     generates internal and bridge bootstrap tokens, and returns them
     along with the CA certificate.
 
@@ -64,13 +64,13 @@ async def join_outpost(
     """
     token_hash = hashlib.sha256(request.join_token.encode()).hexdigest()
 
-    result = await db.execute(select(OutpostToken).where(OutpostToken.token_hash == token_hash))
+    result = await db.execute(select(EdgeToken).where(EdgeToken.token_hash == token_hash))
     token = result.scalar_one_or_none()
 
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid outpost join token",
+            detail="Invalid edge join token",
         )
 
     now = datetime.now(UTC)
@@ -78,19 +78,19 @@ async def join_outpost(
     if token.is_revoked:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Outpost join token has been revoked",
+            detail="Edge join token has been revoked",
         )
 
     if token.expires_at < now:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Outpost join token has expired",
+            detail="Edge join token has expired",
         )
 
     if token.max_uses is not None and token.use_count >= token.max_uses:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Outpost join token has reached maximum uses",
+            detail="Edge join token has reached maximum uses",
         )
 
     # Generate auth tokens
@@ -99,40 +99,40 @@ async def join_outpost(
     internal_token_hash = hashlib.sha256(internal_token.encode()).hexdigest()
     bridge_bootstrap_token_hash = hashlib.sha256(bridge_bootstrap_token.encode()).hexdigest()
 
-    # Check if outpost with this name already exists (re-join)
-    existing_result = await db.execute(select(Outpost).where(Outpost.name == token.outpost_name))
-    outpost = existing_result.scalar_one_or_none()
+    # Check if edge with this name already exists (re-join)
+    existing_result = await db.execute(select(Edge).where(Edge.name == token.edge_name))
+    edge = existing_result.scalar_one_or_none()
 
-    if outpost:
+    if edge:
         # Re-join: regenerate both tokens (invalidates old deployment)
-        outpost.internal_token_hash = internal_token_hash
-        outpost.bridge_bootstrap_token_hash = bridge_bootstrap_token_hash
-        outpost.region = token.region
-        outpost.updated_at = now
+        edge.internal_token_hash = internal_token_hash
+        edge.bridge_bootstrap_token_hash = bridge_bootstrap_token_hash
+        edge.region = token.region
+        edge.updated_at = now
         logger.info(
-            "Outpost re-joined",
-            outpost_name=outpost.name,
-            outpost_id=str(outpost.id),
+            "Edge re-joined",
+            edge_name=edge.name,
+            edge_id=str(edge.id),
         )
     else:
-        # New outpost
-        outpost = Outpost(
-            name=token.outpost_name,
+        # New edge
+        edge = Edge(
+            name=token.edge_name,
             region=token.region,
             internal_token_hash=internal_token_hash,
             bridge_bootstrap_token_hash=bridge_bootstrap_token_hash,
         )
-        db.add(outpost)
+        db.add(edge)
         logger.info(
-            "Outpost registered",
-            outpost_name=token.outpost_name,
+            "Edge registered",
+            edge_name=token.edge_name,
         )
 
     # Increment token use count
     token.use_count += 1
 
     await db.commit()
-    await db.refresh(outpost)
+    await db.refresh(edge)
 
     # Get CA certificate
     ca = get_ca()
@@ -140,23 +140,23 @@ async def join_outpost(
     await log_audit_event(
         db,
         event_type="admin",
-        action="outpost_joined",
+        action="edge_joined",
         actor_type="system",
-        actor_id=token.outpost_name,
-        target_type="outpost",
-        target_id=str(outpost.id),
+        actor_id=token.edge_name,
+        target_type="edge",
+        target_id=str(edge.id),
         success=True,
         details={
-            "outpost_name": outpost.name,
-            "region": outpost.region,
+            "edge_name": edge.name,
+            "region": edge.region,
             "join_token_name": token.name,
         },
     )
 
-    return OutpostJoinResponse(
-        outpost_id=outpost.id,
-        outpost_name=outpost.name,
-        region=outpost.region,
+    return EdgeJoinResponse(
+        edge_id=edge.id,
+        edge_name=edge.name,
+        region=edge.region,
         internal_token=internal_token,
         bridge_bootstrap_token=bridge_bootstrap_token,
         ca_certificate=ca.ca_cert_pem,
@@ -164,18 +164,18 @@ async def join_outpost(
     )
 
 
-@router.get("", response_model=CursorPage[OutpostResponse])
-async def list_outposts(
+@router.get("", response_model=CursorPage[EdgeResponse])
+async def list_edges(
     pagination: PaginationParams = Depends(),
     include_inactive: bool = False,
     db: AsyncSession = Depends(get_db_read),
     current_user: Session = Depends(require_admin_or_audit),
-) -> CursorPage[OutpostResponse]:
-    """List all registered outposts."""
-    query = select(Outpost).order_by(Outpost.created_at.desc())
+) -> CursorPage[EdgeResponse]:
+    """List all registered edges."""
+    query = select(Edge).order_by(Edge.created_at.desc())
 
     if not include_inactive:
-        query = query.where(Outpost.is_active == True)  # noqa: E712
+        query = query.where(Edge.is_active == True)  # noqa: E712
 
     query = query.limit(pagination.limit + 1)
 
@@ -183,91 +183,91 @@ async def list_outposts(
         import base64
 
         cursor_name = base64.b64decode(pagination.cursor).decode()
-        query = query.where(Outpost.name < cursor_name)
+        query = query.where(Edge.name < cursor_name)
 
     result = await db.execute(query)
-    outposts = list(result.scalars().all())
+    edges = list(result.scalars().all())
 
-    has_more = len(outposts) > pagination.limit
+    has_more = len(edges) > pagination.limit
     if has_more:
-        outposts = outposts[: pagination.limit]
+        edges = edges[: pagination.limit]
 
-    items = [OutpostResponse.from_db(s) for s in outposts]
+    items = [EdgeResponse.from_db(s) for s in edges]
 
     next_cursor = None
-    if has_more and outposts:
+    if has_more and edges:
         import base64
 
-        next_cursor = base64.b64encode(outposts[-1].name.encode()).decode()
+        next_cursor = base64.b64encode(edges[-1].name.encode()).decode()
 
     return CursorPage(items=items, next_cursor=next_cursor, has_more=has_more)
 
 
-@router.get("/{outpost_id}", response_model=OutpostResponse)
-async def get_outpost(
-    outpost_id: UUID,
+@router.get("/{edge_id}", response_model=EdgeResponse)
+async def get_edge(
+    edge_id: UUID,
     db: AsyncSession = Depends(get_db_read),
     current_user: Session = Depends(require_admin_or_audit),
-) -> OutpostResponse:
-    """Get a single outpost by ID."""
-    result = await db.execute(select(Outpost).where(Outpost.id == outpost_id))
-    outpost = result.scalar_one_or_none()
+) -> EdgeResponse:
+    """Get a single edge by ID."""
+    result = await db.execute(select(Edge).where(Edge.id == edge_id))
+    edge = result.scalar_one_or_none()
 
-    if not outpost:
+    if not edge:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Outpost not found",
+            detail="Edge not found",
         )
 
-    return OutpostResponse.from_db(outpost)
+    return EdgeResponse.from_db(edge)
 
 
-@router.delete("/{outpost_id}", response_model=SuccessResponse)
-async def deactivate_outpost(
-    outpost_id: UUID,
+@router.delete("/{edge_id}", response_model=SuccessResponse)
+async def deactivate_edge(
+    edge_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: Session = Depends(require_admin),
 ) -> SuccessResponse:
-    """Deactivate an outpost.
+    """Deactivate an edge.
 
-    Deactivated outposts cannot authenticate. Their proxy and bridge
+    Deactivated edges cannot authenticate. Their proxy and bridge
     pods will fail auth and stop serving traffic. Bridge registrations
     expire via Redis TTL. Agent relay connections are disconnected.
     """
-    result = await db.execute(select(Outpost).where(Outpost.id == outpost_id))
-    outpost = result.scalar_one_or_none()
+    result = await db.execute(select(Edge).where(Edge.id == edge_id))
+    edge = result.scalar_one_or_none()
 
-    if not outpost:
+    if not edge:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Outpost not found",
+            detail="Edge not found",
         )
 
-    if not outpost.is_active:
+    if not edge.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Outpost is already deactivated",
+            detail="Edge is already deactivated",
         )
 
-    outpost.is_active = False
+    edge.is_active = False
     await db.commit()
 
     logger.info(
-        "Outpost deactivated",
-        outpost_name=outpost.name,
+        "Edge deactivated",
+        edge_name=edge.name,
         deactivated_by=current_user.email,
     )
 
     await log_audit_event(
         db,
         event_type="admin",
-        action="outpost_deactivated",
+        action="edge_deactivated",
         actor_type="user",
         actor_id=current_user.email,
-        target_type="outpost",
-        target_id=str(outpost.id),
+        target_type="edge",
+        target_id=str(edge.id),
         success=True,
-        details={"outpost_name": outpost.name},
+        details={"edge_name": edge.name},
     )
 
-    return SuccessResponse(message=f"Outpost '{outpost.name}' has been deactivated")
+    return SuccessResponse(message=f"Edge '{edge.name}' has been deactivated")

@@ -11,10 +11,10 @@ cd "$(dirname "$0")/.."
 HELM=(docker run --rm -v "$PWD:/chart" -w /chart alpine/helm:3.17.2)
 AGENT="agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent"
 TOPOLOGIES=(
-  "core.enabled=true,outpost.enabled=true,agent.enabled=false"
-  "core.enabled=false,outpost.enabled=true,agent.enabled=false"
-  "core.enabled=false,outpost.enabled=false,$AGENT"
-  "core.enabled=true,outpost.enabled=true,$AGENT"
+  "core.enabled=true,edge.enabled=true,agent.enabled=false"
+  "core.enabled=false,edge.enabled=true,agent.enabled=false"
+  "core.enabled=false,edge.enabled=false,$AGENT"
+  "core.enabled=true,edge.enabled=true,$AGENT"
 )
 
 rc=0

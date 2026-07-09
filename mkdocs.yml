@@ -70,7 +70,7 @@ nav:
       - Authentication: architecture/authentication.md
       - Tunnels: architecture/tunnels.md
       - Security: architecture/security.md
-      - Outpost Deployments: architecture/outpost-deployments.md
+      - Edge Deployments: architecture/edge-deployments.md
   - Operations:
       - Production Checklist: operations/production-checklist.md
       - Runbooks: operations/runbooks.md

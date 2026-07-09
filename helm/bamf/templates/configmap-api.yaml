@@ -39,7 +39,7 @@ data:
     # Bridge tunnel port — external port clients use to reach bridge tunnels
     bridge_tunnel_port: {{ .Values.gateway.ports.https | default 443 }}
     # Bridge internal tunnel port — K8s Service port for agent-to-bridge connections
-    bridge_internal_tunnel_port: {{ .Values.outpost.bridge.tunnelPort }}
+    bridge_internal_tunnel_port: {{ .Values.edge.bridge.tunnelPort }}
 
     {{- if .Values.gateway.tunnelDomain }}
     # Tunnel domain for web app proxy (e.g., "tunnel.bamf.local")
@@ -55,9 +55,9 @@ data:
     # Bridge headless service for internal relay communication
     bridge_headless_service: {{ printf "%s-bridge-headless" (include "bamf.fullname" .) | quote }}
 
-    {{- if .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}
+    {{- if .Values.edge.bridge.autoscaling.targetTunnelsPerPod }}
     # Target tunnels per bridge pod — used for non-migratable session placement bias
-    target_tunnels_per_pod: {{ .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}
+    target_tunnels_per_pod: {{ .Values.edge.bridge.autoscaling.targetTunnelsPerPod }}
     {{- end }}
 
     # CORS — explicit origins or auto-derived from gateway hostname

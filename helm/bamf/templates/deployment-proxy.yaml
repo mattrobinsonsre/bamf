@@ -1,4 +1,4 @@
-{{- if .Values.outpost.enabled }}
+{{- if .Values.edge.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,8 +7,8 @@ metadata:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: proxy
 spec:
-  {{- if not .Values.outpost.proxy.autoscaling.enabled }}
-  replicas: {{ .Values.outpost.proxy.replicas }}
+  {{- if not .Values.edge.proxy.autoscaling.enabled }}
+  replicas: {{ .Values.edge.proxy.replicas }}
   {{- end }}
   selector:
     matchLabels:
@@ -17,12 +17,12 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap-proxy.yaml") . | sha256sum }}
-        {{- with .Values.outpost.proxy.podAnnotations }}
+        {{- with .Values.edge.proxy.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
         {{- include "bamf.proxy.selectorLabels" . | nindent 8 }}
-        {{- with .Values.outpost.proxy.podLabels }}
+        {{- with .Values.edge.proxy.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -30,19 +30,19 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.outpost.proxy.terminationGracePeriodSeconds | default 120 }}
+      terminationGracePeriodSeconds: {{ .Values.edge.proxy.terminationGracePeriodSeconds | default 120 }}
       containers:
         - name: proxy
           image: {{ include "bamf.proxy.image" . }}
-          imagePullPolicy: {{ .Values.outpost.proxy.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.edge.proxy.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 8001
               protocol: TCP
           env:
             - name: BAMF_PROXY_API_URL
-              {{- if .Values.outpost.proxy.apiUrl }}
-              value: {{ .Values.outpost.proxy.apiUrl | quote }}
+              {{- if .Values.edge.proxy.apiUrl }}
+              value: {{ .Values.edge.proxy.apiUrl | quote }}
               {{- else }}
               value: "http://{{ include "bamf.fullname" . }}-api:8000"
               {{- end }}
@@ -52,10 +52,10 @@ spec:
                   name: {{ include "bamf.fullname" . }}-proxy-token
                   key: token
             - name: BAMF_PROXY_TUNNEL_DOMAIN
-              value: {{ include "bamf.outpost.tunnelDomain" . | quote }}
-            {{- if .Values.outpost.name }}
-            - name: BAMF_PROXY_OUTPOST_NAME
-              value: {{ .Values.outpost.name | quote }}
+              value: {{ include "bamf.edge.tunnelDomain" . | quote }}
+            {{- if .Values.edge.name }}
+            - name: BAMF_PROXY_EDGE_NAME
+              value: {{ .Values.edge.name | quote }}
             {{- end }}
             {{- if .Values.gateway.enabled }}
             {{- $port := int (.Values.gateway.ports.https | default 443) }}
@@ -76,10 +76,10 @@ spec:
             - name: BAMF_PROXY_BRIDGE_INTERNAL_PORT
               value: "8080"
             - name: BAMF_PROXY_LOG_LEVEL
-              value: {{ .Values.outpost.proxy.logLevel | default "info" | quote }}
+              value: {{ .Values.edge.proxy.logLevel | default "info" | quote }}
             - name: BAMF_PROXY_JSON_LOGS
-              value: {{ .Values.outpost.proxy.jsonLogs | default "true" | quote }}
-            {{- with .Values.outpost.proxy.extraEnv }}
+              value: {{ .Values.edge.proxy.jsonLogs | default "true" | quote }}
+            {{- with .Values.edge.proxy.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
@@ -95,25 +95,25 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.outpost.proxy.resources | nindent 12 }}
-          {{- if gt (int (.Values.outpost.proxy.preStopSleepSeconds | default 15)) 0 }}
+            {{- toYaml .Values.edge.proxy.resources | nindent 12 }}
+          {{- if gt (int (.Values.edge.proxy.preStopSleepSeconds | default 15)) 0 }}
           lifecycle:
             preStop:
               exec:
                 command:
                   - /bin/sh
                   - -c
-                  - sleep {{ .Values.outpost.proxy.preStopSleepSeconds | default 15 }}
+                  - sleep {{ .Values.edge.proxy.preStopSleepSeconds | default 15 }}
           {{- end }}
-      {{- with .Values.outpost.proxy.nodeSelector }}
+      {{- with .Values.edge.proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.outpost.proxy.affinity }}
+      {{- with .Values.edge.proxy.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.outpost.proxy.tolerations }}
+      {{- with .Values.edge.proxy.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -1,14 +1,14 @@
-# RBAC for outpost join job — allows creating/updating K8s Secrets
+# RBAC for edge join job — allows creating/updating K8s Secrets
 # for proxy internal token and bridge bootstrap token.
-{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not .Values.core.enabled) }}
+{{- if and .Values.edge.enabled .Values.edge.joinToken (not .Values.core.enabled) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ $fullName }}-outpost-join
+  name: {{ $fullName }}-edge-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: outpost-join
+    app.kubernetes.io/component: edge-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -17,10 +17,10 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ $fullName }}-outpost-join
+  name: {{ $fullName }}-edge-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: outpost-join
+    app.kubernetes.io/component: edge-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -39,10 +39,10 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ $fullName }}-outpost-join
+  name: {{ $fullName }}-edge-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: outpost-join
+    app.kubernetes.io/component: edge-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "0"
@@ -50,9 +50,9 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ $fullName }}-outpost-join
+  name: {{ $fullName }}-edge-join
 subjects:
   - kind: ServiceAccount
-    name: {{ $fullName }}-outpost-join
+    name: {{ $fullName }}-edge-join
     namespace: {{ .Release.Namespace }}
 {{- end }}

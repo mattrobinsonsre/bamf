@@ -118,7 +118,7 @@ load balancer sits in front of the ingress.
 ## Bridge
 
 ```yaml
-outpost:
+edge:
   bridge:
     replicas: 2                      # Initial replicas
     image:

@@ -20,7 +20,7 @@ New to the project? Read the [README](https://github.com/mattrobinsonsre/bamf/bl
 - [Overview](architecture/overview.md)
 - [Authentication](architecture/authentication.md)
 - [Tunnels](architecture/tunnels.md)
-- [Outpost deployments](architecture/outpost-deployments.md)
+- [Edge deployments](architecture/edge-deployments.md)
 - [Security](architecture/security.md)
 
 ## Administration

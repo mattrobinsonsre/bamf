@@ -1,10 +1,10 @@
-"""GeoIP-based outpost selection for TCP tunnel routing.
+"""GeoIP-based edge selection for TCP tunnel routing.
 
-When a CLI client requests a tunnel, the API selects the nearest outpost
+When a CLI client requests a tunnel, the API selects the nearest edge
 to minimize latency. Selection priority:
-  1. Resource has ``outpost`` pinned → use that outpost (no GeoIP needed)
-  2. GeoIP lookup on client source IP → nearest outpost by haversine distance
-  3. Fallback → configured default outpost
+  1. Resource has ``edge`` pinned → use that edge (no GeoIP needed)
+  2. GeoIP lookup on client source IP → nearest edge by haversine distance
+  3. Fallback → configured default edge
 
 MaxMind GeoLite2-City database is optional. When absent, GeoIP lookups
 return None and the fallback chain continues to step 3.
@@ -46,7 +46,7 @@ def _get_reader():
         return reader
     except Exception:  # noqa: BLE001 — graceful fallback when geoip2/database missing
         _geoip_state["reader"] = None
-        logger.debug("GeoIP database not available — outpost selection will use defaults")
+        logger.debug("GeoIP database not available — edge selection will use defaults")
         return None
 
 
@@ -92,18 +92,18 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def select_nearest_outpost(
+async def select_nearest_edge(
     source_ip: str,
-    outposts: list[dict],
+    edges: list[dict],
 ) -> str | None:
-    """Select the nearest outpost to a client IP.
+    """Select the nearest edge to a client IP.
 
     Args:
         source_ip: Client's source IP address.
-        outposts: List of dicts with keys: name, latitude, longitude.
+        edges: List of dicts with keys: name, latitude, longitude.
 
     Returns:
-        Outpost name, or None if GeoIP lookup fails or no outposts
+        Edge name, or None if GeoIP lookup fails or no edges
         have coordinates.
     """
     client_coords = geoip_lookup(source_ip)
@@ -115,7 +115,7 @@ async def select_nearest_outpost(
     best_name = None
     best_distance = float("inf")
 
-    for op in outposts:
+    for op in edges:
         lat = op.get("latitude")
         lon = op.get("longitude")
         if lat is None or lon is None:
@@ -127,9 +127,9 @@ async def select_nearest_outpost(
 
     if best_name:
         logger.debug(
-            "GeoIP outpost selected",
+            "GeoIP edge selected",
             source_ip=source_ip,
-            outpost=best_name,
+            edge=best_name,
             distance_km=round(best_distance, 1),
         )
 

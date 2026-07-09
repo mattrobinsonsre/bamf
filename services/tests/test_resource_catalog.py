@@ -288,7 +288,7 @@ class TestResourceInfo:
         assert r.hostname is None
         assert r.port is None
         assert r.tunnel_hostname is None
-        assert r.outpost is None
+        assert r.edge is None
         assert r.webhooks == []
 
     def test_with_webhooks(self):

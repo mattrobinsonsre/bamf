@@ -1,15 +1,15 @@
-# Outpost join job — registers a remote outpost with the central API.
-# Only runs when outpost.enabled=true and api.enabled=false (remote outpost).
+# Edge join job — registers a remote edge with the central API.
+# Only runs when edge.enabled=true and api.enabled=false (remote edge).
 # Helm pre-install hook: runs before the main deployment.
-{{- if and .Values.outpost.enabled .Values.outpost.joinToken (not .Values.core.enabled) }}
+{{- if and .Values.edge.enabled .Values.edge.joinToken (not .Values.core.enabled) }}
 {{- $fullName := include "bamf.fullname" . }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $fullName }}-outpost-join
+  name: {{ $fullName }}-edge-join
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
-    app.kubernetes.io/component: outpost-join
+    app.kubernetes.io/component: edge-join
   annotations:
     "helm.sh/hook": pre-install
     "helm.sh/hook-weight": "5"
@@ -21,13 +21,13 @@ spec:
     metadata:
       labels:
         {{- include "bamf.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: outpost-join
+        app.kubernetes.io/component: edge-join
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ $fullName }}-outpost-join
+      serviceAccountName: {{ $fullName }}-edge-join
       restartPolicy: OnFailure
       containers:
         - name: join
@@ -36,11 +36,11 @@ spec:
             - /bin/sh
             - -ec
             - |
-              echo "Registering outpost '{{ .Values.outpost.name }}' with {{ .Values.outpost.apiUrl }}"
+              echo "Registering edge '{{ .Values.edge.name }}' with {{ .Values.edge.apiUrl }}"
 
-              # Call the outpost join endpoint
+              # Call the edge join endpoint
               RESPONSE=$(curl -sSf -X POST \
-                "{{ .Values.outpost.apiUrl }}/api/v1/outposts/join" \
+                "{{ .Values.edge.apiUrl }}/api/v1/edges/join" \
                 -H "Content-Type: application/json" \
                 -d "{\"join_token\": \"${JOIN_TOKEN}\"}" \
                 --retry 3 --retry-delay 5 --retry-max-time 60 \
@@ -148,10 +148,10 @@ spec:
                 }"
 
               echo "Bridge bootstrap token secret created/updated."
-              echo "Outpost '{{ .Values.outpost.name }}' registered successfully."
+              echo "Edge '{{ .Values.edge.name }}' registered successfully."
           env:
             - name: JOIN_TOKEN
-              value: {{ .Values.outpost.joinToken | quote }}
+              value: {{ .Values.edge.joinToken | quote }}
           resources:
             requests:
               cpu: 50m

@@ -6,7 +6,7 @@ can remain stateless (no direct Redis/DB access).
 
 Auth: Shared secret in Authorization: Bearer <token>, validated against
 BAMF_PROXY_INTERNAL_TOKEN env var / settings.proxy_internal_token, or
-against outpost internal tokens stored in the database.
+against edge internal tokens stored in the database.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from bamf.api.bridge_relay import (
 )
 from bamf.auth.sessions import get_session
 from bamf.config import settings
-from bamf.db.models import Outpost, SessionRecording, generate_uuid7
+from bamf.db.models import Edge, SessionRecording, generate_uuid7
 from bamf.db.session import async_session_factory, async_session_factory_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis_client
@@ -57,7 +57,7 @@ class AuthorizeRequest(BaseModel):
     method: str = "GET"
     path: str = "/"
     source_ip: str | None = None
-    outpost_name: str | None = None  # Set from ProxyIdentity by the endpoint
+    edge_name: str | None = None  # Set from ProxyIdentity by the endpoint
 
 
 class SessionInfo(BaseModel):
@@ -137,42 +137,42 @@ class RecordingRequest(BaseModel):
 
 @dataclass
 class ProxyIdentity:
-    """Identity of the calling proxy, including its outpost affiliation."""
+    """Identity of the calling proxy, including its edge affiliation."""
 
-    outpost_name: str | None = None
-
-
-# In-process cache for outpost token → name mapping (avoid DB lookup per request).
-# Format: {token_hash: (outpost_name, cached_at_monotonic)}
-_outpost_token_cache: dict[str, tuple[str, float]] = {}
-_OUTPOST_TOKEN_CACHE_TTL = 60  # seconds
+    edge_name: str | None = None
 
 
-async def _lookup_outpost_by_internal_token(token: str) -> str | None:
-    """Look up outpost name by internal token, with in-process caching."""
+# In-process cache for edge token → name mapping (avoid DB lookup per request).
+# Format: {token_hash: (edge_name, cached_at_monotonic)}
+_edge_token_cache: dict[str, tuple[str, float]] = {}
+_EDGE_TOKEN_CACHE_TTL = 60  # seconds
+
+
+async def _lookup_edge_by_internal_token(token: str) -> str | None:
+    """Look up edge name by internal token, with in-process caching."""
     token_hash = hashlib.sha256(token.encode()).hexdigest()
 
     # Check cache
-    cached = _outpost_token_cache.get(token_hash)
+    cached = _edge_token_cache.get(token_hash)
     if cached:
         name, cached_at = cached
-        if time.monotonic() - cached_at < _OUTPOST_TOKEN_CACHE_TTL:
+        if time.monotonic() - cached_at < _EDGE_TOKEN_CACHE_TTL:
             return name
-        del _outpost_token_cache[token_hash]
+        del _edge_token_cache[token_hash]
 
     # DB lookup
     async with async_session_factory_read() as db:
         result = await db.execute(
-            select(Outpost).where(
-                Outpost.internal_token_hash == token_hash,
-                Outpost.is_active == True,  # noqa: E712
+            select(Edge).where(
+                Edge.internal_token_hash == token_hash,
+                Edge.is_active == True,  # noqa: E712
             )
         )
-        outpost = result.scalar_one_or_none()
+        edge = result.scalar_one_or_none()
 
-    if outpost:
-        _outpost_token_cache[token_hash] = (outpost.name, time.monotonic())
-        return outpost.name
+    if edge:
+        _edge_token_cache[token_hash] = (edge.name, time.monotonic())
+        return edge.name
 
     return None
 
@@ -182,9 +182,9 @@ async def verify_internal_token(request: Request) -> ProxyIdentity:
 
     Checks two sources:
     1. Co-located proxy token (env var, backward compatible)
-    2. Outpost internal tokens (DB hash lookup, cached)
+    2. Edge internal tokens (DB hash lookup, cached)
 
-    Returns ProxyIdentity with outpost_name for routing decisions.
+    Returns ProxyIdentity with edge_name for routing decisions.
     """
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -198,12 +198,12 @@ async def verify_internal_token(request: Request) -> ProxyIdentity:
     # Check 1: co-located proxy token (env var)
     co_located_token = settings.proxy_internal_token
     if co_located_token and secrets.compare_digest(bearer_token, co_located_token):
-        return ProxyIdentity(outpost_name=settings.default_outpost_name)
+        return ProxyIdentity(edge_name=settings.default_edge_name)
 
-    # Check 2: outpost internal token (DB lookup, cached)
-    outpost_name = await _lookup_outpost_by_internal_token(bearer_token)
-    if outpost_name:
-        return ProxyIdentity(outpost_name=outpost_name)
+    # Check 2: edge internal token (DB lookup, cached)
+    edge_name = await _lookup_edge_by_internal_token(bearer_token)
+    if edge_name:
+        return ProxyIdentity(edge_name=edge_name)
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -234,8 +234,8 @@ async def authorize(
     """
     r = get_redis_client()
 
-    # Stamp the outpost identity from the calling proxy
-    req.outpost_name = identity.outpost_name
+    # Stamp the edge identity from the calling proxy
+    req.edge_name = identity.edge_name
 
     # 1. Resolve resource
     resource = None
@@ -262,7 +262,7 @@ async def authorize(
     wh = _match_webhook(resource, req.method, req.path, req.source_ip)
     if wh is not None:
         # Webhook match — resolve relay without auth
-        relay = await _resolve_relay(r, resource, req.outpost_name)
+        relay = await _resolve_relay(r, resource, req.edge_name)
         if relay is None:
             return AuthorizeResponse(
                 allowed=False,
@@ -315,7 +315,7 @@ async def authorize(
         )
 
     # 5. Resolve relay connection
-    relay = await _resolve_relay(r, resource, req.outpost_name)
+    relay = await _resolve_relay(r, resource, req.edge_name)
     if relay is None:
         return AuthorizeResponse(
             allowed=False,
@@ -459,16 +459,16 @@ def _match_webhook(resource, method: str, path: str, client_ip: str | None) -> d
     return None
 
 
-async def _resolve_relay(r, resource, outpost_name: str | None = None) -> RelayInfo | None:
+async def _resolve_relay(r, resource, edge_name: str | None = None) -> RelayInfo | None:
     """Resolve relay bridge and agent for a resource.
 
     Handles: agent status check, relay bridge assignment, relay_connect
     SSE signaling, and agent name lookup.
 
-    When outpost_name is provided, uses per-outpost relay keys
-    (agent:{id}:relay:{outpost_name}) to find bridges in the proxy's
-    outpost. Falls back to the global relay_bridge key for backward
-    compatibility with pre-outpost deployments.
+    When edge_name is provided, uses per-edge relay keys
+    (agent:{id}:relay:{edge_name}) to find bridges in the proxy's
+    edge. Falls back to the global relay_bridge key for backward
+    compatibility with pre-edge deployments.
     """
     agent_id = resource.agent_id
     if not agent_id:
@@ -479,14 +479,14 @@ async def _resolve_relay(r, resource, outpost_name: str | None = None) -> RelayI
     if not agent_status:
         return None
 
-    # Resolve relay bridge — prefer outpost-specific key, fall back to global
+    # Resolve relay bridge — prefer edge-specific key, fall back to global
     relay_bridge = None
-    if outpost_name:
-        relay_bridge = await r.get(f"agent:{agent_id}:relay:{outpost_name}")
+    if edge_name:
+        relay_bridge = await r.get(f"agent:{agent_id}:relay:{edge_name}")
     if relay_bridge is None:
         relay_bridge = await r.get(f"agent:{agent_id}:relay_bridge")
     if relay_bridge is None:
-        relay_bridge = await assign_relay_bridge(r, agent_id, outpost_name)
+        relay_bridge = await assign_relay_bridge(r, agent_id, edge_name)
         if relay_bridge is None:
             return None
         ready = await ensure_relay_connected(r, agent_id, relay_bridge)

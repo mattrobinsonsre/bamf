@@ -28,7 +28,7 @@ Kubernetes access). If proxy traffic is heavy, increase `maxReplicas`.
 Bridges are stateful — they hold persistent mTLS relay/tunnel connections to agents. Scale on tunnel count:
 
 ```yaml
-outpost:
+edge:
   bridge:
     replicas: 2
     autoscaling:
@@ -38,7 +38,7 @@ outpost:
       targetCPUUtilizationPercentage: 70
 ```
 
-**Important:** `outpost.bridge.autoscaling.maxReplicas` controls how many per-pod
+**Important:** `edge.bridge.autoscaling.maxReplicas` controls how many per-pod
 Services and TLSRoutes are pre-created. Scaling beyond `maxReplicas` requires a
 Helm upgrade.
 
@@ -74,7 +74,7 @@ core:
       enabled: true
       minAvailable: 1
 
-outpost:
+edge:
   bridge:
     pdb:
       enabled: true
@@ -119,7 +119,7 @@ The default of 1800s (30 minutes) is conservative. If you don't use
 safely lower it:
 
 ```yaml
-outpost:
+edge:
   bridge:
     terminationGracePeriodSeconds: 120  # sufficient for migration-only workloads
 ```
@@ -145,7 +145,7 @@ core:
     # Stateless — immediate termination is fine.
     terminationGracePeriodSeconds: 30
 
-outpost:
+edge:
   bridge:
     # Set to 120s for spot instances. This gives the bridge 115s (120 - 5s
     # buffer) to migrate tunnels and upload any recordings. Migratable tunnel
@@ -197,7 +197,7 @@ core:
                   operator: In
                   values: [spot]
 
-outpost:
+edge:
   bridge:
     affinity:
       nodeAffinity:

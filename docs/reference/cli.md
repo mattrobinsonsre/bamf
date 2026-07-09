@@ -235,57 +235,57 @@ Revoke a join token.
 bamf tokens revoke <token-name>
 ```
 
-## Outpost Management
+## Edge Management
 
-Manage the tokens and lifecycle for [remote outpost](../admin/deployment.md)
+Manage the tokens and lifecycle for [remote edge](../admin/deployment.md)
 deployments (admin only). Mirrors the agent-token surface above.
 
-### bamf outpost-tokens list
+### bamf edge-tokens list
 
-List outpost join tokens.
-
-```
-bamf outpost-tokens list
-```
-
-### bamf outpost-tokens create
-
-Mint a join token for an outpost. The secret value is printed **once** — store
-it in the outpost's join Secret.
+List edge join tokens.
 
 ```
-bamf outpost-tokens create <name> --outpost <outpost-name> [flags]
+bamf edge-tokens list
+```
+
+### bamf edge-tokens create
+
+Mint a join token for an edge. The secret value is printed **once** — store
+it in the edge's join Secret.
+
+```
+bamf edge-tokens create <name> --edge <edge-name> [flags]
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--outpost` | Outpost name this token registers (required) |
+| `--edge` | Edge name this token registers (required) |
 | `--region` | Human-readable region label |
 | `--ttl` | Hours until the token expires (default: `24`) |
 | `--max-uses` | Max uses (`0` = unlimited) |
 
-### bamf outpost-tokens revoke
+### bamf edge-tokens revoke
 
-Revoke an outpost join token by name.
-
-```
-bamf outpost-tokens revoke <name>
-```
-
-### bamf outposts list
-
-List registered outposts.
+Revoke an edge join token by name.
 
 ```
-bamf outposts list
+bamf edge-tokens revoke <name>
 ```
 
-### bamf outposts delete
+### bamf edges list
 
-Deregister an outpost by ID.
+List registered edges.
 
 ```
-bamf outposts delete <id>
+bamf edges list
+```
+
+### bamf edges delete
+
+Deregister an edge by ID.
+
+```
+bamf edges delete <id>
 ```
 
 ## User Management

@@ -12,7 +12,7 @@ global:
 
 # ── Core (control plane) ────────────────────────────────────────────────────
 # API + Web UI + PostgreSQL + Redis + migrations + CA + bootstrap.
-# Disable for remote outpost-only deployments.
+# Disable for remote edge-only deployments.
 core:
   enabled: true
 
@@ -312,28 +312,28 @@ core:
         cpu: 500m
         memory: 512Mi
 
-# ── Outpost (data plane) ────────────────────────────────────────────────────
+# ── Edge (data plane) ────────────────────────────────────────────────────
 # Proxy + Bridge + tunnel ingress routes.
-# Every proxy+bridge combination is an outpost. The co-located deployment
-# (with API) is just an outpost that shares a cluster with the API.
-outpost:
-  # Enable outpost components (proxy + bridge).
-  # When true, outpost.name is required.
+# Every proxy+bridge combination is an edge. The co-located deployment
+# (with API) is just an edge that shares a cluster with the API.
+edge:
+  # Enable edge components (proxy + bridge).
+  # When true, edge.name is required.
   enabled: true
 
-  # DNS-safe short name for this outpost (e.g., "us-east", "eu", "apac").
+  # DNS-safe short name for this edge (e.g., "us-east", "eu", "apac").
   # Used as a hostname prefix: *.{name}.tunnel.{domain}
   # Must match [a-z][a-z0-9-]*, max 63 characters.
   name: "default"
 
-  # For remote outposts (core is not co-located):
-  # Join token from `POST /api/v1/outpost-tokens`
+  # For remote edges (core is not co-located):
+  # Join token from `POST /api/v1/edge-tokens`
   joinToken: ""
-  # Central API URL (required when outpost is remote)
+  # Central API URL (required when edge is remote)
   apiUrl: ""
 
   # GeoDNS — optional convenience layer for shared *.tunnel.{domain} hostname.
-  # When enabled, the proxy accepts requests on both *.{outpost}.tunnel.{domain}
+  # When enabled, the proxy accepts requests on both *.{edge}.tunnel.{domain}
   # and *.tunnel.{domain}. Does NOT manage DNS records.
   geodns:
     enabled: false
@@ -383,7 +383,7 @@ outpost:
     affinity: {}
     extraEnv: []
 
-    # For outpost deployments, override the API URL to point at a remote central API.
+    # For edge deployments, override the API URL to point at a remote central API.
     # apiUrl: https://bamf.example.com
 
   # ── Bridge Server (Go TCP tunnel gateway) ───────────────────────────────────
@@ -470,8 +470,8 @@ outpost:
     extraVolumes: []
     extraVolumeMounts: []
 
-  # ── Outpost TLS ─────────────────────────────────────────────────────────────
-  # For remote outposts: TLS cert for *.{outpost}.tunnel.{domain}
+  # ── Edge TLS ─────────────────────────────────────────────────────────────
+  # For remote edges: TLS cert for *.{edge}.tunnel.{domain}
   tls:
     existingSecret: ""
     existingGlobalSecret: ""
@@ -586,7 +586,7 @@ agent:
   extraVolumeMounts: []
 
 # ── Gateway / Ingress Routing ────────────────────────────────────────────────
-# Shared across core and outpost. Configures the ingress controller.
+# Shared across core and edge. Configures the ingress controller.
 # provider: traefik (default) or istio
 # traefik: Uses Traefik v3 IngressRoute/IngressRouteTCP CRDs (zero setup on Rancher Desktop)
 # istio:   Uses Gateway API (Gateway, HTTPRoute, TLSRoute) with Istio controller

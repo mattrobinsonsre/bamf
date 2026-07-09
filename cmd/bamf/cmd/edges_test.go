@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeOutpostTestCreds writes a credentials.json into a temp HOME and returns
+// writeEdgeTestCreds writes a credentials.json into a temp HOME and returns
 // nothing — callers set BAMF_API_URL to their test server.
-func writeOutpostTestCreds(t *testing.T) {
+func writeEdgeTestCreds(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -44,21 +44,21 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	return string(out), err
 }
 
-func TestRunOutpostTokensList_NoCredentials(t *testing.T) {
+func TestRunEdgeTokensList_NoCredentials(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	err := runOutpostTokensList(outpostTokensListCmd, nil)
+	err := runEdgeTokensList(edgeTokensListCmd, nil)
 	require.Error(t, err)
 }
 
-func TestRunOutpostTokensList_Success(t *testing.T) {
-	writeOutpostTestCreds(t)
+func TestRunEdgeTokensList_Success(t *testing.T) {
+	writeEdgeTestCreds(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/v1/outpost-tokens", r.URL.Path)
+		require.Equal(t, "/api/v1/edge-tokens", r.URL.Path)
 		require.Equal(t, "GET", r.Method)
 		require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items": []outpostToken{{
-				Name: "eu-token", OutpostName: "eu", UseCount: 1,
+			"items": []edgeToken{{
+				Name: "eu-token", EdgeName: "eu", UseCount: 1,
 				ExpiresAt: time.Now().Add(24 * time.Hour), CreatedBy: "admin@example.com",
 			}},
 		})
@@ -66,24 +66,24 @@ func TestRunOutpostTokensList_Success(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("BAMF_API_URL", srv.URL)
 
-	out, err := captureStdout(t, func() error { return runOutpostTokensList(outpostTokensListCmd, nil) })
+	out, err := captureStdout(t, func() error { return runEdgeTokensList(edgeTokensListCmd, nil) })
 	require.NoError(t, err)
 	require.Contains(t, out, "eu-token")
 	require.Contains(t, out, "eu")
 }
 
-func TestRunOutpostTokensCreate_Success(t *testing.T) {
-	writeOutpostTestCreds(t)
+func TestRunEdgeTokensCreate_Success(t *testing.T) {
+	writeEdgeTestCreds(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/v1/outpost-tokens", r.URL.Path)
+		require.Equal(t, "/api/v1/edge-tokens", r.URL.Path)
 		require.Equal(t, "POST", r.Method)
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, "eu-token", body["name"])
-		require.Equal(t, "eu", body["outpost_name"])
+		require.Equal(t, "eu", body["edge_name"])
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name": "eu-token", "outpost_name": "eu", "token": "bamf_out_secret",
+			"name": "eu-token", "edge_name": "eu", "token": "bamf_edge_secret",
 			"expires_at": time.Now().Add(24 * time.Hour), "use_count": 0,
 			"created_by": "admin@example.com",
 		})
@@ -91,27 +91,27 @@ func TestRunOutpostTokensCreate_Success(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("BAMF_API_URL", srv.URL)
 
-	outpostTokenOutpost = "eu"
-	defer func() { outpostTokenOutpost = "" }()
+	edgeTokenEdge = "eu"
+	defer func() { edgeTokenEdge = "" }()
 
-	out, err := captureStdout(t, func() error { return runOutpostTokensCreate(outpostTokensCreateCmd, []string{"eu-token"}) })
+	out, err := captureStdout(t, func() error { return runEdgeTokensCreate(edgeTokensCreateCmd, []string{"eu-token"}) })
 	require.NoError(t, err)
-	require.Contains(t, out, "bamf_out_secret")
+	require.Contains(t, out, "bamf_edge_secret")
 	require.True(t, strings.Contains(out, "only once"))
 }
 
-func TestRunOutpostsList_Success(t *testing.T) {
-	writeOutpostTestCreds(t)
+func TestRunEdgesList_Success(t *testing.T) {
+	writeEdgeTestCreds(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/v1/outposts", r.URL.Path)
+		require.Equal(t, "/api/v1/edges", r.URL.Path)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items": []outpostInfo{{ID: "out-1", Name: "eu", IsActive: true}},
+			"items": []edgeInfo{{ID: "out-1", Name: "eu", IsActive: true}},
 		})
 	}))
 	defer srv.Close()
 	t.Setenv("BAMF_API_URL", srv.URL)
 
-	out, err := captureStdout(t, func() error { return runOutpostsList(outpostsListCmd, nil) })
+	out, err := captureStdout(t, func() error { return runEdgesList(edgesListCmd, nil) })
 	require.NoError(t, err)
 	require.Contains(t, out, "eu")
 	require.Contains(t, out, "out-1")

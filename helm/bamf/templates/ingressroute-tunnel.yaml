@@ -1,9 +1,9 @@
 # Traefik IngressRoute for web app proxy (wildcard tunnel domain)
 # Web app proxy docs: docs/guides/web-apps.md
-{{- if and .Values.outpost.enabled .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
+{{- if and .Values.edge.enabled .Values.gateway.enabled (eq .Values.gateway.provider "traefik") .Values.gateway.tunnelDomain }}
 {{- $fullName := include "bamf.fullname" . }}
 {{- $entryPoint := .Values.gateway.traefik.entryPoint | default "websecure" }}
-{{- $tunnelDomainEscaped := include "bamf.outpost.tunnelDomain" . | replace "." "\\." }}
+{{- $tunnelDomainEscaped := include "bamf.edge.tunnelDomain" . | replace "." "\\." }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -28,7 +28,7 @@ spec:
           namespace: {{ .Release.Namespace }}
       {{- end }}
       services:
-        {{- if .Values.outpost.enabled }}
+        {{- if .Values.edge.enabled }}
         - name: {{ $fullName }}-proxy
           port: 8001
         {{- else }}

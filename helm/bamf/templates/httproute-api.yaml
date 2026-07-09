@@ -12,7 +12,7 @@ spec:
   hostnames:
     - {{ .Values.gateway.hostname | quote }}
   rules:
-    {{- if .Values.outpost.enabled }}
+    {{- if .Values.edge.enabled }}
     # Kube proxy routes go to proxy service (must come before general /api)
     - matches:
         - path:

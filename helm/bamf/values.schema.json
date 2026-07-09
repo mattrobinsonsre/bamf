@@ -110,7 +110,7 @@
     "core": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Core control plane — API + Web UI + PostgreSQL + Redis + migrations + bootstrap. Disable for remote outpost-only deployments.",
+      "description": "Core control plane — API + Web UI + PostgreSQL + Redis + migrations + bootstrap. Disable for remote edge-only deployments.",
       "properties": {
         "enabled": { "type": "boolean" },
 
@@ -441,25 +441,25 @@
       }
     },
 
-    "outpost": {
+    "edge": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Outpost data plane — proxy + bridge + tunnel ingress routes. Every proxy+bridge combination is an outpost.",
+      "description": "Edge data plane — proxy + bridge + tunnel ingress routes. Every proxy+bridge combination is an edge.",
       "properties": {
         "enabled": { "type": "boolean" },
         "name": {
           "type": "string",
-          "description": "DNS-safe outpost name (e.g., 'us-east', 'eu'). Required when outpost.enabled=true.",
+          "description": "DNS-safe edge name (e.g., 'us-east', 'eu'). Required when edge.enabled=true.",
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 63
         },
         "joinToken": {
           "type": "string",
-          "description": "Outpost join token for remote outpost registration. Required when core.enabled=false."
+          "description": "Edge join token for remote edge registration. Required when core.enabled=false."
         },
         "apiUrl": {
           "type": "string",
-          "description": "Central API URL for remote outposts. Required when core.enabled=false."
+          "description": "Central API URL for remote edges. Required when core.enabled=false."
         },
         "geodns": {
           "type": "object",
@@ -471,7 +471,7 @@
         "tls": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Outpost-specific TLS certificates for tunnel domain.",
+          "description": "Edge-specific TLS certificates for tunnel domain.",
           "properties": {
             "existingSecret": { "type": "string" },
             "existingGlobalSecret": { "type": "string" }
@@ -496,7 +496,7 @@
             "jsonLogs": { "type": "string" },
             "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
             "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-            "apiUrl": { "type": "string", "description": "Override API URL for outpost deployments." },
+            "apiUrl": { "type": "string", "description": "Override API URL for edge deployments." },
             "podAnnotations": { "type": "object" },
             "podLabels": { "type": "object" },
             "nodeSelector": { "type": "object" },

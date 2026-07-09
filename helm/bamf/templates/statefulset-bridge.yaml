@@ -1,4 +1,4 @@
-{{- if .Values.outpost.enabled }}
+{{- if .Values.edge.enabled }}
 # Bridge scaling: docs/operations/scaling.md
 apiVersion: apps/v1
 kind: StatefulSet
@@ -9,8 +9,8 @@ metadata:
     app.kubernetes.io/component: bridge
 spec:
   serviceName: {{ include "bamf.fullname" . }}-bridge-headless
-  {{- if not .Values.outpost.bridge.autoscaling.enabled }}
-  replicas: {{ .Values.outpost.bridge.replicas }}
+  {{- if not .Values.edge.bridge.autoscaling.enabled }}
+  replicas: {{ .Values.edge.bridge.replicas }}
   {{- end }}
   selector:
     matchLabels:
@@ -19,14 +19,14 @@ spec:
     metadata:
       labels:
         {{- include "bamf.bridge.selectorLabels" . | nindent 8 }}
-        {{- with .Values.outpost.bridge.podLabels }}
+        {{- with .Values.edge.bridge.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
-        {{- with .Values.outpost.bridge.podAnnotations }}
+        {{- with .Values.edge.bridge.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -34,29 +34,29 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.outpost.bridge.terminationGracePeriodSeconds }}
-      {{- with .Values.outpost.bridge.podSecurityContext }}
+      terminationGracePeriodSeconds: {{ .Values.edge.bridge.terminationGracePeriodSeconds }}
+      {{- with .Values.edge.bridge.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.outpost.bridge.priorityClassName }}
+      {{- with .Values.edge.bridge.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
-      {{- with .Values.outpost.bridge.topologySpreadConstraints }}
+      {{- with .Values.edge.bridge.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: bridge
-          {{- with .Values.outpost.bridge.securityContext }}
+          {{- with .Values.edge.bridge.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: {{ include "bamf.bridge.image" . }}
-          imagePullPolicy: {{ .Values.outpost.bridge.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.edge.bridge.image.pullPolicy }}
           ports:
             - name: tunnel
-              containerPort: {{ .Values.outpost.bridge.tunnelPort }}
+              containerPort: {{ .Values.edge.bridge.tunnelPort }}
               protocol: TCP
             - name: health
               containerPort: 8080
@@ -65,14 +65,14 @@ spec:
             - name: BAMF_API_URL
               value: http://{{ include "bamf.fullname" . }}-api:8000
             - name: BAMF_TUNNEL_ADDR
-              value: ":{{ .Values.outpost.bridge.tunnelPort }}"
+              value: ":{{ .Values.edge.bridge.tunnelPort }}"
             - name: BAMF_HEALTH_ADDR
               value: ":8080"
             - name: BAMF_TUNNEL_DOMAIN
-              value: {{ include "bamf.outpost.tunnelDomain" . | quote }}
-            {{- if .Values.outpost.name }}
-            - name: BAMF_OUTPOST_NAME
-              value: {{ .Values.outpost.name | quote }}
+              value: {{ include "bamf.edge.tunnelDomain" . | quote }}
+            {{- if .Values.edge.name }}
+            - name: BAMF_EDGE_NAME
+              value: {{ .Values.edge.name | quote }}
             {{- end }}
             # Pod name is predictable: {statefulset}-{ordinal}
             # Bridge extracts ordinal from pod name for bridge ID
@@ -88,17 +88,17 @@ spec:
               value: {{ .Values.tls.internal.minVersion | default "1.3" | quote }}
             # Shutdown timeout = terminationGracePeriodSeconds - 5s buffer before SIGKILL
             - name: BAMF_SHUTDOWN_TIMEOUT
-              value: "{{ sub .Values.outpost.bridge.terminationGracePeriodSeconds 5 }}s"
-            {{- if .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}
+              value: "{{ sub .Values.edge.bridge.terminationGracePeriodSeconds 5 }}s"
+            {{- if .Values.edge.bridge.autoscaling.targetTunnelsPerPod }}
             - name: BAMF_TARGET_TUNNELS_PER_POD
-              value: "{{ .Values.outpost.bridge.autoscaling.targetTunnelsPerPod }}"
+              value: "{{ .Values.edge.bridge.autoscaling.targetTunnelsPerPod }}"
             {{- end }}
-            {{- if .Values.outpost.bridge.bootstrap.enabled }}
+            {{- if .Values.edge.bridge.bootstrap.enabled }}
             - name: BAMF_BOOTSTRAP_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.outpost.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
-                  key: {{ .Values.outpost.bridge.bootstrap.tokenKey | default "token" }}
+                  name: {{ .Values.edge.bridge.bootstrap.tokenSecret | default (printf "%s-bridge-bootstrap" (include "bamf.fullname" .)) }}
+                  key: {{ .Values.edge.bridge.bootstrap.tokenKey | default "token" }}
             - name: BAMF_DATA_DIR
               value: /var/lib/bamf/bridge
             - name: BAMF_TLS_CERT
@@ -108,15 +108,15 @@ spec:
             - name: BAMF_CA_CERT
               value: /var/lib/bamf/bridge/ca.crt
             {{- end }}
-            {{- with .Values.outpost.bridge.extraEnv }}
+            {{- with .Values.edge.bridge.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.outpost.bridge.extraEnvFrom }}
+          {{- with .Values.edge.bridge.extraEnvFrom }}
           envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.outpost.bridge.bootstrap.enabled }}
+            {{- if .Values.edge.bridge.bootstrap.enabled }}
             - name: data
               mountPath: /var/lib/bamf/bridge
             {{- else }}
@@ -124,7 +124,7 @@ spec:
               mountPath: /etc/bamf/tls
               readOnly: true
             {{- end }}
-            {{- with .Values.outpost.bridge.extraVolumeMounts }}
+            {{- with .Values.edge.bridge.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
@@ -142,18 +142,18 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.outpost.bridge.resources | nindent 12 }}
-          {{- if gt (int .Values.outpost.bridge.preStopSleepSeconds) 0 }}
+            {{- toYaml .Values.edge.bridge.resources | nindent 12 }}
+          {{- if gt (int .Values.edge.bridge.preStopSleepSeconds) 0 }}
           lifecycle:
             preStop:
               exec:
                 command:
                   - /bin/sh
                   - -c
-                  - sleep {{ .Values.outpost.bridge.preStopSleepSeconds }}
+                  - sleep {{ .Values.edge.bridge.preStopSleepSeconds }}
           {{- end }}
       volumes:
-        {{- if .Values.outpost.bridge.bootstrap.enabled }}
+        {{- if .Values.edge.bridge.bootstrap.enabled }}
         - name: data
           emptyDir: {}
         {{- else }}
@@ -165,18 +165,18 @@ spec:
             secretName: {{ include "bamf.fullname" . }}-tls
             {{- end }}
         {{- end }}
-        {{- with .Values.outpost.bridge.extraVolumes }}
+        {{- with .Values.edge.bridge.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.outpost.bridge.nodeSelector }}
+      {{- with .Values.edge.bridge.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.outpost.bridge.affinity }}
+      {{- with .Values.edge.bridge.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.outpost.bridge.tolerations }}
+      {{- with .Values.edge.bridge.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -1,9 +1,9 @@
-{{- if and .Values.outpost.enabled .Values.gateway.enabled }}
+{{- if and .Values.edge.enabled .Values.gateway.enabled }}
 {{- $fullName := include "bamf.fullname" . -}}
 {{- $labels := include "bamf.labels" . -}}
-{{- $maxReplicas := int .Values.outpost.bridge.autoscaling.maxReplicas -}}
-{{- $tunnelPort := int .Values.outpost.bridge.tunnelPort -}}
-{{- $annotations := .Values.outpost.bridge.service.annotations -}}
+{{- $maxReplicas := int .Values.edge.bridge.autoscaling.maxReplicas -}}
+{{- $tunnelPort := int .Values.edge.bridge.tunnelPort -}}
+{{- $annotations := .Values.edge.bridge.service.annotations -}}
 
 # Per-pod Services for SNI-based routing
 # Each bridge pod gets its own Service so TLSRoute can target it specifically

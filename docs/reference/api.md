@@ -159,28 +159,28 @@ matches the target agent — an agent may only act as itself.
 }
 ```
 
-## Outposts
+## Edges
 
 Regional proxy+bridge deployments that register with the central control plane.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/outposts/join` | No* | Register an outpost (returns its internal + bridge-bootstrap tokens) |
-| GET | `/outposts` | Admin/Audit | List registered outposts |
-| GET | `/outposts/{id}` | Admin/Audit | Get an outpost |
-| DELETE | `/outposts/{id}` | Admin | Deregister an outpost |
+| POST | `/edges/join` | No* | Register an edge (returns its internal + bridge-bootstrap tokens) |
+| GET | `/edges` | Admin/Audit | List registered edges |
+| GET | `/edges/{id}` | Admin/Audit | Get an edge |
+| DELETE | `/edges/{id}` | Admin | Deregister an edge |
 
-*Join requires a valid outpost join token in the request body.
+*Join requires a valid edge join token in the request body.
 
-## Outpost Tokens
+## Edge Tokens
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/outpost-tokens` | Admin/Audit | List outpost join tokens |
-| POST | `/outpost-tokens` | Admin | Create an outpost join token |
-| GET | `/outpost-tokens/{id}` | Admin/Audit | Get a token |
-| DELETE | `/outpost-tokens/{id}` | Admin | Revoke a token by ID |
-| POST | `/outpost-tokens/{name}/revoke` | Admin | Revoke a token by name |
+| GET | `/edge-tokens` | Admin/Audit | List edge join tokens |
+| POST | `/edge-tokens` | Admin | Create an edge join token |
+| GET | `/edge-tokens/{id}` | Admin/Audit | Get a token |
+| DELETE | `/edge-tokens/{id}` | Admin | Revoke a token by ID |
+| POST | `/edge-tokens/{name}/revoke` | Admin | Revoke a token by name |
 
 ## Certificates
 

@@ -285,10 +285,10 @@ jobs:
       - name: Helm template — all 4 topologies must render
         run: |
           docker run --rm --entrypoint sh -v "$PWD:/chart" -w /chart alpine/helm:3.17.2 -euc '
-            helm template helm/bamf --set core.enabled=true,outpost.enabled=true,agent.enabled=false >/dev/null
-            helm template helm/bamf --set core.enabled=false,outpost.enabled=true,agent.enabled=false >/dev/null
-            helm template helm/bamf --set core.enabled=false,outpost.enabled=false,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
-            helm template helm/bamf --set core.enabled=true,outpost.enabled=true,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
+            helm template helm/bamf --set core.enabled=true,edge.enabled=true,agent.enabled=false >/dev/null
+            helm template helm/bamf --set core.enabled=false,edge.enabled=true,agent.enabled=false >/dev/null
+            helm template helm/bamf --set core.enabled=false,edge.enabled=false,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
+            helm template helm/bamf --set core.enabled=true,edge.enabled=true,agent.enabled=true,agent.joinToken=dummy,agent.config.name=ci-agent >/dev/null
             echo "all 4 topologies rendered"
           '
 

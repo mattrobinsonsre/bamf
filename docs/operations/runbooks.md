@@ -22,7 +22,7 @@ kubectl -n bamf top pod -l app.kubernetes.io/component=bridge
 plain `ssh`/DB tunnels use the reliable stream and reconnect automatically.
 
 ### Resolution
-Raise `outpost.bridge.resources.limits.memory` and roll the StatefulSet. If OOM
+Raise `edge.bridge.resources.limits.memory` and roll the StatefulSet. If OOM
 is driven by session count, lower `targetTunnelsPerPod` (or
 `nonMigratableOversubscribeFactor` for `ssh-audit`-heavy fleets) so the HPA
 scales out sooner.

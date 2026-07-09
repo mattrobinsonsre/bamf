@@ -16,7 +16,7 @@ PUBLIC_ROUTES with the mechanism noted.
 from bamf.api.app import create_application
 
 # Dependency-injected auth guards. verify_internal_token authenticates the
-# co-located/outpost proxy + bridge internal calls.
+# co-located/edge proxy + bridge internal calls.
 AUTH_DEPS = {
     "get_current_session",
     "get_current_user",
@@ -40,7 +40,7 @@ PUBLIC_ROUTES = {
     ("DELETE", "/auth/sessions/user/{email}"),  # manual _require_session + admin check
     # Token-in-body join/bootstrap (the caller has no cert yet).
     ("POST", "/agents/join"),  # agent join token
-    ("POST", "/outposts/join"),  # outpost join token
+    ("POST", "/edges/join"),  # edge join token
     ("POST", "/internal/bridges/bootstrap"),  # bridge bootstrap token
 }
 

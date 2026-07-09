@@ -81,12 +81,12 @@ BAMF is **MPL-2.0** — no usage restrictions, no feature gating:
   tunnels with zero data loss during scale-in, maintenance, and spot
   termination.
 
-- **Multi-region outpost deployments** — deploy proxy+bridge clusters in
+- **Multi-region edge deployments** — deploy proxy+bridge clusters in
   multiple regions with a central API as the single source of truth. Agents
-  relay to all outposts simultaneously so any outpost can serve any resource.
-  GeoIP-based routing directs users to the nearest outpost. Region-pinned
-  resources get stable per-outpost URLs.
-  [Architecture](docs/architecture/outpost-deployments.md)
+  relay to all edges simultaneously so any edge can serve any resource.
+  GeoIP-based routing directs users to the nearest edge. Region-pinned
+  resources get stable per-edge URLs.
+  [Architecture](docs/architecture/edge-deployments.md)
 
 - **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH
   certificates. No long-lived secrets. Session certs encode the authorization
@@ -268,7 +268,7 @@ kubectl --context bamf-prod-cluster get pods
 | [Tunnels](docs/architecture/tunnels.md) | Tunnel protocol, reliable streams |
 | [Authentication](docs/architecture/authentication.md) | Auth flows, connectors, sessions |
 | [Security](docs/architecture/security.md) | Certificate model, trust bootstrap |
-| [Outpost Deployments](docs/architecture/outpost-deployments.md) | Multi-region proxy+bridge topology |
+| [Edge Deployments](docs/architecture/edge-deployments.md) | Multi-region proxy+bridge topology |
 | **Reference** | |
 | [CLI](docs/reference/cli.md) | Complete CLI reference |
 | [API](docs/reference/api.md) | REST API endpoints |

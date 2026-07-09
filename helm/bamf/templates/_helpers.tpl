@@ -116,7 +116,7 @@ Component image helpers — convenience wrappers around bamf.image.
 {{- end }}
 
 {{- define "bamf.bridge.image" -}}
-{{- include "bamf.image" (dict "imageValues" .Values.outpost.bridge.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
+{{- include "bamf.image" (dict "imageValues" .Values.edge.bridge.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
 {{- end }}
 
 {{- define "bamf.web.image" -}}
@@ -128,7 +128,7 @@ Component image helpers — convenience wrappers around bamf.image.
 {{- end }}
 
 {{- define "bamf.proxy.image" -}}
-{{- include "bamf.image" (dict "imageValues" .Values.outpost.proxy.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
+{{- include "bamf.image" (dict "imageValues" .Values.edge.proxy.image "appVersion" .Chart.AppVersion "globalRegistry" .Values.global.imageRegistry) -}}
 {{- end }}
 
 {{/*
@@ -246,7 +246,7 @@ Validate configuration
 {{- fail "Either core.redis.bundled.enabled or core.redis.external.enabled must be true" -}}
 {{- end -}}
 {{- end -}}
-{{- include "bamf.validateOutpost" . -}}
+{{- include "bamf.validateEdge" . -}}
 {{- end -}}
 
 {{/*
@@ -260,15 +260,15 @@ Usage: {{ include "bamf.bridge.podName" (dict "root" . "ordinal" 0) }}
 {{/*
 Bridge SNI hostname for a given ordinal.
 gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
-When outpost.name is set:
-  {ordinal}.bridge.{outpost}.{tunnelDomain}
+When edge.name is set:
+  {ordinal}.bridge.{edge}.{tunnelDomain}
 Otherwise (backward compat):
   {ordinal}.bridge.{tunnelDomain}
 Usage: {{ include "bamf.bridge.sniHostname" (dict "root" . "ordinal" 0) }}
 */}}
 {{- define "bamf.bridge.sniHostname" -}}
-{{- if .root.Values.outpost.name -}}
-{{ .ordinal }}.bridge.{{ .root.Values.outpost.name }}.{{ .root.Values.gateway.tunnelDomain }}
+{{- if .root.Values.edge.name -}}
+{{ .ordinal }}.bridge.{{ .root.Values.edge.name }}.{{ .root.Values.gateway.tunnelDomain }}
 {{- else -}}
 {{ .ordinal }}.bridge.{{ .root.Values.gateway.tunnelDomain }}
 {{- end -}}
@@ -280,50 +280,50 @@ built from gateway.m2m.tunnelDomain. Used for the internal bridge-SNI route set
 that agents/edges on the internal network dial.
 */}}
 {{- define "bamf.bridge.m2mSniHostname" -}}
-{{- if .root.Values.outpost.name -}}
-{{ .ordinal }}.bridge.{{ .root.Values.outpost.name }}.{{ .root.Values.gateway.m2m.tunnelDomain }}
+{{- if .root.Values.edge.name -}}
+{{ .ordinal }}.bridge.{{ .root.Values.edge.name }}.{{ .root.Values.gateway.m2m.tunnelDomain }}
 {{- else -}}
 {{ .ordinal }}.bridge.{{ .root.Values.gateway.m2m.tunnelDomain }}
 {{- end -}}
 {{- end }}
 
 {{/*
-Outpost tunnel domain — the base domain for this outpost's proxy.
+Edge tunnel domain — the base domain for this edge's proxy.
 gateway.tunnelDomain already includes "tunnel." (e.g., "tunnel.bamf.example.com").
-When outpost.name is set: {outpost}.{tunnelDomain}
+When edge.name is set: {edge}.{tunnelDomain}
 Otherwise: {tunnelDomain} (unchanged)
 */}}
-{{- define "bamf.outpost.tunnelDomain" -}}
-{{- if .Values.outpost.name -}}
-{{ .Values.outpost.name }}.{{ .Values.gateway.tunnelDomain }}
+{{- define "bamf.edge.tunnelDomain" -}}
+{{- if .Values.edge.name -}}
+{{ .Values.edge.name }}.{{ .Values.gateway.tunnelDomain }}
 {{- else -}}
 {{ .Values.gateway.tunnelDomain }}
 {{- end -}}
 {{- end }}
 
 {{/*
-Internal (M2M) outpost tunnel domain — mirror of bamf.outpost.tunnelDomain built
+Internal (M2M) edge tunnel domain — mirror of bamf.edge.tunnelDomain built
 from gateway.m2m.tunnelDomain, for the Istio internal passthrough listener.
 */}}
-{{- define "bamf.outpost.m2mTunnelDomain" -}}
-{{- if .Values.outpost.name -}}
-{{ .Values.outpost.name }}.{{ .Values.gateway.m2m.tunnelDomain }}
+{{- define "bamf.edge.m2mTunnelDomain" -}}
+{{- if .Values.edge.name -}}
+{{ .Values.edge.name }}.{{ .Values.gateway.m2m.tunnelDomain }}
 {{- else -}}
 {{ .Values.gateway.m2m.tunnelDomain }}
 {{- end -}}
 {{- end }}
 
 {{/*
-Validate outpost configuration.
+Validate edge configuration.
 Called from deployment templates to fail early on misconfiguration.
 */}}
-{{- define "bamf.validateOutpost" -}}
-{{- if .Values.outpost.enabled -}}
-  {{- if not .Values.outpost.name -}}
-    {{- fail "outpost.name is required when outpost.enabled=true" -}}
+{{- define "bamf.validateEdge" -}}
+{{- if .Values.edge.enabled -}}
+  {{- if not .Values.edge.name -}}
+    {{- fail "edge.name is required when edge.enabled=true" -}}
   {{- end -}}
-  {{- if not (regexMatch "^[a-z][a-z0-9-]*$" .Values.outpost.name) -}}
-    {{- fail "outpost.name must match [a-z][a-z0-9-]* (DNS label)" -}}
+  {{- if not (regexMatch "^[a-z][a-z0-9-]*$" .Values.edge.name) -}}
+    {{- fail "edge.name must match [a-z][a-z0-9-]* (DNS label)" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

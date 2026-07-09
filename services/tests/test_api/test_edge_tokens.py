@@ -1,7 +1,7 @@
-"""Tests for outpost token CRUD endpoints.
+"""Tests for edge token CRUD endpoints.
 
-Tests /api/v1/outpost-tokens endpoints for creating, listing,
-revoking, and getting outpost join tokens.
+Tests /api/v1/edge-tokens endpoints for creating, listing,
+revoking, and getting edge join tokens.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.dependencies import require_admin, require_admin_or_audit
-from bamf.api.routers.outpost_tokens import router
+from bamf.api.routers.edge_tokens import router
 from bamf.auth.sessions import Session
 from bamf.db.session import get_db, get_db_read
 
@@ -45,8 +45,8 @@ AUDIT_SESSION = Session(
 
 
 @pytest.fixture
-def outpost_token_app(db_session: AsyncSession):
-    """Minimal app with outpost-tokens router and auth overrides."""
+def edge_token_app(db_session: AsyncSession):
+    """Minimal app with edge-tokens router and auth overrides."""
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
@@ -67,9 +67,9 @@ def outpost_token_app(db_session: AsyncSession):
 
 
 @pytest.fixture
-async def outpost_token_client(outpost_token_app):
+async def edge_token_client(edge_token_app):
     async with AsyncClient(
-        transport=ASGITransport(app=outpost_token_app),
+        transport=ASGITransport(app=edge_token_app),
         base_url="http://test",
     ) as client:
         yield client
@@ -78,7 +78,7 @@ async def outpost_token_client(outpost_token_app):
 def _patch_audit_log():
     """Patch audit logging to no-op."""
     return patch(
-        "bamf.api.routers.outpost_tokens.log_audit_event",
+        "bamf.api.routers.edge_tokens.log_audit_event",
         new_callable=AsyncMock,
     )
 
@@ -86,34 +86,34 @@ def _patch_audit_log():
 # ── Tests ─────────────────────────────────────────────────────────────────
 
 
-class TestCreateOutpostToken:
+class TestCreateEdgeToken:
     @pytest.mark.asyncio
-    async def test_create_returns_token(self, outpost_token_client, db_session):
+    async def test_create_returns_token(self, edge_token_client, db_session):
         with _patch_audit_log():
-            resp = await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            resp = await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "eu-prod",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "eu-prod"
-        assert data["outpost_name"] == "eu"
-        assert data["token"].startswith("bamf_out_")
+        assert data["edge_name"] == "eu"
+        assert data["token"].startswith("bamf_edge_")
         assert data["is_revoked"] is False
         assert data["use_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_create_with_region_and_max_uses(self, outpost_token_client, db_session):
+    async def test_create_with_region_and_max_uses(self, edge_token_client, db_session):
         with _patch_audit_log():
-            resp = await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            resp = await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "apac-token",
-                    "outpost_name": "apac",
+                    "edge_name": "apac",
                     "region": "Asia Pacific (Tokyo)",
                     "expires_in_hours": 48,
                     "max_uses": 3,
@@ -125,48 +125,48 @@ class TestCreateOutpostToken:
         assert data["max_uses"] == 3
 
     @pytest.mark.asyncio
-    async def test_create_duplicate_name_fails(self, outpost_token_client, db_session):
+    async def test_create_duplicate_name_fails(self, edge_token_client, db_session):
         with _patch_audit_log():
-            await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "dupe-test",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-            resp = await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            resp = await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "dupe-test",
-                    "outpost_name": "us",
+                    "edge_name": "us",
                     "expires_in_hours": 24,
                 },
             )
         assert resp.status_code == 409
 
 
-class TestListOutpostTokens:
+class TestListEdgeTokens:
     @pytest.mark.asyncio
-    async def test_list_empty(self, outpost_token_client):
-        resp = await outpost_token_client.get("/api/v1/outpost-tokens")
+    async def test_list_empty(self, edge_token_client):
+        resp = await edge_token_client.get("/api/v1/edge-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
         assert data["has_more"] is False
 
     @pytest.mark.asyncio
-    async def test_list_includes_created_token(self, outpost_token_client, db_session):
+    async def test_list_includes_created_token(self, edge_token_client, db_session):
         with _patch_audit_log():
-            await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "list-test",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-        resp = await outpost_token_client.get("/api/v1/outpost-tokens")
+        resp = await edge_token_client.get("/api/v1/edge-tokens")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) >= 1
@@ -174,59 +174,59 @@ class TestListOutpostTokens:
         assert "list-test" in names
 
 
-class TestRevokeOutpostToken:
+class TestRevokeEdgeToken:
     @pytest.mark.asyncio
-    async def test_revoke_by_id(self, outpost_token_client, db_session):
+    async def test_revoke_by_id(self, edge_token_client, db_session):
         with _patch_audit_log():
-            create_resp = await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            create_resp = await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "revoke-test",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
         token_id = create_resp.json()["id"]
 
         with _patch_audit_log():
-            resp = await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
+            resp = await edge_token_client.delete(f"/api/v1/edge-tokens/{token_id}")
         assert resp.status_code == 200
         assert "revoked" in resp.json()["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_revoke_by_name(self, outpost_token_client, db_session):
+    async def test_revoke_by_name(self, edge_token_client, db_session):
         with _patch_audit_log():
-            await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "revoke-name-test",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
-            resp = await outpost_token_client.post("/api/v1/outpost-tokens/revoke-name-test/revoke")
+            resp = await edge_token_client.post("/api/v1/edge-tokens/revoke-name-test/revoke")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_revoke_already_revoked_fails(self, outpost_token_client, db_session):
+    async def test_revoke_already_revoked_fails(self, edge_token_client, db_session):
         with _patch_audit_log():
-            create_resp = await outpost_token_client.post(
-                "/api/v1/outpost-tokens",
+            create_resp = await edge_token_client.post(
+                "/api/v1/edge-tokens",
                 json={
                     "name": "double-revoke",
-                    "outpost_name": "eu",
+                    "edge_name": "eu",
                     "expires_in_hours": 24,
                 },
             )
             token_id = create_resp.json()["id"]
-            await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
-            resp = await outpost_token_client.delete(f"/api/v1/outpost-tokens/{token_id}")
+            await edge_token_client.delete(f"/api/v1/edge-tokens/{token_id}")
+            resp = await edge_token_client.delete(f"/api/v1/edge-tokens/{token_id}")
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_revoke_nonexistent_fails(self, outpost_token_client):
+    async def test_revoke_nonexistent_fails(self, edge_token_client):
         with _patch_audit_log():
-            resp = await outpost_token_client.delete(
-                "/api/v1/outpost-tokens/00000000-0000-0000-0000-000000000000"
+            resp = await edge_token_client.delete(
+                "/api/v1/edge-tokens/00000000-0000-0000-0000-000000000000"
             )
         assert resp.status_code == 404
