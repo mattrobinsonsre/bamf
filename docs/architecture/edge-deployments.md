@@ -226,11 +226,18 @@ The connect response lists the `candidate_edges` (name + a bridge ingress to
 probe) so the CLI knows what to measure; it is empty in single-edge deployments,
 where there is nothing to choose between.
 
+**Reconnects re-home.** When a bridge dies mid-tunnel, the reliable stream
+reconnects through a new bridge (no data loss). That reconnect is already
+re-establishing the tunnel, so it re-selects the edge from the client's warm
+legs — a session that opened cold on the agent-nearest guess lands on the true
+rendezvous edge after its first reconnect, for free.
+
 Still to come in the edge flagship
-([#119](https://github.com/mattrobinsonsre/bamf/issues/119)): a seamless single
-hop that migrates a live tunnel to a better edge discovered by the background
-probe. This measured approach replaces the earlier, never-active GeoIP heuristic
-(geographic distance is a lossy proxy for network latency and hard to test).
+([#119](https://github.com/mattrobinsonsre/bamf/issues/119)): a seamless
+*proactive* hop that migrates a still-healthy long-lived tunnel to a better edge
+the moment the background probe finds one, without waiting for a reconnect. This
+measured approach replaces the earlier, never-active GeoIP heuristic (geographic
+distance is a lossy proxy for network latency and hard to test).
 
 ## Resource Region Pinning
 
