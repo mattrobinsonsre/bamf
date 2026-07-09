@@ -24,6 +24,7 @@ from bamf.api.dependencies import (
 )
 from bamf.api.routers.agents import router
 from bamf.auth.sessions import Session
+from bamf.config import settings
 from bamf.db.session import get_db, get_db_read
 from bamf.redis.client import get_redis
 
@@ -327,6 +328,38 @@ class TestAgentHeartbeat:
 
         assert resp.status_code == 200
         mock_redis.setex.assert_any_call(f"agent:{AGENT_UUID}:status", 180, "online")
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_stores_edge_rtts(self, agents_client, mock_db, mock_redis):
+        """Reported agent→edge RTTs are stored per (agent, edge); an empty edge
+        key maps to the configured default edge (#246)."""
+        agent = _make_mock_agent()
+        mock_db.execute = _mock_db_execute_returning(agent)
+
+        with (
+            patch("bamf.api.routers.agents.set_agent_labels", new_callable=AsyncMock),
+            patch("bamf.api.routers.agents.set_agent_resources", new_callable=AsyncMock),
+            patch("bamf.api.routers.agents.set_tunnel_hostnames", new_callable=AsyncMock),
+            patch("bamf.services.agent_instances.register_instance", new_callable=AsyncMock),
+            patch(
+                "bamf.services.agent_instances.update_instance_tunnel_count", new_callable=AsyncMock
+            ),
+            patch("bamf.services.agent_instances.cleanup_stale_instances", new_callable=AsyncMock),
+            patch.object(settings, "default_edge_name", "central"),
+        ):
+            resp = await agents_client.post(
+                f"/api/v1/agents/{AGENT_UUID}/heartbeat",
+                json={
+                    "resources": [],
+                    "instance_id": "inst-1",
+                    "edge_rtts": {"eu": 12, "": 3},
+                },
+            )
+
+        assert resp.status_code == 200
+        # Named edge stored verbatim; empty edge folded into the default.
+        mock_redis.setex.assert_any_call(f"agent:{AGENT_UUID}:edge_rtt:eu", 180, 12)
+        mock_redis.setex.assert_any_call(f"agent:{AGENT_UUID}:edge_rtt:central", 180, 3)
 
     @pytest.mark.asyncio
     async def test_heartbeat_by_name(self, agents_client, mock_db, mock_redis):

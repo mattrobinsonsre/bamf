@@ -10,7 +10,11 @@ from pathlib import Path
 
 import bamf
 from bamf.auth.sessions import SESSION_PREFIX
-from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
+from bamf.redis_keys import (
+    agent_edge_rtt_key,
+    tunnel_session_creds_key,
+    tunnel_session_key,
+)
 
 _BAMF_SRC = Path(bamf.__file__).resolve().parent
 
@@ -18,6 +22,13 @@ _BAMF_SRC = Path(bamf.__file__).resolve().parent
 def test_tunnel_session_key_formats():
     assert tunnel_session_key("abc") == "session:abc"
     assert tunnel_session_creds_key("abc") == "session:abc:client_creds"
+
+
+def test_agent_edge_rtt_key_format():
+    # Keyed under agent:{id}:* (like the sibling relay-assignment key), and
+    # never in the tunnel-session namespace.
+    assert agent_edge_rtt_key("agent-1", "eu") == "agent:agent-1:edge_rtt:eu"
+    assert not agent_edge_rtt_key("a", "eu").startswith("session:")
 
 
 def test_session_namespaces_stay_distinct():

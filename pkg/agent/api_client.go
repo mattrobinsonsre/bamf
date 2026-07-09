@@ -86,13 +86,17 @@ type heartbeatRequest struct {
 	Zone            string              `json:"zone,omitempty"`
 	InstanceID      string              `json:"instance_id,omitempty"`
 	ActiveTunnels   int                 `json:"active_tunnels"`
+	// Measured agent→edge relay latency in milliseconds, keyed by edge name
+	// (the agent-leg of measured-latency edge selection, #246). Empty when
+	// the agent holds no relays or has no samples yet.
+	EdgeRTTs map[string]int `json:"edge_rtts,omitempty"`
 }
 
 // Heartbeat sends a heartbeat to the API with the agent's current
 // resources, labels, cluster_internal flag, instance identifier, and
 // active tunnel count (for self-correcting Redis tunnel counts).
 // Calls: POST /api/v1/agents/{id}/heartbeat
-func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, zone string, instanceID string, activeTunnels int) error {
+func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, zone string, instanceID string, activeTunnels int, edgeRTTs map[string]int) error {
 	hbResources := make([]heartbeatResource, len(resources))
 	for i, r := range resources {
 		hbResources[i] = heartbeatResource{
@@ -115,6 +119,7 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 		Zone:            zone,
 		InstanceID:      instanceID,
 		ActiveTunnels:   activeTunnels,
+		EdgeRTTs:        edgeRTTs,
 	}
 
 	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID), body, nil)

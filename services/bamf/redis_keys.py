@@ -24,3 +24,15 @@ def tunnel_session_key(session_id: str) -> str:
 def tunnel_session_creds_key(session_id: str) -> str:
     """Redis key for a tunnel session's cached client credentials."""
     return f"session:{session_id}:client_creds"
+
+
+def agent_edge_rtt_key(agent_id: str, edge: str) -> str:
+    """Redis key for an agent's measured latency to a given edge (#246).
+
+    Value is the smoothed agent→edge relay RTT in milliseconds, reported on
+    each heartbeat and refreshed with the agent TTL. This is the agent-leg
+    of the rendezvous cost in measured-latency edge selection (#119). Keyed
+    under ``agent:{id}:*`` alongside the sibling ``agent:{id}:relay:{edge}``
+    assignment key, so per-agent cleanup scans reach it.
+    """
+    return f"agent:{agent_id}:edge_rtt:{edge}"

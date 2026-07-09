@@ -75,6 +75,8 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 		require.True(t, body.ClusterInternal)
 		require.Equal(t, "inst-1", body.InstanceID)
 		require.Equal(t, 3, body.ActiveTunnels)
+		// Agent-leg RTT table serializes as edge_rtts (#246 contract).
+		require.Equal(t, map[string]int{"eu": 12, "us-east": 40}, body.EdgeRTTs)
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -90,7 +92,7 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 			Labels:       map[string]string{"env": "prod"},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "internal", "inst-1", 3)
+	err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "internal", "inst-1", 3, map[string]int{"eu": 12, "us-east": 40})
 	require.NoError(t, err)
 }
 
@@ -188,6 +190,6 @@ func TestAPIClient_Heartbeat_WithWebhooks(t *testing.T) {
 			},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "", "inst-1", 0)
+	err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "", "inst-1", 0, nil)
 	require.NoError(t, err)
 }

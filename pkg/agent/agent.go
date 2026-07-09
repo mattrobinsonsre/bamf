@@ -311,10 +311,31 @@ func (a *Agent) loadCertificates(ctx context.Context) error {
 	return nil
 }
 
-// sendHeartbeat sends a single heartbeat with current resources, labels, and
-// active tunnel count (for self-correcting Redis tunnel counts on drift).
+// sendHeartbeat sends a single heartbeat with current resources, labels,
+// active tunnel count (for self-correcting Redis tunnel counts on drift), and
+// the measured agent→edge relay latencies (the agent-leg table, #246).
 func (a *Agent) sendHeartbeat(ctx context.Context) error {
-	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.cfg.Zone, a.instanceID, a.ActiveTunnelCount())
+	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.cfg.Zone, a.instanceID, a.ActiveTunnelCount(), a.edgeRTTs())
+}
+
+// edgeRTTs snapshots each edge relay's smoothed latency in milliseconds,
+// keyed by edge name. Only edges with at least one dial sample are included.
+func (a *Agent) edgeRTTs() map[string]int {
+	a.relaysMu.Lock()
+	defer a.relaysMu.Unlock()
+	if len(a.relays) == 0 {
+		return nil
+	}
+	rtts := make(map[string]int, len(a.relays))
+	for edge, rl := range a.relays {
+		if rtt, ok := rl.RTT(); ok {
+			rtts[edge] = int(rtt.Milliseconds())
+		}
+	}
+	if len(rtts) == 0 {
+		return nil
+	}
+	return rtts
 }
 
 // checkAndRenewCertificate checks if the certificate is past its halfway point and renews it.
