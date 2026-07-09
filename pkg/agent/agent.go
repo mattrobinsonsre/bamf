@@ -40,8 +40,11 @@ type Agent struct {
 	tunnels   map[string]*TunnelHandler
 	tunnelsMu sync.RWMutex
 
-	// HTTP relay
-	relay *RelayManager
+	// HTTP relays — one per edge (keyed by edge name; "" for the default/no-edge
+	// case). The agent maintains a relay to a bridge in every edge it's assigned
+	// so any edge can serve its resources (#194).
+	relays   map[string]*RelayManager
+	relaysMu sync.Mutex
 
 	// Metrics
 	sseConnected atomic.Bool // true when SSE connection is active
@@ -69,6 +72,7 @@ func New(cfg *Config, logger *slog.Logger) (*Agent, error) {
 		logger:     logger,
 		instanceID: generateInstanceID(),
 		tunnels:    make(map[string]*TunnelHandler),
+		relays:     make(map[string]*RelayManager),
 		shutdownCh: make(chan struct{}),
 	}
 
@@ -166,10 +170,12 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 		_ = a.apiClient.DrainInstance(ctx, a.agentID, a.instanceID)
 	}
 
-	// Close relay connection (new relay requests will go to another instance)
-	if a.relay != nil {
-		a.relay.Close()
+	// Close all edge relay connections (new relay requests go to another instance)
+	a.relaysMu.Lock()
+	for _, rl := range a.relays {
+		rl.Close()
 	}
+	a.relaysMu.Unlock()
 
 	// Wait for active tunnels to finish naturally
 	a.waitForTunnels(ctx)
@@ -231,7 +237,14 @@ func (a *Agent) ActiveTunnelCount() int {
 
 // HasActiveRelay returns whether this instance has an active relay connection.
 func (a *Agent) HasActiveRelay() bool {
-	return a.relay != nil && a.relay.IsConnected()
+	a.relaysMu.Lock()
+	defer a.relaysMu.Unlock()
+	for _, rl := range a.relays {
+		if rl.IsConnected() {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) hasCertificates(ctx context.Context) bool {
@@ -479,24 +492,33 @@ func (a *Agent) handleRelayConnect(data map[string]interface{}) {
 		}
 	}
 
-	// Create or reuse relay manager
-	if a.relay == nil {
-		a.relay = NewRelayManager(a.agentID, a.cfg.Resources, tlsCfg, a.logger)
-	} else {
-		a.relay.UpdateResources(a.cfg.Resources)
-		a.relay.UpdateTLSConfig(tlsCfg)
-	}
+	// Which edge this relay is for. "" = the default/no-edge case; each edge
+	// gets its own RelayManager so any edge can serve this agent (#194).
+	edge, _ := data["edge"].(string)
 
-	// Skip if a relay connection is already active. This prevents a race
-	// where auto-reconnect (after SSE detach) and an API relay_connect
-	// command both try to establish a connection simultaneously.
-	if a.relay.IsConnected() {
-		a.logger.Info("relay already connected, skipping relay_connect")
+	// Create or reuse the relay manager for THIS edge.
+	a.relaysMu.Lock()
+	relay := a.relays[edge]
+	if relay == nil {
+		relay = NewRelayManager(a.agentID, a.cfg.Resources, tlsCfg, a.logger)
+		a.relays[edge] = relay
+	} else {
+		relay.UpdateResources(a.cfg.Resources)
+		relay.UpdateTLSConfig(tlsCfg)
+	}
+	connected := relay.IsConnected()
+	a.relaysMu.Unlock()
+
+	// Skip if THIS edge's relay is already active — prevents a race where
+	// auto-reconnect (after SSE detach) and an API relay_connect both try to
+	// connect. A relay_connect for a *different* edge still gets its own relay.
+	if connected {
+		a.logger.Info("relay already connected for edge, skipping relay_connect", "edge", edge)
 		return
 	}
 
-	if err := a.relay.Connect(bridgeHost, int(bridgePort)); err != nil {
-		a.logger.Error("relay connection failed", "error", err)
+	if err := relay.Connect(bridgeHost, int(bridgePort)); err != nil {
+		a.logger.Error("relay connection failed", "edge", edge, "error", err)
 	}
 }
 
