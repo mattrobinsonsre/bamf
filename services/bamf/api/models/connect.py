@@ -23,6 +23,13 @@ class ConnectRequest(BAMFBaseModel):
         "Used by web terminal to specify 'web-ssh' or 'web-db' instead "
         "of the resource's native type (e.g. 'ssh', 'postgres').",
     )
+    client_edge_rtts: dict[str, int] = Field(
+        default_factory=dict,
+        description="Client-measured latency in milliseconds to each edge "
+        "(the client-leg of measured-latency edge selection, #119). Merged "
+        "with the agent-leg to pick the rendezvous edge. Empty on a cold "
+        "client — the API then routes to the agent-nearest edge.",
+    )
 
 
 class ConnectResponse(BAMFBaseModel):
