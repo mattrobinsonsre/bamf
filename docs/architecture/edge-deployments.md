@@ -193,19 +193,30 @@ streams.
 
 ### Edge Selection
 
-For TCP tunnels, the API chooses the edge as follows:
+A tunnel is a rendezvous: `client → edge → agent → target`. The agent→target
+leg is fixed, so the edge that minimizes latency is the one with the shortest
+detour — `argmin_E [ RTT(client, E) + RTT(E, agent) ]` — not simply the edge
+nearest either end. Because internet latency is non-Euclidean (it violates the
+triangle inequality), both legs are **measured**, never inferred from geography.
 
-1. Resource has `edge` pinned → use that edge
-2. Otherwise → the configured default edge
+For TCP tunnels the API chooses the edge as follows:
 
-**Measured-latency nearest-edge selection** — where the connecting client
-probes candidate edges along the real network path, picks the lowest RTT,
-and caches the result — is planned as part of the edge flagship
-([#119](https://github.com/mattrobinsonsre/bamf/issues/119)). It replaces
-the earlier (never-active) GeoIP approach: geographic distance is a lossy
-proxy for network latency under VPN egress, CGNAT, anycast, and asymmetric
-routing, and it is hard to test. Until it lands, a non-pinned resource
-routes through the configured default edge.
+1. Resource has `edge` pinned → use that edge.
+2. Otherwise → the edge **nearest the agent** (lowest measured agent-leg RTT)
+   that has bridge capacity. The agent-leg is measured for free from the
+   relay each agent already holds to every edge (its `tls.Dial` handshake
+   latency), reported on heartbeats and cached in Redis.
+3. Fallback → the configured default edge, when the agent has no measurements
+   yet or no measured edge has capacity.
+
+Step 2 is the **optimistic-connect guess**: the tunnel opens immediately on the
+agent-nearest edge with zero added setup latency. The remaining pieces of the
+edge flagship ([#119](https://github.com/mattrobinsonsre/bamf/issues/119)) —
+the client-leg probe (so the choice becomes the true client+agent rendezvous)
+and a seamless single hop to a better edge discovered in the background — build
+on this without ever blocking connection setup. This measured approach replaces
+the earlier, never-active GeoIP heuristic (geographic distance is a lossy proxy
+for network latency and hard to test).
 
 ## Resource Region Pinning
 
