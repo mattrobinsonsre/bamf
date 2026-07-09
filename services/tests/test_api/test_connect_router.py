@@ -467,3 +467,18 @@ class TestSelectEdgeForAgent:
     async def test_none_when_no_capacity_anywhere(self):
         r = _EdgeRedis({"eu": 40, "us": 12}, {"eu": 0, "us": 0})
         assert await _select_edge_for_agent(r, "a1") is None
+
+    async def test_client_legs_flip_the_choice_to_the_rendezvous(self):
+        # Agent-nearest is us (10). But the client is far from us and near eu,
+        # so the rendezvous (client+agent) is eu: 10+40=50 < 90+10=100.
+        r = _EdgeRedis({"eu": 40, "us": 10}, {"eu": 2, "us": 2})
+        assert await _select_edge_for_agent(r, "a1") == "us"  # no client legs → guess
+        assert (
+            await _select_edge_for_agent(r, "a1", {"eu": 10, "us": 90}) == "eu"
+        )  # with client legs → rendezvous
+
+    async def test_client_leg_only_edge_considered_when_no_agent_leg(self):
+        # An edge the agent never measured but the client did is still a
+        # candidate (tier 3), provided it has capacity.
+        r = _EdgeRedis({}, {"eu": 2})
+        assert await _select_edge_for_agent(r, "a1", {"eu": 15}) == "eu"

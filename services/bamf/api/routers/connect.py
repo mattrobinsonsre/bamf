@@ -210,7 +210,10 @@ async def _handle_new_connection(
     if resource.edge:
         edge_name = resource.edge
     else:
-        edge_name = await _select_edge_for_agent(r, agent_id) or settings.default_edge_name
+        edge_name = (
+            await _select_edge_for_agent(r, agent_id, request.client_edge_rtts)
+            or settings.default_edge_name
+        )
 
     session_id = secrets.token_urlsafe(24)
     return await _issue_session(
@@ -230,27 +233,37 @@ async def _handle_new_connection(
     )
 
 
-async def _select_edge_for_agent(r: aioredis.Redis, agent_id: str) -> str | None:
-    """Pick the edge nearest the agent among those with a live bridge.
+async def _select_edge_for_agent(
+    r: aioredis.Redis,
+    agent_id: str,
+    client_rtts: dict[str, int] | None = None,
+) -> str | None:
+    """Pick the rendezvous edge for a tunnel among those with a live bridge.
 
-    Reads the agent-leg RTT table (#246) and returns the lowest-latency edge
-    that also has bridge capacity — the optimistic-connect guess of
-    measured-latency selection (#119). Returns None when the agent has reported
-    no measurements or no measured edge has a bridge, so the caller falls back
-    to the configured default edge. Conservative by design: a non-default edge
-    is only ever chosen when it is both measured and confirmed to have capacity.
+    Combines the agent-leg RTT table (#246, from Redis) with the client-leg
+    ``client_rtts`` the CLI measured and sent on this request, and returns the
+    edge minimizing ``client + agent`` (:func:`select_edge`). With no client
+    legs this degrades to the agent-nearest optimistic-connect guess (#119).
+
+    Returns None when neither leg names any edge, or no measured edge has bridge
+    capacity, so the caller falls back to the configured default edge.
+    Conservative by design: a non-default edge is only ever chosen when it is
+    measured and confirmed to have capacity.
     """
     agent_rtts = await get_agent_edge_rtts(r, agent_id)
-    if not agent_rtts:
+    client_rtts = client_rtts or {}
+    edges = set(agent_rtts) | set(client_rtts)
+    if not edges:
         return None
 
     candidates = [
         EdgeCandidate(
             name=edge,
             has_capacity=await r.zcard(f"bridges:available:{edge}") > 0,
-            agent_rtt_ms=rtt_ms,
+            agent_rtt_ms=agent_rtts.get(edge),
+            client_rtt_ms=client_rtts.get(edge),
         )
-        for edge, rtt_ms in agent_rtts.items()
+        for edge in edges
     ]
     return select_edge(candidates, default_edge=settings.default_edge_name)
 
