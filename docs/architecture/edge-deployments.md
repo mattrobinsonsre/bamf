@@ -232,12 +232,21 @@ re-establishing the tunnel, so it re-selects the edge from the client's warm
 legs — a session that opened cold on the agent-nearest guess lands on the true
 rendezvous edge after its first reconnect, for free.
 
-Still to come in the edge flagship
-([#119](https://github.com/mattrobinsonsre/bamf/issues/119)): a seamless
-*proactive* hop that migrates a still-healthy long-lived tunnel to a better edge
-the moment the background probe finds one, without waiting for a reconnect. This
-measured approach replaces the earlier, never-active GeoIP heuristic (geographic
-distance is a lossy proxy for network latency and hard to test).
+**Proactive hop.** A still-healthy long-lived tunnel doesn't have to wait for a
+reconnect to benefit. Right after the background probe caches the client-leg,
+the CLI asks the API (`POST /connect/reevaluate`) whether a *meaningfully*
+better rendezvous edge exists — a hysteresis margin (default 25%) so a marginal
+delta never disturbs a working connection. If it does, the CLI migrates once
+(hop-once per session): it drops its bridge connection, the bridge relays the
+break to the agent, and both ends re-home to the better edge through the normal
+reliable-stream reconnect — replaying only unACKed frames, so no data is lost.
+Because the hop is proactive (no failure-detection delay, no backoff), the
+cut-over is a brief sub-second pause, not a stall. Short or cold sessions exit
+before the probe completes and never hop, so the cost falls only on the
+long-lived sessions that gain from it.
+
+This whole measured approach replaces the earlier, never-active GeoIP heuristic
+(geographic distance is a lossy proxy for network latency and hard to test).
 
 ## Resource Region Pinning
 

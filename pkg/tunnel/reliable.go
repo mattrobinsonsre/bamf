@@ -454,6 +454,23 @@ func (s *ReliableStream) Close() error {
 	return nil
 }
 
+// DropConn closes the underlying connection WITHOUT shutting down the stream
+// or sending a close frame, so a blocked Read/Write returns ErrConnLost (not
+// ErrClosed) and the caller's reconnect logic re-establishes the tunnel through
+// a new bridge. This is how a healthy tunnel is proactively migrated to a
+// better edge (#260): the bridge relays the break to the peer, so both ends
+// reconnect and resume via the normal retransmit path — no data is lost (any
+// unACKed frames are replayed on Reconnect). No-op on an already-closed stream.
+func (s *ReliableStream) DropConn() {
+	s.connMu.Lock()
+	conn := s.conn
+	closed := s.closed
+	s.connMu.Unlock()
+	if conn != nil && !closed {
+		_ = conn.Close()
+	}
+}
+
 // IsConnLost reports whether the stream's connection is currently broken.
 func (s *ReliableStream) IsConnLost() bool {
 	return s.isConnLost()

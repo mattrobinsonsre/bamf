@@ -59,11 +59,6 @@ func connectBridge(ctx context.Context, resourceName string) (*reconnectingBridg
 		return nil, nil, fmt.Errorf("failed to connect to bridge: %w", err)
 	}
 
-	// Refresh the client-leg latency cache in the background (#119). This never
-	// touches the live tunnel; a short-lived CLI may exit before it finishes,
-	// which is fine — the next connect re-probes.
-	go maybeRefreshEdgeCache(session.CandidateEdges)
-
 	stream := tunnel.NewStream(conn, tunnel.DefaultBufSize)
 
 	rb := &reconnectingBridge{
@@ -74,7 +69,62 @@ func connectBridge(ctx context.Context, resourceName string) (*reconnectingBridg
 		ctx:          ctx,
 	}
 
+	// In the background (#119/#260): measure the client-leg to each candidate
+	// edge, then ask the API whether a meaningfully-better rendezvous edge
+	// exists and, if so, proactively migrate this tunnel there — once. This
+	// never blocks connection setup; a short-lived CLI that exits first simply
+	// doesn't hop, so the cost lands only on long-lived sessions that benefit.
+	go rb.maybeHopToBetterEdge(session.CandidateEdges)
+
 	return rb, session, nil
+}
+
+// maybeHopToBetterEdge probes the candidate edges, consults the API's hop
+// decision, and — at most once per session — proactively migrates this tunnel
+// to a better edge by forcing a re-homing reconnect.
+func (rb *reconnectingBridge) maybeHopToBetterEdge(candidates []EdgeProbeTarget) {
+	// Probe + cache the client-leg (blocks only this goroutine, not the tunnel).
+	maybeRefreshEdgeCache(candidates)
+
+	rtts := loadFreshEdgeRTTs()
+	if len(rtts) == 0 {
+		return
+	}
+
+	rb.mu.Lock()
+	already := rb.hopped
+	sessionID := rb.session.SessionID
+	rb.mu.Unlock()
+	if already {
+		return
+	}
+
+	hopEdge, err := requestReevaluate(rb.ctx, rb.creds, sessionID, rtts)
+	if err != nil || hopEdge == "" {
+		return
+	}
+	rb.hop()
+}
+
+// hop forces a re-homing reconnect (once) to migrate a healthy tunnel to a
+// better edge. It drops the current bridge connection, which the bridge relays
+// to the agent, so both ends reconnect via the normal retransmit path and
+// re-home to the rendezvous edge (the reconnect carries the warm client-leg,
+// #256). No data is lost — unACKed frames are replayed on Reconnect.
+func (rb *reconnectingBridge) hop() {
+	rb.mu.Lock()
+	if rb.hopped || rb.reconnecting {
+		rb.mu.Unlock()
+		return
+	}
+	rb.hopped = true
+	rb.hopping = true
+	rb.mu.Unlock()
+
+	// Break the current connection; Read/Write then return ErrConnLost and the
+	// existing reconnect path (doReconnect) re-homes immediately (attempt 0, no
+	// backoff) using the freshly-cached client-leg.
+	rb.stream.DropConn()
 }
 
 // reconnectingBridge wraps a ReliableStream and handles bridge reconnection
@@ -91,6 +141,8 @@ type reconnectingBridge struct {
 	mu           sync.Mutex
 	reconnecting bool
 	reconnectCh  chan struct{}
+	hopped       bool // proactive edge hop already attempted (hop-once, #260)
+	hopping      bool // the in-progress reconnect is a proactive hop, not a failure
 }
 
 func (rb *reconnectingBridge) Read(p []byte) (int, error) {
@@ -175,7 +227,15 @@ const (
 )
 
 func (rb *reconnectingBridge) doReconnect() error {
-	fmt.Fprintf(os.Stderr, "\nBridge connection lost, reconnecting...\n")
+	rb.mu.Lock()
+	hopping := rb.hopping
+	rb.hopping = false
+	rb.mu.Unlock()
+	if hopping {
+		fmt.Fprintf(os.Stderr, "\nMigrating to a lower-latency edge...\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "\nBridge connection lost, reconnecting...\n")
+	}
 
 	for attempt := range maxReconnectAttempts {
 		if attempt > 0 {
@@ -403,4 +463,49 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 	}
 
 	return nil, fmt.Errorf("rate limited: max retries exceeded")
+}
+
+// requestReevaluate asks the API whether a live tunnel should proactively hop
+// to a better edge, sending the client's freshly-measured per-edge latency
+// (#260). Returns the edge to migrate to, or "" to stay put. Best-effort: any
+// error yields "" (no hop) so a hiccup never disturbs a working tunnel.
+func requestReevaluate(ctx context.Context, creds *tokenResponse, sessionID string, clientRTTs map[string]int) (string, error) {
+	api := resolveAPIURL()
+	if api == "" {
+		return "", fmt.Errorf("API URL not configured")
+	}
+	u, err := url.Parse(api)
+	if err != nil {
+		return "", err
+	}
+	u.Path = "/api/v1/connect/reevaluate"
+
+	reqData, _ := json.Marshal(map[string]any{
+		"session_id":       sessionID,
+		"client_edge_rtts": clientRTTs,
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(reqData))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+creds.SessionToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("reevaluate error: %s - %s", resp.Status, string(body))
+	}
+
+	var out struct {
+		HopEdge string `json:"hop_edge"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", err
+	}
+	return out.HopEdge, nil
 }

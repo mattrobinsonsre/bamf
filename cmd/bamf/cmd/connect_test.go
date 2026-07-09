@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mattrobinsonsre/bamf/pkg/tunnel"
 	"github.com/stretchr/testify/require"
 )
 
@@ -367,3 +369,91 @@ func (e *errRWC) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (e *errRWC) Close() error { return nil }
+
+// ── Tests: reevaluate + proactive edge hop (#260) ────────────────────
+
+func TestRequestReevaluate_ReturnsHopEdge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/connect/reevaluate", r.URL.Path)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "sess-1", body["session_id"])
+		rtts, ok := body["client_edge_rtts"].(map[string]any)
+		require.True(t, ok)
+		require.EqualValues(t, 12, rtts["eu"])
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"hop_edge": "us"}))
+	}))
+	defer srv.Close()
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	edge, err := requestReevaluate(context.Background(), &tokenResponse{SessionToken: "tok"},
+		"sess-1", map[string]int{"eu": 12})
+	require.NoError(t, err)
+	require.Equal(t, "us", edge)
+}
+
+func TestRequestReevaluate_NullMeansStay(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"hop_edge": nil}))
+	}))
+	defer srv.Close()
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	edge, err := requestReevaluate(context.Background(), &tokenResponse{}, "s", nil)
+	require.NoError(t, err)
+	require.Equal(t, "", edge)
+}
+
+func TestRequestReevaluate_ErrorYieldsNoHop(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	edge, err := requestReevaluate(context.Background(), &tokenResponse{}, "s", nil)
+	require.Error(t, err)
+	require.Equal(t, "", edge)
+}
+
+func TestReconnectingBridge_HopDropsConnOnce(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() { c, _ := ln.Accept(); accepted <- c }()
+	clientConn, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	peer := <-accepted
+	defer peer.Close()
+
+	stream := tunnel.NewStream(clientConn, tunnel.DefaultBufSize)
+	defer stream.Close()
+	rb := &reconnectingBridge{
+		stream:  stream,
+		session: &ConnectResponse{SessionID: "s"},
+		ctx:     context.Background(),
+	}
+
+	readErr := make(chan error, 1)
+	go func() { _, err := rb.stream.Read(make([]byte, 8)); readErr <- err }()
+	time.Sleep(20 * time.Millisecond) // let the Read block on the healthy conn
+
+	rb.hop()
+	rb.mu.Lock()
+	require.True(t, rb.hopped)
+	rb.mu.Unlock()
+
+	select {
+	case err := <-readErr:
+		require.ErrorIs(t, err, tunnel.ErrConnLost) // hop dropped the conn → reconnectable break
+	case <-time.After(2 * time.Second):
+		t.Fatal("hop did not drop the connection")
+	}
+
+	// Hop-once: a second hop() is a no-op and must not panic.
+	rb.hop()
+	rb.mu.Lock()
+	require.True(t, rb.hopped)
+	rb.mu.Unlock()
+}
