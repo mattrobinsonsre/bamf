@@ -119,3 +119,47 @@ class TestGetAgentEdgeRTTs:
     async def test_skips_malformed_values(self):
         r = _FakeRedis({"agent:a1:edge_rtt:eu": "not-a-number", "agent:a1:edge_rtt:us": "7"})
         assert await get_agent_edge_rtts(r, "a1") == {"us": 7}
+
+
+class TestHopTarget:
+    def test_stays_when_current_is_already_best(self):
+        from bamf.services.edge_selection import hop_target
+
+        c = [_c("eu", agent=10, client=10), _c("us", agent=50, client=50)]
+        assert hop_target("eu", c) is None
+
+    def test_stays_when_improvement_below_margin(self):
+        from bamf.services.edge_selection import hop_target
+
+        # current eu=100, best us=90 → only 10% better, under the 25% margin.
+        c = [_c("eu", agent=50, client=50), _c("us", agent=45, client=45)]
+        assert hop_target("eu", c, margin=0.25) is None
+
+    def test_hops_when_improvement_exceeds_margin(self):
+        from bamf.services.edge_selection import hop_target
+
+        # current eu=100, best us=40 → 60% better, well over the margin.
+        c = [_c("eu", agent=50, client=50), _c("us", agent=20, client=20)]
+        assert hop_target("eu", c, margin=0.25) == "us"
+
+    def test_stays_when_winner_cannot_be_fully_costed(self):
+        from bamf.services.edge_selection import hop_target
+
+        # us wins on the agent-only tier but has no client leg → don't disturb a
+        # healthy tunnel on a partial signal.
+        c = [_c("eu", agent=50, client=50), _c("us", agent=1)]
+        assert hop_target("eu", c) is None
+
+    def test_hops_when_current_edge_cannot_be_costed(self):
+        from bamf.services.edge_selection import hop_target
+
+        # We're on eu but have no legs for it; us is fully measured → hop.
+        c = [_c("eu"), _c("us", agent=20, client=20)]
+        assert hop_target("eu", c) == "us"
+
+    def test_never_hops_to_an_edge_without_capacity(self):
+        from bamf.services.edge_selection import hop_target
+
+        # us is far cheaper but has no bridge → select_edge excludes it → stay.
+        c = [_c("eu", agent=50, client=50), _c("us", capacity=False, agent=1, client=1)]
+        assert hop_target("eu", c) is None

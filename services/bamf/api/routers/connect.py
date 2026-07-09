@@ -52,7 +52,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.agent_commands import build_tunnel_command, enqueue_agent_command
 from bamf.api.dependencies import get_current_user
-from bamf.api.models.connect import ConnectRequest, ConnectResponse, EdgeProbeTarget
+from bamf.api.models.connect import (
+    ConnectRequest,
+    ConnectResponse,
+    EdgeProbeTarget,
+    ReevaluateRequest,
+    ReevaluateResponse,
+)
 from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
 from bamf.auth.sessions import Session
 from bamf.config import settings
@@ -65,6 +71,7 @@ from bamf.services.bridge_routing import resolve_agent_bridge_endpoint
 from bamf.services.edge_selection import (
     EdgeCandidate,
     get_agent_edge_rtts,
+    hop_target,
     select_edge,
 )
 from bamf.services.rbac_service import check_access
@@ -129,6 +136,53 @@ async def connect_to_resource(
     if request.reconnect_session_id:
         return await _handle_reconnect(request, db, r, current_user)
     return await _handle_new_connection(request, db, r, current_user)
+
+
+@router.post("/reevaluate", response_model=ReevaluateResponse)
+async def reevaluate_session_edge(
+    request: ReevaluateRequest,
+    r: aioredis.Redis = Depends(get_redis),
+    current_user: Session = Depends(get_current_user),
+) -> ReevaluateResponse:
+    """Ask whether a live tunnel should proactively hop to a better edge (#260).
+
+    Read-only: computes the current best rendezvous edge from the agent-leg
+    (Redis) and the client's freshly-measured client-leg, and returns a hop
+    target only when it beats the session's current edge by the hysteresis
+    margin. No side effects — the CLI acts on the answer by driving the normal
+    reconnect (which re-homes both ends, #256). The caller enforces hop-once.
+    """
+    raw = await r.get(tunnel_session_key(request.session_id))
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found or expired",
+        )
+    session_data = json.loads(raw)
+    if session_data.get("user_email") != current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session does not belong to this user",
+        )
+
+    current_edge = session_data.get("edge_name")
+    agent_id = session_data.get("agent_id")
+    if not current_edge or not agent_id:
+        return ReevaluateResponse(hop_edge=None)
+
+    agent_rtts = await get_agent_edge_rtts(r, agent_id)
+    client_rtts = request.client_edge_rtts
+    edges = set(agent_rtts) | set(client_rtts) | {current_edge}
+    candidates = [
+        EdgeCandidate(
+            name=edge,
+            has_capacity=await r.zcard(f"bridges:available:{edge}") > 0,
+            agent_rtt_ms=agent_rtts.get(edge),
+            client_rtt_ms=client_rtts.get(edge),
+        )
+        for edge in edges
+    ]
+    return ReevaluateResponse(hop_edge=hop_target(current_edge, candidates))
 
 
 async def _handle_new_connection(

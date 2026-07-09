@@ -32,6 +32,26 @@ class ConnectRequest(BAMFBaseModel):
     )
 
 
+class ReevaluateRequest(BAMFBaseModel):
+    """Ask whether a live tunnel should hop to a better edge (#260)."""
+
+    session_id: str = Field(..., description="The live tunnel's session id")
+    client_edge_rtts: dict[str, int] = Field(
+        default_factory=dict,
+        description="The client's freshly-measured per-edge latency (ms).",
+    )
+
+
+class ReevaluateResponse(BAMFBaseModel):
+    """The hop decision for a live tunnel."""
+
+    hop_edge: str | None = Field(
+        default=None,
+        description="Edge to migrate the tunnel to, or null to stay put. Applies "
+        "hysteresis — only set when a meaningfully better rendezvous edge exists.",
+    )
+
+
 class EdgeProbeTarget(BAMFBaseModel):
     """One edge the client should latency-probe for the client-leg (#119).
 
