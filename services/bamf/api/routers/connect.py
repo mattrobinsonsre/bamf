@@ -52,7 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.agent_commands import build_tunnel_command, enqueue_agent_command
 from bamf.api.dependencies import get_current_user
-from bamf.api.models.connect import ConnectRequest, ConnectResponse
+from bamf.api.models.connect import ConnectRequest, ConnectResponse, EdgeProbeTarget
 from bamf.auth.ca import get_ca, serialize_certificate, serialize_private_key
 from bamf.auth.sessions import Session
 from bamf.config import settings
@@ -266,6 +266,29 @@ async def _select_edge_for_agent(
         for edge in edges
     ]
     return select_edge(candidates, default_edge=settings.default_edge_name)
+
+
+async def _build_candidate_edges(r: aioredis.Redis, agent_id: str) -> list[EdgeProbeTarget]:
+    """List the edges the client should latency-probe for its client-leg (#119).
+
+    Candidates are the edges the agent relays to (has a measured agent-leg, #246)
+    that also have a live bridge; each carries that bridge's public ingress to
+    TCP-probe. Returns [] when there is fewer than one alternative to probe
+    (single-edge deployments), so a client with one choice never probes.
+    """
+    agent_rtts = await get_agent_edge_rtts(r, agent_id)
+    targets: list[EdgeProbeTarget] = []
+    for edge in sorted(agent_rtts):
+        bridges = await r.zrangebyscore(f"bridges:available:{edge}", "-inf", "+inf", start=0, num=1)
+        if not bridges:
+            continue
+        info = await r.hgetall(f"bridge:{bridges[0]}")
+        host = info.get("hostname")
+        if host:
+            targets.append(
+                EdgeProbeTarget(name=edge, probe_host=host, probe_port=settings.bridge_tunnel_port)
+            )
+    return targets if len(targets) >= 2 else []
 
 
 async def _handle_reconnect(
@@ -620,4 +643,5 @@ async def _issue_session(
         session_id=session_id,
         session_expires_at=expires_at,
         resource_type=resource_type,
+        candidate_edges=await _build_candidate_edges(r, agent_id),
     )

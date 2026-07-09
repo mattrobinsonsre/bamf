@@ -202,21 +202,35 @@ triangle inequality), both legs are **measured**, never inferred from geography.
 For TCP tunnels the API chooses the edge as follows:
 
 1. Resource has `edge` pinned → use that edge.
-2. Otherwise → the edge **nearest the agent** (lowest measured agent-leg RTT)
-   that has bridge capacity. The agent-leg is measured for free from the
-   relay each agent already holds to every edge (its `tls.Dial` handshake
-   latency), reported on heartbeats and cached in Redis.
+2. Otherwise, among edges with bridge capacity, `argmin` of the measured legs:
+   - **both legs** known → the true rendezvous `client-leg + agent-leg`;
+   - only the **agent-leg** (a cold client that hasn't probed yet) → the edge
+     nearest the agent — the *optimistic-connect guess*.
 3. Fallback → the configured default edge, when the agent has no measurements
-   yet or no measured edge has capacity.
+   or no measured edge has capacity.
 
-Step 2 is the **optimistic-connect guess**: the tunnel opens immediately on the
-agent-nearest edge with zero added setup latency. The remaining pieces of the
-edge flagship ([#119](https://github.com/mattrobinsonsre/bamf/issues/119)) —
-the client-leg probe (so the choice becomes the true client+agent rendezvous)
-and a seamless single hop to a better edge discovered in the background — build
-on this without ever blocking connection setup. This measured approach replaces
-the earlier, never-active GeoIP heuristic (geographic distance is a lossy proxy
-for network latency and hard to test).
+**The two legs are measured, never inferred, and gathered independently:**
+
+- **Agent-leg** (`RTT(E, agent)`) is free — each agent already holds a relay to
+  every edge, so its `tls.Dial` handshake latency is a per-edge sample, reported
+  on heartbeats and cached in Redis.
+- **Client-leg** (`RTT(client, E)`) is measured by the CLI: after a tunnel is
+  up, it TCP-probes each candidate edge's regional ingress **in the background**
+  (never blocking the connection), caches the vector in `~/.bamf/edges.json`, and
+  sends it on the next `POST /connect` so the API can compute the true
+  rendezvous. A cold or short-lived client simply routes to the agent-nearest
+  guess — the latency work self-selects onto the long-lived sessions that
+  benefit from it.
+
+The connect response lists the `candidate_edges` (name + a bridge ingress to
+probe) so the CLI knows what to measure; it is empty in single-edge deployments,
+where there is nothing to choose between.
+
+Still to come in the edge flagship
+([#119](https://github.com/mattrobinsonsre/bamf/issues/119)): a seamless single
+hop that migrates a live tunnel to a better edge discovered by the background
+probe. This measured approach replaces the earlier, never-active GeoIP heuristic
+(geographic distance is a lossy proxy for network latency and hard to test).
 
 ## Resource Region Pinning
 

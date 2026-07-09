@@ -32,6 +32,19 @@ class ConnectRequest(BAMFBaseModel):
     )
 
 
+class EdgeProbeTarget(BAMFBaseModel):
+    """One edge the client should latency-probe for the client-leg (#119).
+
+    ``probe_host``/``probe_port`` is a reachable bridge ingress in that edge; a
+    TCP-connect to it measures the client→edge leg. The client caches the vector
+    and sends it back as ``client_edge_rtts`` on the next connect.
+    """
+
+    name: str = Field(..., description="Edge name")
+    probe_host: str = Field(..., description="Bridge ingress hostname to probe")
+    probe_port: int = Field(..., description="Bridge ingress port to probe")
+
+
 class ConnectResponse(BAMFBaseModel):
     """Connection response with bridge info and session certificate.
 
@@ -48,3 +61,8 @@ class ConnectResponse(BAMFBaseModel):
     session_id: str = Field(..., description="Session identifier (also in cert SAN)")
     session_expires_at: datetime = Field(..., description="Session certificate expiry")
     resource_type: str = Field(..., description="Type of resource (ssh, postgres, etc.)")
+    candidate_edges: list[EdgeProbeTarget] = Field(
+        default_factory=list,
+        description="Edges the client should latency-probe in the background to "
+        "measure its client-leg (#119). Empty in single-edge deployments.",
+    )
