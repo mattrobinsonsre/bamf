@@ -186,24 +186,26 @@ streams.
 ### TCP Tunnels (SSH, DB)
 
 1. CLI calls API `POST /api/v1/connect` with resource name
-2. API determines nearest edge to the CLI client (GeoIP)
+2. API determines the edge for the resource (see Edge Selection below)
 3. API selects a bridge in the chosen edge
 4. API issues session certs, sends dial command to agent
 5. CLI connects to `N.bridge.{edge}.tunnel.{domain}` via mTLS
 
-### GeoIP Edge Selection
+### Edge Selection
 
-For TCP tunnels, the API picks the edge nearest to the CLI client:
+For TCP tunnels, the API chooses the edge as follows:
 
-1. MaxMind GeoLite2-City database maps source IP → lat/lon
-2. Haversine distance to each edge's coordinates
-3. Nearest edge is selected
+1. Resource has `edge` pinned → use that edge
+2. Otherwise → the configured default edge
 
-**Fallback chain:**
-1. Resource has `edge` pinned → use that edge (no GeoIP needed)
-2. GeoIP lookup succeeds → nearest edge by distance
-3. GeoIP lookup fails (private IP, unknown) → use configured default edge
-4. No edges available → error
+**Measured-latency nearest-edge selection** — where the connecting client
+probes candidate edges along the real network path, picks the lowest RTT,
+and caches the result — is planned as part of the edge flagship
+([#119](https://github.com/mattrobinsonsre/bamf/issues/119)). It replaces
+the earlier (never-active) GeoIP approach: geographic distance is a lossy
+proxy for network latency under VPN egress, CGNAT, anycast, and asymmetric
+routing, and it is hard to test. Until it lands, a non-pinned resource
+routes through the configured default edge.
 
 ## Resource Region Pinning
 

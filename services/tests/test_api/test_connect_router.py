@@ -253,7 +253,6 @@ class TestNewConnection:
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.settings") as mock_settings,
         ):
             mock_settings.target_tunnels_per_pod = 10
@@ -287,7 +286,6 @@ class TestNewConnection:
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.get_ca", return_value=ca),
             patch("bamf.api.routers.connect.serialize_certificate", return_value=b"CERT-PEM"),
             patch("bamf.api.routers.connect.serialize_private_key", return_value=b"KEY-PEM"),
@@ -336,7 +334,6 @@ class TestNewConnection:
         with (
             patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
             patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
-            patch("bamf.api.routers.connect._geoip_select_edge", new=AsyncMock(return_value=None)),
             patch("bamf.api.routers.connect.get_ca", return_value=ca),
             patch("bamf.api.routers.connect.serialize_certificate", return_value=b"CERT"),
             patch("bamf.api.routers.connect.serialize_private_key", return_value=b"KEY"),

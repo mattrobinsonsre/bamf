@@ -16,7 +16,6 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -260,10 +259,6 @@ class Edge(Base):
     # Auth tokens (SHA256 hashes)
     internal_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     bridge_bootstrap_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-
-    # GeoIP routing
-    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

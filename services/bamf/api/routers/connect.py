@@ -47,7 +47,7 @@ import secrets
 from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bamf.api.agent_commands import build_tunnel_command, enqueue_agent_command
@@ -111,7 +111,6 @@ def _validate_protocol_override(protocol: str, native_type: str) -> None:
 @router.post("", response_model=ConnectResponse)
 async def connect_to_resource(
     request: ConnectRequest,
-    http_request: Request,
     db: AsyncSession = Depends(get_db),
     r: aioredis.Redis = Depends(get_redis),
     current_user: Session = Depends(get_current_user),
@@ -124,11 +123,7 @@ async def connect_to_resource(
     """
     if request.reconnect_session_id:
         return await _handle_reconnect(request, db, r, current_user)
-    # Client IP for GeoIP edge selection (TCP tunnels).
-    client_ip = http_request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if not client_ip and http_request.client:
-        client_ip = http_request.client.host
-    return await _handle_new_connection(request, db, r, current_user, client_ip=client_ip or None)
+    return await _handle_new_connection(request, db, r, current_user)
 
 
 async def _handle_new_connection(
@@ -136,8 +131,6 @@ async def _handle_new_connection(
     db: AsyncSession,
     r: aioredis.Redis,
     current_user: Session,
-    *,
-    client_ip: str | None = None,
 ) -> ConnectResponse:
     """Create a new tunnel session (standard flow).
 
@@ -203,12 +196,10 @@ async def _handle_new_connection(
         resource_type = request.protocol
 
     # ── 5. Determine edge for bridge selection ───────────────────
-    # Priority: resource pin > GeoIP > default
-    edge_name = resource.edge
-    if not edge_name and client_ip:
-        edge_name = await _geoip_select_edge(db, client_ip)
-    if not edge_name:
-        edge_name = settings.default_edge_name
+    # Priority: resource pin > default. Measured-latency nearest-edge
+    # selection is tracked under the edge flagship (#119); until then a
+    # non-pinned resource routes through the configured default edge.
+    edge_name = resource.edge or settings.default_edge_name
 
     session_id = secrets.token_urlsafe(24)
     return await _issue_session(
@@ -581,31 +572,3 @@ async def _issue_session(
         session_expires_at=expires_at,
         resource_type=resource_type,
     )
-
-
-async def _geoip_select_edge(db: AsyncSession, client_ip: str) -> str | None:
-    """Select the nearest edge to the client using GeoIP.
-
-    Queries active edges from the database and uses haversine distance
-    to find the closest one to the client's IP geolocation.
-    """
-    from sqlalchemy import select as sa_select
-
-    from bamf.db.models import Edge
-    from bamf.services.geoip import select_nearest_edge
-
-    result = await db.execute(
-        sa_select(Edge.name, Edge.latitude, Edge.longitude).where(
-            Edge.is_active.is_(True),
-            Edge.latitude.isnot(None),
-            Edge.longitude.isnot(None),
-        )
-    )
-    edges = [
-        {"name": row.name, "latitude": row.latitude, "longitude": row.longitude}
-        for row in result.all()
-    ]
-    if not edges:
-        return None
-
-    return await select_nearest_edge(client_ip, edges)
