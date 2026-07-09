@@ -453,3 +453,28 @@ func TestConcurrentReadWrite(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestDropConnMakesBlockedReadReturnConnLost(t *testing.T) {
+	// DropConn on a HEALTHY stream must surface ErrConnLost (a reconnectable
+	// break), not ErrClosed — this is what drives the proactive edge hop (#260).
+	connA, _ := tcpPair(t)
+	s := NewStream(connA, DefaultBufSize)
+	t.Cleanup(func() { _ = s.Close() })
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := s.Read(make([]byte, 64))
+		errCh <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let the Read block on the (healthy) conn
+	s.DropConn()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, ErrConnLost)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Read did not unblock after DropConn")
+	}
+	require.True(t, s.IsConnLost())
+}
