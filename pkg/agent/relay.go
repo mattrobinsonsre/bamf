@@ -50,6 +50,15 @@ type RelayManager struct {
 	// Cached bridge address for auto-reconnect after SSE/upgrade detach
 	lastBridgeHost string
 	lastBridgePort int
+
+	// EWMA of the relay's connection-establishment latency (TCP + TLS
+	// handshake in dial). This is the agent→edge leg of measured-latency
+	// edge selection (#246): the handshake traverses the exact path real
+	// relay traffic uses, so its time is a monotonic RTT proxy. Zero until
+	// the first successful dial. Guarded by rttMu (separate from mu — RTT is
+	// recorded inside dial, which the workers/serve path also touches).
+	rttMu   sync.Mutex
+	rttEWMA time.Duration
 }
 
 // relayWorker represents a single relay connection with its own serve loop.
@@ -172,10 +181,13 @@ func (rm *RelayManager) dial(bridgeHost string, bridgePort int) (net.Conn, error
 	tlsCfg := rm.tlsConfig.Clone()
 	tlsCfg.ServerName = bridgeHost
 
+	start := time.Now()
 	conn, err := tls.Dial("tcp", addr, tlsCfg)
 	if err != nil {
 		return nil, fmt.Errorf("relay dial failed: %w", err)
 	}
+	// Record the handshake latency as the agent→edge RTT sample (#246).
+	rm.recordRTT(time.Since(start))
 
 	// Send relay protocol header
 	if _, err := fmt.Fprintf(conn, "RELAY\n%s\n", rm.agentID); err != nil {
@@ -785,4 +797,27 @@ func (rm *RelayManager) IsConnected() bool {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	return len(rm.workers) > 0
+}
+
+// rttEWMAAlpha weights each new dial sample against the running average.
+// 0.3 smooths transient spikes while still tracking a genuine path change
+// within a few samples (the pool dials 32 connections per Connect).
+const rttEWMAAlpha = 0.3
+
+// recordRTT folds a dial-latency sample into the EWMA.
+func (rm *RelayManager) recordRTT(sample time.Duration) {
+	rm.rttMu.Lock()
+	defer rm.rttMu.Unlock()
+	if rm.rttEWMA == 0 {
+		rm.rttEWMA = sample
+		return
+	}
+	rm.rttEWMA = time.Duration(rttEWMAAlpha*float64(sample) + (1-rttEWMAAlpha)*float64(rm.rttEWMA))
+}
+
+// RTT returns the smoothed agent→edge latency and whether a sample exists.
+func (rm *RelayManager) RTT() (time.Duration, bool) {
+	rm.rttMu.Lock()
+	defer rm.rttMu.Unlock()
+	return rm.rttEWMA, rm.rttEWMA > 0
 }

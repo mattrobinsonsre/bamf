@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -236,9 +237,9 @@ func TestForwardRequest_AlwaysStripsImpersonateHeaders(t *testing.T) {
 		Method: "GET",
 		URL:    &url.URL{Path: "/"},
 		Header: http.Header{
-			"X-Bamf-Target":    {ts.URL},
-			"X-Bamf-Resource":  {"app"},
-			"Impersonate-User": {"admin@evil.com"},
+			"X-Bamf-Target":     {ts.URL},
+			"X-Bamf-Resource":   {"app"},
+			"Impersonate-User":  {"admin@evil.com"},
 			"Impersonate-Group": {"system:masters"},
 			"X-Forwarded-Email": {"alice@example.com"},
 		},
@@ -281,4 +282,25 @@ func TestForwardRequest_K8sDetectedByK8sGroupsHeader(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
 	require.True(t, strings.Contains(string(body), "SA token"))
+}
+
+func TestRelayManager_RTT(t *testing.T) {
+	rm := NewRelayManager("agent-1", nil, nil, slog.Default())
+
+	// No dial has happened yet — no sample.
+	_, ok := rm.RTT()
+	require.False(t, ok)
+
+	// The first sample seeds the EWMA exactly.
+	rm.recordRTT(100 * time.Millisecond)
+	rtt, ok := rm.RTT()
+	require.True(t, ok)
+	require.Equal(t, 100*time.Millisecond, rtt)
+
+	// Subsequent samples move toward the new value (alpha=0.3):
+	// 0.3*200ms + 0.7*100ms = 130ms.
+	rm.recordRTT(200 * time.Millisecond)
+	rtt, ok = rm.RTT()
+	require.True(t, ok)
+	require.Equal(t, 130*time.Millisecond, rtt)
 }

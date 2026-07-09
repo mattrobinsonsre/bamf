@@ -54,10 +54,12 @@ from bamf.auth.ca import (
     serialize_private_key,
 )
 from bamf.auth.sessions import Session
+from bamf.config import settings
 from bamf.db.models import Agent, JoinToken
 from bamf.db.session import get_db, get_db_read
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
+from bamf.redis_keys import agent_edge_rtt_key
 from bamf.services.audit_service import log_audit_event
 from bamf.services.bridge_routing import VALID_ZONES
 from bamf.services.resource_catalog import (
@@ -169,6 +171,10 @@ class AgentHeartbeatRequest(BAMFBaseModel):
     zone: str | None = None
     instance_id: str | None = None
     active_tunnels: int = 0
+    # Measured agent→edge relay latency in milliseconds, keyed by edge name
+    # (the agent-leg of measured-latency edge selection, #246). An empty edge
+    # key (co-located/default relay) maps to the configured default edge.
+    edge_rtts: dict[str, int] = Field(default_factory=dict)
 
 
 class AgentDrainRequest(BAMFBaseModel):
@@ -398,6 +404,19 @@ async def agent_heartbeat(
             await r.setex(f"agent:{agent_id_str}:zone", AGENT_TTL_SECONDS, body.zone)
         else:
             await r.delete(f"agent:{agent_id_str}:zone")
+
+        # Store measured agent→edge relay latencies — the agent-leg table for
+        # measured-latency edge selection (#246). Each sample is refreshed with
+        # the agent TTL, so an edge whose relay drops (agent stops reporting it)
+        # expires on its own. An empty edge key is the co-located/default relay.
+        for edge, rtt_ms in body.edge_rtts.items():
+            edge_name = edge or settings.default_edge_name
+            if edge_name:
+                await r.setex(
+                    agent_edge_rtt_key(agent_id_str, edge_name),
+                    AGENT_TTL_SECONDS,
+                    rtt_ms,
+                )
 
     return SuccessResponse(message="OK")
 
