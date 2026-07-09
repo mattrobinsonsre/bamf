@@ -34,18 +34,6 @@ class EdgeTokenCreate(NamedModel):
         max_length=255,
         description="Human-readable region label (e.g., 'EU West (Ireland)')",
     )
-    latitude: float | None = Field(
-        default=None,
-        ge=-90,
-        le=90,
-        description="Latitude for GeoIP routing",
-    )
-    longitude: float | None = Field(
-        default=None,
-        ge=-180,
-        le=180,
-        description="Longitude for GeoIP routing",
-    )
     expires_in_hours: int = Field(
         default=24,
         ge=1,
@@ -129,8 +117,6 @@ class EdgeResponse(BAMFBaseModel):
     id: UUID
     name: str
     region: str | None
-    latitude: float | None
-    longitude: float | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -142,8 +128,6 @@ class EdgeResponse(BAMFBaseModel):
             id=edge.id,
             name=edge.name,
             region=edge.region,
-            latitude=edge.latitude,
-            longitude=edge.longitude,
             is_active=edge.is_active,
             created_at=edge.created_at,
             updated_at=edge.updated_at,

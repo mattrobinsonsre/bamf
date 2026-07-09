@@ -84,8 +84,9 @@ BAMF is **MPL-2.0** — no usage restrictions, no feature gating:
 - **Multi-region edge deployments** — deploy proxy+bridge clusters in
   multiple regions with a central API as the single source of truth. Agents
   relay to all edges simultaneously so any edge can serve any resource.
-  GeoIP-based routing directs users to the nearest edge. Region-pinned
-  resources get stable per-edge URLs.
+  Region-pinned resources get stable per-edge URLs; non-pinned resources
+  route through the configured default edge (measured-latency nearest-edge
+  selection is on the roadmap).
   [Architecture](docs/architecture/edge-deployments.md)
 
 - **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH

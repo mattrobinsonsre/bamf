@@ -323,13 +323,6 @@ class Settings(BaseSettings):
         description="Edge name for the co-located proxy/bridge. Set via BAMF_DEFAULT_EDGE_NAME.",
     )
 
-    # GeoIP database path (MaxMind GeoLite2-City) for TCP tunnel edge selection.
-    # Optional — when absent, edge selection falls back to default_edge_name.
-    geoip_database_path: str = Field(
-        default="/usr/share/GeoIP/GeoLite2-City.mmdb",
-        description="Path to MaxMind GeoLite2-City database file.",
-    )
-
     # Kubernetes namespace (for constructing in-cluster service FQDNs)
     kubernetes_namespace: str = Field(
         default="",
