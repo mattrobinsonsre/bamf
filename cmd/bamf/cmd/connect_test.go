@@ -125,6 +125,7 @@ func TestSplice_OneSideClosed(t *testing.T) {
 // ── Tests: requestConnect ────────────────────────────────────────────
 
 func TestRequestConnect_Success(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // cold edge cache → no client_edge_rtts in body
 	expected := ConnectResponse{
 		BridgeHostname: "0.bridge.tunnel.example.com",
 		BridgePort:     443,
@@ -162,6 +163,7 @@ func TestRequestConnect_Success(t *testing.T) {
 }
 
 func TestRequestConnect_WithReconnectSession(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // cold edge cache → no client_edge_rtts in body
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
@@ -177,6 +179,28 @@ func TestRequestConnect_WithReconnectSession(t *testing.T) {
 	result, err := requestConnect(context.Background(), creds, "res", "old-session-id")
 	require.NoError(t, err)
 	require.Equal(t, "old-session-id", result.SessionID)
+}
+
+func TestRequestConnect_SendsCachedClientEdgeRTTs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, writeEdgeCache(map[string]int{"eu": 12, "us": 40}))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		rtts, ok := body["client_edge_rtts"].(map[string]any)
+		require.True(t, ok, "warm cache should populate client_edge_rtts")
+		require.EqualValues(t, 12, rtts["eu"])
+		require.EqualValues(t, 40, rtts["us"])
+		require.NoError(t, json.NewEncoder(w).Encode(ConnectResponse{SessionID: "s"}))
+	}))
+	defer srv.Close()
+
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	creds := &tokenResponse{SessionToken: "tok"}
+	_, err := requestConnect(context.Background(), creds, "web-01", "")
+	require.NoError(t, err)
 }
 
 func TestRequestConnect_Unauthorized(t *testing.T) {

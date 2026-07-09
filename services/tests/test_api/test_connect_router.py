@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bamf.api.dependencies import get_current_user
 from bamf.api.routers.connect import (
     NON_MIGRATABLE_PROTOCOLS,
+    _build_candidate_edges,
     _extract_ordinal,
     _select_edge_for_agent,
     _validate_protocol_override,
@@ -482,3 +483,54 @@ class TestSelectEdgeForAgent:
         # candidate (tier 3), provided it has capacity.
         r = _EdgeRedis({}, {"eu": 2})
         assert await _select_edge_for_agent(r, "a1", {"eu": 15}) == "eu"
+
+
+class _CandidateRedis:
+    """Fake Redis for _build_candidate_edges: an agent-leg table, a bridge per
+    edge (bridges:available:{edge}), and each bridge's registered hostname."""
+
+    def __init__(self, agent_rtts: dict[str, int], bridge_hosts: dict[str, str]):
+        # bridge_hosts: edge -> bridge hostname (edge has a live bridge iff present)
+        self._keys = {f"agent:a1:edge_rtt:{e}": str(ms) for e, ms in agent_rtts.items()}
+        self._bridge_hosts = bridge_hosts
+
+    async def scan(self, cursor="0", match=None, count=None):
+        import fnmatch
+
+        return "0", [k for k in self._keys if fnmatch.fnmatch(k, match)]
+
+    async def get(self, key):
+        return self._keys.get(key)
+
+    async def zrangebyscore(self, key, *_args, **_kwargs):
+        edge = key.rsplit(":", 1)[-1]  # bridges:available:{edge}
+        return [f"bridge-{edge}"] if edge in self._bridge_hosts else []
+
+    async def hgetall(self, key):
+        edge = key.removeprefix("bridge:bridge-")  # bridge:bridge-{edge}
+        host = self._bridge_hosts.get(edge)
+        return {"hostname": host} if host else {}
+
+
+@pytest.mark.asyncio
+class TestBuildCandidateEdges:
+    async def test_lists_probe_targets_for_multi_edge(self):
+        r = _CandidateRedis(
+            {"eu": 12, "us": 40},
+            {"eu": "0.bridge.eu.tunnel.example.com", "us": "0.bridge.us.tunnel.example.com"},
+        )
+        targets = await _build_candidate_edges(r, "a1")
+        assert {t.name for t in targets} == {"eu", "us"}
+        eu = next(t for t in targets if t.name == "eu")
+        assert eu.probe_host == "0.bridge.eu.tunnel.example.com"
+        assert eu.probe_port > 0
+
+    async def test_empty_for_single_edge(self):
+        # Nothing to choose between → no probing.
+        r = _CandidateRedis({"eu": 12}, {"eu": "0.bridge.eu.tunnel.example.com"})
+        assert await _build_candidate_edges(r, "a1") == []
+
+    async def test_skips_edges_without_a_live_bridge(self):
+        # us has an agent-leg but no bridge → only eu remains → <2 → [].
+        r = _CandidateRedis({"eu": 12, "us": 40}, {"eu": "0.bridge.eu.tunnel.example.com"})
+        assert await _build_candidate_edges(r, "a1") == []

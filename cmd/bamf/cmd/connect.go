@@ -24,14 +24,15 @@ import (
 
 // ConnectResponse matches the Python API response model
 type ConnectResponse struct {
-	BridgeHostname   string    `json:"bridge_hostname"`
-	BridgePort       int       `json:"bridge_port"`
-	SessionCert      string    `json:"session_cert"`
-	SessionKey       string    `json:"session_key"`
-	CACertificate    string    `json:"ca_certificate"`
-	SessionID        string    `json:"session_id"`
-	SessionExpiresAt time.Time `json:"session_expires_at"`
-	ResourceType     string    `json:"resource_type"`
+	BridgeHostname   string            `json:"bridge_hostname"`
+	BridgePort       int               `json:"bridge_port"`
+	SessionCert      string            `json:"session_cert"`
+	SessionKey       string            `json:"session_key"`
+	CACertificate    string            `json:"ca_certificate"`
+	SessionID        string            `json:"session_id"`
+	SessionExpiresAt time.Time         `json:"session_expires_at"`
+	ResourceType     string            `json:"resource_type"`
+	CandidateEdges   []EdgeProbeTarget `json:"candidate_edges"`
 }
 
 // connectBridge is the shared tunnel setup: load creds, request session, dial bridge,
@@ -57,6 +58,11 @@ func connectBridge(ctx context.Context, resourceName string) (*reconnectingBridg
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to bridge: %w", err)
 	}
+
+	// Refresh the client-leg latency cache in the background (#119). This never
+	// touches the live tunnel; a short-lived CLI may exit before it finishes,
+	// which is fine — the next connect re-probes.
+	go maybeRefreshEdgeCache(session.CandidateEdges)
 
 	stream := tunnel.NewStream(conn, tunnel.DefaultBufSize)
 
@@ -314,11 +320,17 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 	}
 	u.Path = "/api/v1/connect"
 
-	reqBody := map[string]string{
+	reqBody := map[string]any{
 		"resource_name": resource,
 	}
 	if reconnectSessionID != "" {
 		reqBody["reconnect_session_id"] = reconnectSessionID
+	}
+	// Send the cached client-leg latency vector (#119) so the API can pick the
+	// true client+agent rendezvous edge. Omitted when the cache is cold or
+	// stale — the API then routes to the agent-nearest edge.
+	if rtts := loadFreshEdgeRTTs(); len(rtts) > 0 {
+		reqBody["client_edge_rtts"] = rtts
 	}
 	reqData, _ := json.Marshal(reqBody)
 
