@@ -428,6 +428,89 @@ class TestReconnect:
 
         assert resp.status_code == 503
 
+    @pytest.mark.asyncio
+    async def test_reconnect_rehomes_to_best_edge_with_client_legs(self, mock_db):
+        from bamf.api.models.connect import ConnectRequest
+        from bamf.api.routers.connect import _handle_reconnect
+
+        session_data = json.dumps(
+            {
+                "user_email": "user@example.com",
+                "resource_name": "web-01",
+                "agent_id": "agent-1",
+                "bridge_id": "bridge-0",
+                "edge_name": "eu",  # session opened on eu
+            }
+        )
+        r = _make_mock_redis()
+
+        async def get_side(key):
+            return "online" if "status" in key else session_data
+
+        r.get = AsyncMock(side_effect=get_side)
+
+        captured = {}
+
+        async def fake_issue(**kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        req = ConnectRequest(
+            resource_name="web-01",
+            reconnect_session_id="s",
+            client_edge_rtts={"us": 5},
+        )
+        with (
+            patch(
+                "bamf.api.routers.connect._select_edge_for_agent",
+                new=AsyncMock(return_value="us"),
+            ),
+            patch("bamf.api.routers.connect._issue_session", new=fake_issue),
+        ):
+            await _handle_reconnect(req, mock_db, r, USER_SESSION)
+
+        # Reconnect re-homed from eu to the rendezvous edge us.
+        assert captured["edge_name"] == "us"
+
+    @pytest.mark.asyncio
+    async def test_reconnect_keeps_edge_without_client_legs(self, mock_db):
+        from bamf.api.models.connect import ConnectRequest
+        from bamf.api.routers.connect import _handle_reconnect
+
+        session_data = json.dumps(
+            {
+                "user_email": "user@example.com",
+                "resource_name": "web-01",
+                "agent_id": "agent-1",
+                "bridge_id": "bridge-0",
+                "edge_name": "eu",
+            }
+        )
+        r = _make_mock_redis()
+
+        async def get_side(key):
+            return "online" if "status" in key else session_data
+
+        r.get = AsyncMock(side_effect=get_side)
+
+        captured = {}
+
+        async def fake_issue(**kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        req = ConnectRequest(resource_name="web-01", reconnect_session_id="s")
+        sel = AsyncMock(return_value="us")
+        with (
+            patch("bamf.api.routers.connect._select_edge_for_agent", new=sel),
+            patch("bamf.api.routers.connect._issue_session", new=fake_issue),
+        ):
+            await _handle_reconnect(req, mock_db, r, USER_SESSION)
+
+        # No fresh client legs → selector not consulted, prior edge kept.
+        sel.assert_not_awaited()
+        assert captured["edge_name"] == "eu"
+
 
 class _EdgeRedis:
     """Fake Redis for the edge-selection guess: an agent-leg RTT table plus

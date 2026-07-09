@@ -359,6 +359,16 @@ async def _handle_reconnect(
             await r.zincrby(f"bridges:available:{edge_name}", -1, old_bridge_id)
         await r.hincrby(f"bridge:{old_bridge_id}", "active_tunnels", -1)
 
+    # Re-home the reconnect to the current best edge (#119, step 4a). The CLI
+    # sends its measured client-leg on every connect, so a reconnect — which is
+    # already re-establishing the tunnel — lands on the true client+agent
+    # rendezvous edge instead of pinning to the edge the session first opened on.
+    # No fresh measurements (or no better edge) → keep the session's prior edge.
+    if request.client_edge_rtts:
+        rehomed_edge = await _select_edge_for_agent(r, agent_id, request.client_edge_rtts)
+        if rehomed_edge:
+            edge_name = rehomed_edge
+
     return await _issue_session(
         db=db,
         r=r,
