@@ -79,6 +79,59 @@ def select_edge(
     return None
 
 
+# Default hysteresis for a proactive hop: the candidate edge must beat the
+# current edge's rendezvous cost by at least this fraction before it is worth
+# migrating a healthy, working tunnel (#260). Prevents flapping on noisy RTTs.
+DEFAULT_HOP_MARGIN = 0.25
+
+
+def hop_target(
+    current_edge: str,
+    candidates: list[EdgeCandidate],
+    margin: float = DEFAULT_HOP_MARGIN,
+) -> str | None:
+    """Decide whether a *live* tunnel on ``current_edge`` should hop, and where.
+
+    Returns the edge to migrate to, or ``None`` to stay put. Unlike
+    :func:`select_edge` (which always returns the argmin), this applies
+    hysteresis so a healthy connection is only disturbed when the improvement is
+    real: the best rendezvous edge must beat the current edge's
+    ``client + agent`` cost by more than ``margin`` (a fraction, e.g. 0.25 =
+    25%). Costs are only compared when **both** legs are known for the edge in
+    question — the same "never compare a sum against a lone leg" rule as
+    :func:`select_edge`.
+
+    Guardrails this enforces (see #260): never hop to the same edge; never hop
+    for a marginal gain; never hop toward an edge we can't fully cost. Hop-once
+    per session is the caller's responsibility.
+    """
+    best = select_edge(candidates)
+    if best is None or best == current_edge:
+        return None
+
+    by_name = {c.name: c for c in candidates}
+
+    def full_cost(name: str) -> int | None:
+        c = by_name.get(name)
+        if c is None or c.agent_rtt_ms is None or c.client_rtt_ms is None:
+            return None
+        return c.client_rtt_ms + c.agent_rtt_ms
+
+    best_cost = full_cost(best)
+    if best_cost is None:
+        # Can't fully cost the winner (missing a leg) — don't disturb a working
+        # tunnel on a partial signal.
+        return None
+
+    current_cost = full_cost(current_edge)
+    if current_cost is None:
+        # We're on an edge we can't cost (e.g. it lost a leg); the measured best
+        # is strictly better information — hop.
+        return best
+
+    return best if best_cost < current_cost * (1 - margin) else None
+
+
 async def get_agent_edge_rtts(r, agent_id: str) -> dict[str, int]:
     """Read the agent-leg RTT table ``{edge → ms}`` for an agent from Redis.
 

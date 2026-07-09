@@ -617,3 +617,68 @@ class TestBuildCandidateEdges:
         # us has an agent-leg but no bridge → only eu remains → <2 → [].
         r = _CandidateRedis({"eu": 12, "us": 40}, {"eu": "0.bridge.eu.tunnel.example.com"})
         assert await _build_candidate_edges(r, "a1") == []
+
+
+class _ReevalRedis:
+    """Fake Redis for the reevaluate endpoint: a session JSON blob, an agent-leg
+    table, and per-edge bridge capacity."""
+
+    def __init__(self, session_json, agent_rtts: dict[str, int], capacity: dict[str, int]):
+        self._session = session_json
+        self._rtt_keys = {f"agent:a1:edge_rtt:{e}": str(ms) for e, ms in agent_rtts.items()}
+        self._capacity = capacity
+
+    async def get(self, key):
+        if key.startswith("session:"):
+            return self._session
+        return self._rtt_keys.get(key)
+
+    async def scan(self, cursor="0", match=None, count=None):
+        import fnmatch
+
+        return "0", [k for k in self._rtt_keys if fnmatch.fnmatch(k, match)]
+
+    async def zcard(self, key):
+        return self._capacity.get(key.rsplit(":", 1)[-1], 0)
+
+
+@pytest.mark.asyncio
+class TestReevaluate:
+    def _session(self, user="user@example.com", edge="eu"):
+        return json.dumps({"user_email": user, "agent_id": "a1", "edge_name": edge})
+
+    async def _call(self, r):
+        from bamf.api.models.connect import ReevaluateRequest
+        from bamf.api.routers.connect import reevaluate_session_edge
+
+        req = ReevaluateRequest(session_id="s", client_edge_rtts={"eu": 50, "us": 20})
+        return await reevaluate_session_edge(req, r, USER_SESSION)
+
+    async def test_hops_when_a_meaningfully_better_edge_exists(self):
+        # eu 50+50=100 vs us 20+20=40 → hop to us.
+        r = _ReevalRedis(self._session(edge="eu"), {"eu": 50, "us": 20}, {"eu": 1, "us": 1})
+        assert (await self._call(r)).hop_edge == "us"
+
+    async def test_stays_when_current_edge_is_best(self):
+        from bamf.api.models.connect import ReevaluateRequest
+        from bamf.api.routers.connect import reevaluate_session_edge
+
+        r = _ReevalRedis(self._session(edge="eu"), {"eu": 10, "us": 50}, {"eu": 1, "us": 1})
+        req = ReevaluateRequest(session_id="s", client_edge_rtts={"eu": 10, "us": 50})
+        assert (await reevaluate_session_edge(req, r, USER_SESSION)).hop_edge is None
+
+    async def test_wrong_user_forbidden(self):
+        from fastapi import HTTPException
+
+        r = _ReevalRedis(self._session(user="other@example.com"), {}, {})
+        with pytest.raises(HTTPException) as exc:
+            await self._call(r)
+        assert exc.value.status_code == 403
+
+    async def test_session_not_found(self):
+        from fastapi import HTTPException
+
+        r = _ReevalRedis(None, {}, {})
+        with pytest.raises(HTTPException) as exc:
+            await self._call(r)
+        assert exc.value.status_code == 404
