@@ -143,6 +143,42 @@ edge:
       enabled: true                  # Token-based cert bootstrap
 ```
 
+## Proxy (standalone HTTP proxy)
+
+The HTTP reverse proxy for web-app and Kubernetes-API access runs as its own
+`bamf-proxy` deployment within an edge (not inside the API server). It is
+stateless and scales on request volume.
+
+```yaml
+edge:
+  proxy:
+    replicas: 2
+    image:
+      repository: ghcr.io/mattrobinsonsre/bamf-proxy
+      tag: ""                        # Defaults to appVersion
+      pullPolicy: IfNotPresent
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      enabled: true
+      minAvailable: 1
+    internalToken: ""                # proxy→API internal auth; auto-generated into a Secret if empty
+    logLevel: info
+    jsonLogs: "true"
+    preStopSleepSeconds: 15
+    terminationGracePeriodSeconds: 120
+    # apiUrl: https://bamf.example.com  # Remote central API for edge-only deployments
+```
+
+For a remote edge (`core.enabled=false`), set `edge.proxy.apiUrl` to the central
+API's URL so the proxy can reach it.
+
 ## Web UI
 
 ```yaml
@@ -328,6 +364,29 @@ core:
   migrations:
     enabled: true                    # Run Alembic migrations on install/upgrade
 ```
+
+## kubamf (optional Kubernetes GUI)
+
+An optional web-based Kubernetes dashboard deployed alongside an agent and
+accessed through the BAMF proxy chain (so BAMF RBAC governs every K8s call). Off
+by default.
+
+```yaml
+kubamf:
+  enabled: false
+  bamf:
+    enabled: true                  # Always BAMF mode when deployed via this chart
+    apiUrl: ""                     # Defaults to http://{release}-api:8000
+    kubeResourceName: ""           # Name of the `kubernetes`-type resource to route through
+  image:
+    repository: ghcr.io/mattrobinsonsre/kubamf
+    tag: latest
+  resourceName: ""                 # Agent registration name (default: "{agent.config.name}-kubamf")
+  tunnelHostname: ""               # HTTP proxy hostname (default: resourceName)
+```
+
+`kubeResourceName` must match a `type: kubernetes` resource in
+`agent.config.resources`.
 
 ## Metrics
 

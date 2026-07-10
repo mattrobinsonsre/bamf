@@ -62,6 +62,7 @@ All endpoints are prefixed with `/api/v1` unless otherwise noted.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/resources` | Yes | List accessible resources |
+| GET | `/resources/{name}` | Yes | Get a single accessible resource by name |
 
 Resources are reported by agents via heartbeats and stored in Redis. There is no
 CRUD API for resources — they are managed through agent configuration.

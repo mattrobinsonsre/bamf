@@ -92,7 +92,7 @@ BAMF is **MPL-2.0** — no usage restrictions, no feature gating:
   stable per-edge URLs.
   [Architecture](docs/architecture/edge-deployments.md)
 
-- **Certificate-based trust model** — BAMF CA issues short-lived x509 and SSH
+- **Certificate-based trust model** — BAMF CA issues short-lived x509
   certificates. No long-lived secrets. Session certs encode the authorization
   decision directly — the bridge validates certs locally during tunnel operation.
 

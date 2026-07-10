@@ -96,7 +96,7 @@ common options but not all.
 
 | Feature | BAMF | Teleport Community |
 |---|---|---|
-| Short-lived certificates | Yes (x509 + SSH) | Yes (SSH + x509) |
+| Short-lived certificates | Yes (x509) | Yes (SSH + x509) |
 | Certificate authority | Built-in | Built-in |
 | mTLS tunnels | Yes | Yes |
 | Role-based access control | Yes | Yes |
