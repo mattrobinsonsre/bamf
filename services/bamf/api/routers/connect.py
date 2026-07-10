@@ -637,19 +637,28 @@ async def _issue_session(
     }
     if original_resource_type:
         session_info["original_resource_type"] = original_resource_type
-    if edge_name:
-        session_info["edge_name"] = edge_name
+    # Record the edge the SELECTED bridge is actually in, not the requested
+    # edge_name — bridge selection may have fallen back to the global pool when
+    # the requested edge had no capacity (#266). We store EXACTLY what the
+    # per-edge increment below touches (the bridge's own edge, or nothing), so
+    # the reconnect's decrement always lands on the same set. This is also the
+    # edge the tunnel truly lives on (what re-homing / reevaluate compare
+    # against). No fallback to edge_name: adding the bridge to the requested
+    # edge's pool would advertise capacity that isn't there.
+    bridge_edge = bridge_info.get("edge")
+    if bridge_edge:
+        session_info["edge_name"] = bridge_edge
     session_data = json.dumps(session_info)
     await r.setex(tunnel_session_key(session_id), session_ttl, session_data)
 
     # Track session in active set for dashboard queries
     await r.sadd("sessions:active", session_id)
 
-    # Increment new bridge tunnel count.
+    # Increment new bridge tunnel count (per-edge set matches what the session
+    # stored, so the reconnect decrement lands on the same set).
     await r.zincrby("bridges:available", 1, bridge_id)
-    edge = bridge_info.get("edge")
-    if edge:
-        await r.zincrby(f"bridges:available:{edge}", 1, bridge_id)
+    if bridge_edge:
+        await r.zincrby(f"bridges:available:{bridge_edge}", 1, bridge_id)
     await r.hincrby(f"bridge:{bridge_id}", "active_tunnels", 1)
 
     # ── Notify agent via Redis pub/sub ────────────────────────────────
