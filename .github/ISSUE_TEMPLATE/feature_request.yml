@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a new capability or an enhancement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. BAMF favours simplicity — see the Non-Goals in the
+        docs before proposing MFA, a VPN/L3 layer, or workload identity, which
+        are deliberately out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do that BAMF doesn't support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should BAMF do? Note any new CLI command, API endpoint, Helm value, or agent-config field it would add.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, and why the proposal is preferable.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and this isn't a duplicate
+          required: true
+        - label: This fits BAMF's scope (not an explicit Non-Goal)
+          required: true

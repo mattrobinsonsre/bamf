@@ -1,0 +1,10 @@
+# Code owners are requested for review automatically on every PR.
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+*                       @mattrobinsonsre
+
+# Release + CI machinery and the shared contributor contracts warrant extra care.
+/.github/               @mattrobinsonsre
+/AGENTS.md              @mattrobinsonsre
+/helm/                  @mattrobinsonsre

@@ -1,0 +1,52 @@
+name: Bug report
+description: Report something that doesn't work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check existing issues first. For security
+        vulnerabilities, do **not** open a public issue — follow
+        [`SECURITY.md`](../blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+      placeholder: "`bamf ssh web-prod` fails with … but the docs say …"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. Include the exact commands.
+      placeholder: |
+        1. helm install bamf … with values …
+        2. bamf login; bamf ssh …
+        3. see error
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: BAMF version (image tag / chart version / `bamf version`), Kubernetes distro + version, ingress provider (Traefik/Istio), and whether core/edge/agent are co-located or split.
+      placeholder: "BAMF v0.11.0, chart 0.11.0, k3d 1.30, Traefik, co-located core+edge"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: API / bridge / agent logs or CLI output. Scrub any secrets and internal hostnames first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and this isn't a duplicate
+          required: true
+        - label: This is not a security vulnerability (those go via SECURITY.md, not a public issue)
+          required: true
