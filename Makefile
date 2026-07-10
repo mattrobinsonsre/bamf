@@ -12,6 +12,7 @@
 	release hooks dev dev-down \
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
+	smoke \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
@@ -113,6 +114,10 @@ security-scan-go:       ## Run govulncheck (Go vulnerability scanner)
 
 security-scan-python:   ## Run pip-audit (Python vulnerability scanner)
 	scripts/security-scan.sh python
+
+# ── Live Smoke (release gate F) ─────────────────────────
+smoke:              ## Live smoke vs a running stack (auth + cert issuance + tunnel authz)
+	scripts/smoke/run.sh
 
 # ── Penetration Testing ─────────────────────────────────
 pentest:            ## Run all pen tests (DAST + image scan + SAST)
