@@ -89,14 +89,29 @@ func TestBridgeAPIClient_RegisterBridge(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, "bridge-1", body["bridge_id"])
 		require.Equal(t, "1.bridge.tunnel.bamf.local", body["hostname"])
+		require.Equal(t, "eu", body["edge_name"]) // edge sent → per-edge registration (#119)
 
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := NewAPIClient(srv.URL, slog.Default())
-	err := c.RegisterBridge(context.Background(), "bridge-1", "1.bridge.tunnel.bamf.local")
+	err := c.RegisterBridge(context.Background(), "bridge-1", "1.bridge.tunnel.bamf.local", "eu")
 	require.NoError(t, err)
+}
+
+func TestBridgeAPIClient_RegisterBridge_OmitsEmptyEdge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		_, present := body["edge_name"]
+		require.False(t, present) // omitted when the bridge has no edge affinity
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewAPIClient(srv.URL, slog.Default())
+	require.NoError(t, c.RegisterBridge(context.Background(), "bridge-1", "h", ""))
 }
 
 func TestBridgeAPIClient_UpdateBridgeStatus(t *testing.T) {

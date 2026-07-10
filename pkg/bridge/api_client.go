@@ -79,10 +79,16 @@ func (c *APIClient) RenewCertificate(ctx context.Context) (*RenewResponse, error
 
 // RegisterBridge registers this bridge with the API server.
 // Calls: POST /api/v1/internal/bridges/register
-func (c *APIClient) RegisterBridge(ctx context.Context, bridgeID, hostname string) error {
+func (c *APIClient) RegisterBridge(ctx context.Context, bridgeID, hostname, edgeName string) error {
 	body := map[string]any{
 		"bridge_id": bridgeID,
 		"hostname":  hostname,
+	}
+	// Tell the API which edge this bridge serves so it is added to
+	// bridges:available:{edge} — the per-edge set measured-latency selection
+	// reads (#119). Omitted when unset (single-edge / no edge affinity).
+	if edgeName != "" {
+		body["edge_name"] = edgeName
 	}
 
 	return c.Client.Post(ctx, "/api/v1/internal/bridges/register", body, nil)

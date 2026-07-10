@@ -52,6 +52,18 @@ data:
     m2m_tunnel_domain: {{ .Values.gateway.m2m.tunnelDomain | quote }}
     {{- end }}
 
+    {{- /* Default edge for non-pinned tunnels. When the core and an edge are
+           co-located, default to that edge's name so the co-located bridge
+           bootstraps/registers into its per-edge available set — otherwise
+           measured-latency selection can never pick the co-located edge (#119). */}}
+    {{- $defaultEdge := .Values.core.api.config.default_edge_name }}
+    {{- if and (not $defaultEdge) .Values.core.enabled .Values.edge.enabled .Values.edge.name }}
+    {{- $defaultEdge = .Values.edge.name }}
+    {{- end }}
+    {{- if $defaultEdge }}
+    default_edge_name: {{ $defaultEdge | quote }}
+    {{- end }}
+
     # Bridge headless service for internal relay communication
     bridge_headless_service: {{ printf "%s-bridge-headless" (include "bamf.fullname" .) | quote }}
 

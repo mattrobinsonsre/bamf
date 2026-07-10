@@ -30,9 +30,11 @@ type Config struct {
 	DataDir string // Directory for certificate storage
 
 	// Bridge identification
-	BridgeID  string // Unique identifier for this bridge instance (e.g., "bamf-bridge-0")
-	Ordinal   int    // StatefulSet ordinal extracted from pod name (e.g., 0, 1, 2)
-	Hostname  string // Public SNI hostname for this bridge (e.g., "bridge-0.tunnel.bamf.local")
+	BridgeID string // Unique identifier for this bridge instance (e.g., "bamf-bridge-0")
+	Ordinal  int    // StatefulSet ordinal extracted from pod name (e.g., 0, 1, 2)
+	Hostname string // Public SNI hostname for this bridge (e.g., "bridge-0.tunnel.bamf.local")
+	EdgeName string // Edge this bridge belongs to; sent on register so the API
+	//        adds it to bridges:available:{edge} for measured-latency selection (#119)
 
 	// Timeouts
 	TunnelSetupTimeout time.Duration // Max time to establish tunnel
@@ -61,6 +63,7 @@ func LoadConfig() (*Config, error) {
 
 		BridgeID: getEnvOrDefault("BAMF_BRIDGE_ID", ""),
 		Hostname: getEnvOrDefault("BAMF_HOSTNAME", ""),
+		EdgeName: getEnvOrDefault("BAMF_EDGE_NAME", ""),
 
 		TunnelSetupTimeout: getDurationEnvOrDefault("BAMF_TUNNEL_SETUP_TIMEOUT", 30*time.Second),
 		IdleTimeout:        getDurationEnvOrDefault("BAMF_IDLE_TIMEOUT", 0),
