@@ -263,6 +263,25 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=high
 
+  # Boots a minimal core-only BAMF stack on k3d (API+Web+Postgres+Redis+bootstrap,
+  # built from this commit) and runs the Playwright suite (web/e2e) against it —
+  # the Web E2E tier the code↔tests contract requires. Self-contained: builds its
+  # own images and imports them, so it doesn't depend on the image-build jobs.
+  web-e2e:
+    name: Web E2E
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Install k3d
+        run: |
+          curl -fsSL https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64 \
+            -o /usr/local/bin/k3d && chmod +x /usr/local/bin/k3d && k3d version
+      - name: Web E2E (core-only k3d + Playwright)
+        run: scripts/e2e.sh
+
   # ── Helm ────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint
@@ -737,6 +756,7 @@ jobs:
       - web-lint
       - web-build
       - web-audit
+      - web-e2e
       - helm-lint
       - sast
       - secret-scan
@@ -764,6 +784,7 @@ jobs:
             "${{ needs.web-lint.result }}"
             "${{ needs.web-build.result }}"
             "${{ needs.web-audit.result }}"
+            "${{ needs.web-e2e.result }}"
             "${{ needs.docs-xref.result }}"
             "${{ needs.docs-build.result }}"
             "${{ needs.content-hygiene.result }}"
