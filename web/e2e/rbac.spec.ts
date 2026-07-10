@@ -10,6 +10,9 @@ const NONADMIN_PASSWORD = 'x7Kq!mZ2rTvB9pLw3nD'
 
 async function login(page: Page, email: string, password: string) {
   await page.goto('/login')
+  // The standalone Next server can be slow to render the form on a cold route;
+  // wait for it explicitly before interacting.
+  await expect(page.locator('#email')).toBeVisible({ timeout: 20_000 })
   await page.locator('#email').fill(email)
   await page.locator('#password').fill(password)
   await page.getByRole('button', { name: /sign in/i }).click()
