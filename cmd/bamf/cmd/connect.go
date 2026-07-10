@@ -129,8 +129,10 @@ func (rb *reconnectingBridge) hop() {
 
 	// Break the current connection; Read/Write then return ErrConnLost and the
 	// existing reconnect path (doReconnect) re-homes immediately (attempt 0, no
-	// backoff) using the freshly-cached client-leg.
-	rb.stream.DropConn()
+	// backoff) using the freshly-cached client-leg. Pass the current connection
+	// generation so that if a real failure's reconnect swapped the connection in
+	// this window, we don't yank the fresh one out from under it (#266).
+	rb.stream.DropConn(rb.stream.ConnID())
 }
 
 // reconnectingBridge wraps a ReliableStream and handles bridge reconnection
