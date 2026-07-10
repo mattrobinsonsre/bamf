@@ -493,3 +493,35 @@ func TestRequestConnect_OmitsProbeRetryFlagWhenUnsupported(t *testing.T) {
 	_, err := requestConnect(context.Background(), &tokenResponse{}, "host", "", false)
 	require.NoError(t, err)
 }
+
+func TestMaybeHopToBetterEdge_NoCandidatesColdCacheIsNoop(t *testing.T) {
+	// Single-edge / cold-cache path (e.g. bamf ssh to a single-edge deployment):
+	// no candidates + no cached legs → no probe, no reevaluate, no hop, and the
+	// live connection is left completely untouched.
+	t.Setenv("HOME", t.TempDir()) // cold edge cache
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() { c, _ := ln.Accept(); accepted <- c }()
+	clientConn, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	peer := <-accepted
+	defer peer.Close()
+
+	stream := tunnel.NewStream(clientConn, tunnel.DefaultBufSize)
+	defer stream.Close()
+	rb := &reconnectingBridge{
+		stream:  stream,
+		session: &ConnectResponse{SessionID: "s"},
+		ctx:     context.Background(),
+	}
+
+	rb.maybeHopToBetterEdge(nil) // called synchronously for a deterministic assertion
+
+	rb.mu.Lock()
+	require.False(t, rb.hopped, "must not attempt a hop with no candidates/legs")
+	rb.mu.Unlock()
+	require.False(t, rb.stream.IsConnLost(), "live connection must be untouched")
+}
