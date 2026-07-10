@@ -362,6 +362,43 @@ class TestAgentHeartbeat:
         mock_redis.setex.assert_any_call(f"agent:{AGENT_UUID}:edge_rtt:central", 180, 3)
 
     @pytest.mark.asyncio
+    async def test_heartbeat_returns_edge_probe_targets(self, agents_client, mock_db, mock_redis):
+        """The heartbeat response carries the edges the agent should probe for
+        its agent-leg (#277), mapped from the builder's (edge, host, port)."""
+        agent = _make_mock_agent()
+        mock_db.execute = _mock_db_execute_returning(agent)
+
+        with (
+            patch("bamf.api.routers.agents.set_agent_labels", new_callable=AsyncMock),
+            patch("bamf.api.routers.agents.set_agent_resources", new_callable=AsyncMock),
+            patch("bamf.api.routers.agents.set_tunnel_hostnames", new_callable=AsyncMock),
+            patch("bamf.services.agent_instances.register_instance", new_callable=AsyncMock),
+            patch(
+                "bamf.services.agent_instances.update_instance_tunnel_count", new_callable=AsyncMock
+            ),
+            patch("bamf.services.agent_instances.cleanup_stale_instances", new_callable=AsyncMock),
+            patch(
+                "bamf.api.routers.agents.build_agent_edge_probe_targets",
+                new=AsyncMock(
+                    return_value=[
+                        ("eu", "0.bridge.eu.tunnel.example.com", 443),
+                        ("local", "bamf-bridge-0.bamf.svc.cluster.local", 8443),
+                    ]
+                ),
+            ),
+        ):
+            resp = await agents_client.post(
+                f"/api/v1/agents/{AGENT_UUID}/heartbeat",
+                json={"resources": [], "instance_id": "inst-1"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["edge_probe_targets"] == [
+            {"edge": "eu", "host": "0.bridge.eu.tunnel.example.com", "port": 443},
+            {"edge": "local", "host": "bamf-bridge-0.bamf.svc.cluster.local", "port": 8443},
+        ]
+
+    @pytest.mark.asyncio
     async def test_heartbeat_by_name(self, agents_client, mock_db, mock_redis):
         """Agent can heartbeat using its name instead of UUID."""
         agent = _make_mock_agent()

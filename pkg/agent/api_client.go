@@ -93,10 +93,13 @@ type heartbeatRequest struct {
 }
 
 // Heartbeat sends a heartbeat to the API with the agent's current
-// resources, labels, cluster_internal flag, instance identifier, and
-// active tunnel count (for self-correcting Redis tunnel counts).
+// resources, labels, cluster_internal flag, instance identifier, active tunnel
+// count (for self-correcting Redis tunnel counts), and measured agent→edge
+// RTTs. It returns the edges the API wants the agent to latency-probe for its
+// agent-leg (#277) — the caller probes them and reports the RTTs on the next
+// heartbeat.
 // Calls: POST /api/v1/agents/{id}/heartbeat
-func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, zone string, instanceID string, activeTunnels int, edgeRTTs map[string]int) error {
+func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []ResourceConfig, labels map[string]string, clusterInternal bool, zone string, instanceID string, activeTunnels int, edgeRTTs map[string]int) ([]AgentEdgeProbeTarget, error) {
 	hbResources := make([]heartbeatResource, len(resources))
 	for i, r := range resources {
 		hbResources[i] = heartbeatResource{
@@ -122,7 +125,32 @@ func (c *APIClient) Heartbeat(ctx context.Context, agentID string, resources []R
 		EdgeRTTs:        edgeRTTs,
 	}
 
-	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID), body, nil)
+	var resp heartbeatResponse
+	if err := c.Client.Post(ctx, fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID), body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.EdgeProbeTargets, nil
+}
+
+// AgentEdgeProbeTarget is one edge the agent should latency-probe to measure
+// its agent-leg (#277). The agent TCP-times a connect to (Host, Port) — the
+// agent-reachable endpoint of a live bridge in that edge — and reports the
+// result as edge_rtts on its next heartbeat. This populates the agent-leg
+// table for every agent (SSH/TCP-only included), decoupling the measurement
+// from web-app relays.
+//
+// CONTRACT: services/bamf/api/routers/agents.py AgentEdgeProbeTarget.
+type AgentEdgeProbeTarget struct {
+	Edge string `json:"edge"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// heartbeatResponse matches Python AgentHeartbeatResponse
+// (services/bamf/api/routers/agents.py).
+type heartbeatResponse struct {
+	Message          string                 `json:"message"`
+	EdgeProbeTargets []AgentEdgeProbeTarget `json:"edge_probe_targets"`
 }
 
 // DrainInstance notifies the API that this instance is draining (shutting down).

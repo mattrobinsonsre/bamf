@@ -78,7 +78,15 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 		// Agent-leg RTT table serializes as edge_rtts (#246 contract).
 		require.Equal(t, map[string]int{"eu": 12, "us-east": 40}, body.EdgeRTTs)
 
+		// The response carries the edges to probe for the agent-leg (#277).
 		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"message": "OK",
+			"edge_probe_targets": []map[string]any{
+				{"edge": "eu", "host": "0.bridge.eu.tunnel.example.com", "port": 443},
+				{"edge": "us-east", "host": "bamf-bridge-0.bamf.svc.cluster.local", "port": 8443},
+			},
+		}))
 	}))
 	defer srv.Close()
 
@@ -92,8 +100,12 @@ func TestAPIClient_Heartbeat(t *testing.T) {
 			Labels:       map[string]string{"env": "prod"},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "internal", "inst-1", 3, map[string]int{"eu": 12, "us-east": 40})
+	targets, err := c.Heartbeat(context.Background(), "agent-123", resources, map[string]string{"env": "prod"}, true, "internal", "inst-1", 3, map[string]int{"eu": 12, "us-east": 40})
 	require.NoError(t, err)
+	require.Equal(t, []AgentEdgeProbeTarget{
+		{Edge: "eu", Host: "0.bridge.eu.tunnel.example.com", Port: 443},
+		{Edge: "us-east", Host: "bamf-bridge-0.bamf.svc.cluster.local", Port: 8443},
+	}, targets)
 }
 
 func TestAPIClient_DrainInstance(t *testing.T) {
@@ -173,7 +185,7 @@ func TestAPIClient_Heartbeat_WithWebhooks(t *testing.T) {
 		require.Len(t, body.Resources[0].Webhooks, 1)
 		require.Equal(t, "/webhook", body.Resources[0].Webhooks[0].Path)
 		require.Equal(t, []string{"POST"}, body.Resources[0].Webhooks[0].Methods)
-		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"message": "OK"}))
 	}))
 	defer srv.Close()
 
@@ -190,6 +202,8 @@ func TestAPIClient_Heartbeat_WithWebhooks(t *testing.T) {
 			},
 		},
 	}
-	err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "", "inst-1", 0, nil)
+	// No edges available → empty target list, agent probes nothing.
+	targets, err := c.Heartbeat(context.Background(), "agent-1", resources, nil, false, "", "inst-1", 0, nil)
 	require.NoError(t, err)
+	require.Empty(t, targets)
 }

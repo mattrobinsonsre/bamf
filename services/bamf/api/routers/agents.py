@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from bamf.api.agent_commands import command_queue_key, enqueue_agent_command
+from bamf.api.bridge_relay import build_agent_edge_probe_targets
 from bamf.api.dependencies import (
     AgentIdentity,
     get_agent_identity,
@@ -177,6 +178,32 @@ class AgentHeartbeatRequest(BAMFBaseModel):
     edge_rtts: dict[str, int] = Field(default_factory=dict)
 
 
+class AgentEdgeProbeTarget(BAMFBaseModel):
+    """One edge the agent should latency-probe for its agent-leg (#277).
+
+    ``host``/``port`` is the agent-reachable endpoint of a live bridge in that
+    edge. The agent TCP-times a connect to it and reports the result as
+    ``edge_rtts`` on its next heartbeat, so the agent-leg table populates for
+    every agent — not only those holding a web-app relay.
+
+    Go contract: AgentEdgeProbeTarget in pkg/agent/api_client.go.
+    """
+
+    edge: str = Field(..., description="Edge name")
+    host: str = Field(..., description="Agent-reachable bridge host to probe")
+    port: int = Field(..., description="Bridge tunnel port to probe")
+
+
+class AgentHeartbeatResponse(BAMFBaseModel):
+    """Heartbeat response: the edges the agent should probe (#277).
+
+    Go contract: heartbeatResponse in pkg/agent/api_client.go.
+    """
+
+    message: str = "OK"
+    edge_probe_targets: list[AgentEdgeProbeTarget] = Field(default_factory=list)
+
+
 class AgentDrainRequest(BAMFBaseModel):
     """Request to mark an agent instance as draining.
 
@@ -307,14 +334,14 @@ async def join_agent(
 # ── Agent Heartbeat & Status ────────────────────────────────────────────
 
 
-@router.post("/{agent_id}/heartbeat", response_model=SuccessResponse)
+@router.post("/{agent_id}/heartbeat", response_model=AgentHeartbeatResponse)
 async def agent_heartbeat(
     agent_id: str,
     body: AgentHeartbeatRequest | None = None,
     db: AsyncSession = Depends(get_db),
     r: aioredis.Redis = Depends(get_redis),
     agent_identity: AgentIdentity = Depends(get_agent_identity),
-) -> SuccessResponse:
+) -> AgentHeartbeatResponse:
     """Agent heartbeat — refreshes TTL in Redis and updates resource catalog.
 
     The agent_id can be either a UUID or the agent name (for Go agent compatibility
@@ -418,7 +445,16 @@ async def agent_heartbeat(
                     rtt_ms,
                 )
 
-    return SuccessResponse(message="OK")
+    # Tell the agent which edges to latency-probe for its agent-leg (#277). This
+    # is what populates the agent-leg table for SSH/DB/TCP-only and idle agents,
+    # which never hold a web-app relay and so previously measured nothing.
+    probe_targets = await build_agent_edge_probe_targets(r, agent_id_str)
+    return AgentHeartbeatResponse(
+        edge_probe_targets=[
+            AgentEdgeProbeTarget(edge=edge, host=host, port=port)
+            for edge, host, port in probe_targets
+        ]
+    )
 
 
 # ── Certificate Renewal ────────────────────────────────────────────────
