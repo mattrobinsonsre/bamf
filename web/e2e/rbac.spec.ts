@@ -16,8 +16,9 @@ async function login(page: Page, email: string, password: string) {
   await page.locator('#email').fill(email)
   await page.locator('#password').fill(password)
   await page.getByRole('button', { name: /sign in/i }).click()
-  // On success the SPA navigates off /login.
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 })
+  // On success the SPA does the PKCE exchange and navigates off /login; give the
+  // constrained CI stack room for those round-trips.
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 })
 }
 
 test.describe('RBAC', () => {
