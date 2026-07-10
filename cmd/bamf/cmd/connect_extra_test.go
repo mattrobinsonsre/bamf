@@ -437,7 +437,7 @@ func TestRequestConnect_RateLimitedExhausted(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	// After maxConnectRetries (3) retries are exhausted, the final 429 falls
 	// through to the generic status check which returns "API error: 429 ..."
@@ -460,7 +460,7 @@ func TestRequestConnect_ContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(ctx, creds, "res", "")
+	_, err := requestConnect(ctx, creds, "res", "", false)
 	require.Error(t, err)
 }
 
@@ -474,7 +474,7 @@ func TestRequestConnect_UnexpectedStatusCode(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "API error")
 }
@@ -490,7 +490,7 @@ func TestRequestConnect_InvalidResponseJSON(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to parse response")
 }
@@ -505,7 +505,7 @@ func TestRequestConnect_ServiceUnavailableInvalidJSON(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "service unavailable")
 	require.Contains(t, err.Error(), "not json at all")
@@ -527,7 +527,7 @@ func TestRequestConnect_RateLimitWithRetryAfterHeader(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	result, err := requestConnect(context.Background(), creds, "res", "")
+	result, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.NoError(t, err)
 	require.Equal(t, "success", result.SessionID)
 	require.Equal(t, 2, attempts)

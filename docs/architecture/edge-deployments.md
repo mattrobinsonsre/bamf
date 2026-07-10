@@ -245,6 +245,16 @@ cut-over is a brief sub-second pause, not a stall. Short or cold sessions exit
 before the probe completes and never hop, so the cost falls only on the
 long-lived sessions that gain from it.
 
+**Recorded sessions measure-then-commit instead.** `ssh-audit` sessions
+terminate SSH *at the bridge* (that is where recording happens — deliberately
+outside the audited host's trust domain), which makes them **non-migratable**:
+they cannot hop later. So they flip the strategy — for a cold client on a
+multi-edge deployment, the API returns `probe_required` with the candidate edges
+*instead of* a session; the CLI probes its client-leg and retries, and the
+session is placed on the true rendezvous edge before it commits. This trades a
+little setup latency for a permanent optimal placement, and only for the type
+that has no second chance; migratable sessions keep the optimistic guess.
+
 This whole measured approach replaces the earlier, never-active GeoIP heuristic
 (geographic distance is a lossy proxy for network latency and hard to test).
 

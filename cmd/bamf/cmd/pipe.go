@@ -60,9 +60,24 @@ func runPipe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not logged in: %w\nRun 'bamf login' to authenticate", err)
 	}
 
-	session, err := requestConnect(ctx, creds, resourceName, "")
+	// Advertise probe-then-commit: a recorded (ssh-audit) session terminates at
+	// the bridge and can't hop later, so the API may ask us to measure our
+	// client-leg and retry before it commits to an edge (#267).
+	session, err := requestConnect(ctx, creds, resourceName, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to request session: %w", err)
+	}
+	if session.ProbeRequired {
+		// Measure-then-commit: probe the candidate edges, cache the client-leg,
+		// then retry (flag off so we never loop, even if a probe failed — the
+		// API then falls back to the agent-nearest guess).
+		if rtts := probeEdges(ctx, session.CandidateEdges); len(rtts) > 0 {
+			_ = writeEdgeCache(rtts)
+		}
+		session, err = requestConnect(ctx, creds, resourceName, "", false)
+		if err != nil {
+			return fmt.Errorf("failed to request session: %w", err)
+		}
 	}
 
 	if session.ResourceType == "ssh-audit" {

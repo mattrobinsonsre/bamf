@@ -52,6 +52,7 @@ def _make_mock_redis():
     r.hincrby = AsyncMock()
     r.hgetall = AsyncMock(return_value={})
     r.zrangebyscore = AsyncMock(return_value=[])
+    r.zcard = AsyncMock(return_value=0)
     r.publish = AsyncMock()
     r.expire = AsyncMock()
     r.scan = AsyncMock(return_value=("0", []))
@@ -682,3 +683,79 @@ class TestReevaluate:
         with pytest.raises(HTTPException) as exc:
             await self._call(r)
         assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+class TestMeasureThenCommit:
+    """Gate: recorded (non-migratable) sessions probe-then-commit rather than
+    open on the un-hoppable guess (#267)."""
+
+    async def _run(self, req, *, resource_type="ssh-audit", edge=None, candidates):
+        from bamf.api.routers.connect import _handle_new_connection
+
+        resource = _mock_resource(resource_type=resource_type, edge=edge)
+        r = _make_mock_redis()
+        r.get = AsyncMock(return_value="online")  # agent status
+
+        async def fake_issue(**kwargs):
+            return MagicMock(probe_required=False, session_id="issued")
+
+        with (
+            patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
+            patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
+            patch(
+                "bamf.api.routers.connect._build_candidate_edges",
+                new=AsyncMock(return_value=candidates),
+            ),
+            patch("bamf.api.routers.connect._issue_session", new=fake_issue),
+        ):
+            return await _handle_new_connection(req, AsyncMock(), r, USER_SESSION)
+
+    def _req(self, **kw):
+        from bamf.api.models.connect import ConnectRequest
+
+        return ConnectRequest(resource_name="host", **kw)
+
+    def _two_edges(self):
+        from bamf.api.models.connect import EdgeProbeTarget
+
+        return [
+            EdgeProbeTarget(name="eu", probe_host="0.bridge.eu.example.com", probe_port=443),
+            EdgeProbeTarget(name="us", probe_host="0.bridge.us.example.com", probe_port=443),
+        ]
+
+    async def test_probe_required_for_cold_ssh_audit_multi_edge(self):
+        resp = await self._run(self._req(probe_retry_supported=True), candidates=self._two_edges())
+        assert resp.probe_required is True
+        assert resp.session_id == ""  # no session issued
+        assert {c.name for c in resp.candidate_edges} == {"eu", "us"}
+
+    async def test_no_probe_when_client_legs_already_present(self):
+        # Warm client → already has the client-leg → place directly, no round-trip.
+        resp = await self._run(
+            self._req(probe_retry_supported=True, client_edge_rtts={"eu": 5}),
+            candidates=self._two_edges(),
+        )
+        assert resp.session_id == "issued"
+
+    async def test_no_probe_for_migratable_resource(self):
+        resp = await self._run(
+            self._req(probe_retry_supported=True), resource_type="ssh", candidates=self._two_edges()
+        )
+        assert resp.session_id == "issued"
+
+    async def test_no_probe_for_pinned_resource(self):
+        resp = await self._run(
+            self._req(probe_retry_supported=True), edge="eu", candidates=self._two_edges()
+        )
+        assert resp.session_id == "issued"
+
+    async def test_no_probe_for_single_edge(self):
+        # _build_candidate_edges returns [] when there is nothing to choose between.
+        resp = await self._run(self._req(probe_retry_supported=True), candidates=[])
+        assert resp.session_id == "issued"
+
+    async def test_no_probe_without_capability_flag(self):
+        # Older CLI that can't handle probe_required → old behaviour (the guess).
+        resp = await self._run(self._req(), candidates=self._two_edges())
+        assert resp.session_id == "issued"

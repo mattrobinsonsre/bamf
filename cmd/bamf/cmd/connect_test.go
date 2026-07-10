@@ -157,7 +157,7 @@ func TestRequestConnect_Success(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "test-token"}
-	result, err := requestConnect(context.Background(), creds, "web-01", "")
+	result, err := requestConnect(context.Background(), creds, "web-01", "", false)
 	require.NoError(t, err)
 	require.Equal(t, "0.bridge.tunnel.example.com", result.BridgeHostname)
 	require.Equal(t, 443, result.BridgePort)
@@ -178,7 +178,7 @@ func TestRequestConnect_WithReconnectSession(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	result, err := requestConnect(context.Background(), creds, "res", "old-session-id")
+	result, err := requestConnect(context.Background(), creds, "res", "old-session-id", false)
 	require.NoError(t, err)
 	require.Equal(t, "old-session-id", result.SessionID)
 }
@@ -201,7 +201,7 @@ func TestRequestConnect_SendsCachedClientEdgeRTTs(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "tok"}
-	_, err := requestConnect(context.Background(), creds, "web-01", "")
+	_, err := requestConnect(context.Background(), creds, "web-01", "", false)
 	require.NoError(t, err)
 }
 
@@ -214,7 +214,7 @@ func TestRequestConnect_Unauthorized(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "expired"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "session expired")
 }
@@ -228,7 +228,7 @@ func TestRequestConnect_Forbidden(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "secret-db", "")
+	_, err := requestConnect(context.Background(), creds, "secret-db", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "access denied")
 }
@@ -242,7 +242,7 @@ func TestRequestConnect_NotFound(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "nonexistent", "")
+	_, err := requestConnect(context.Background(), creds, "nonexistent", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "resource not found")
 }
@@ -263,7 +263,7 @@ func TestRequestConnect_RateLimited(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	result, err := requestConnect(context.Background(), creds, "res", "")
+	result, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.NoError(t, err)
 	require.Equal(t, "ok", result.SessionID)
 	require.Equal(t, 3, attempts)
@@ -279,7 +279,7 @@ func TestRequestConnect_ServiceUnavailable(t *testing.T) {
 	t.Setenv("BAMF_API_URL", srv.URL)
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no bridges available")
 }
@@ -295,7 +295,7 @@ func TestRequestConnect_NoAPIURL(t *testing.T) {
 	defer func() { apiURL = oldAPIURL }()
 
 	creds := &tokenResponse{SessionToken: "token"}
-	_, err := requestConnect(context.Background(), creds, "res", "")
+	_, err := requestConnect(context.Background(), creds, "res", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "API URL not configured")
 }
@@ -456,4 +456,40 @@ func TestReconnectingBridge_HopDropsConnOnce(t *testing.T) {
 	rb.mu.Lock()
 	require.True(t, rb.hopped)
 	rb.mu.Unlock()
+}
+
+func TestRequestConnect_SendsProbeRetryFlagAndParsesProbeRequired(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, true, body["probe_retry_supported"])
+		require.NoError(t, json.NewEncoder(w).Encode(ConnectResponse{
+			ProbeRequired:  true,
+			CandidateEdges: []EdgeProbeTarget{{Name: "eu", ProbeHost: "h", ProbePort: 443}},
+		}))
+	}))
+	defer srv.Close()
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	resp, err := requestConnect(context.Background(), &tokenResponse{}, "host", "", true)
+	require.NoError(t, err)
+	require.True(t, resp.ProbeRequired)
+	require.Len(t, resp.CandidateEdges, 1)
+}
+
+func TestRequestConnect_OmitsProbeRetryFlagWhenUnsupported(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		_, present := body["probe_retry_supported"]
+		require.False(t, present) // omitted when the caller doesn't support it
+		require.NoError(t, json.NewEncoder(w).Encode(ConnectResponse{SessionID: "s"}))
+	}))
+	defer srv.Close()
+	t.Setenv("BAMF_API_URL", srv.URL)
+
+	_, err := requestConnect(context.Background(), &tokenResponse{}, "host", "", false)
+	require.NoError(t, err)
 }

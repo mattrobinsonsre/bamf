@@ -254,6 +254,36 @@ async def _handle_new_connection(
         _validate_protocol_override(request.protocol, original_resource_type)
         resource_type = request.protocol
 
+    # ── 4b. Measure-then-commit for recorded / non-migratable sessions ───
+    # ssh-audit (and web terminal) sessions terminate at the bridge, so they
+    # cannot hop to a better edge later (#260) — a cold client would otherwise be
+    # stuck on the agent-nearest *guess* for the session's whole life. When the
+    # client can retry (probe_retry_supported), ask it to measure its client-leg
+    # and pick the true rendezvous edge before we commit: trade a little setup
+    # latency for a permanent optimal placement. Only fires for a non-pinned,
+    # non-migratable resource with no client-leg yet and ≥2 edges to choose
+    # between; migratable sessions keep the optimistic guess (they hop to fix it).
+    if (
+        request.probe_retry_supported
+        and not resource.edge
+        and resource_type in NON_MIGRATABLE_PROTOCOLS
+        and not request.client_edge_rtts
+    ):
+        candidate_edges = await _build_candidate_edges(r, agent_id)
+        if candidate_edges:  # ≥2 edges (single-edge → nothing to choose → skip)
+            return ConnectResponse(
+                bridge_hostname="",
+                bridge_port=0,
+                session_cert="",
+                session_key="",
+                ca_certificate="",
+                session_id="",
+                session_expires_at=datetime.now(UTC),
+                resource_type=resource_type,
+                candidate_edges=candidate_edges,
+                probe_required=True,
+            )
+
     # ── 5. Determine edge for bridge selection ───────────────────
     # Priority: resource pin > measured agent-nearest guess > default.
     # A non-pinned tunnel opens on the edge nearest the *agent* — the leg we
