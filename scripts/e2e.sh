@@ -66,6 +66,16 @@ step "Waiting for API + Web"
 kubectl --context "$KCTX" -n "$NS" rollout status deploy/bamf-api --timeout=240s
 kubectl --context "$KCTX" -n "$NS" rollout status deploy/bamf-web --timeout=240s
 
+step "Pre-warming the ingress + Web/API processes"
+# The single-replica pods are cold right after rollout; warm the login page and
+# the readiness path (a few passes) so the first Playwright navigation isn't the
+# one that pays the cold-start cost on the resource-constrained CI stack.
+for _ in 1 2 3 4 5; do
+  curl -ksS -o /dev/null "${BASE_URL}/login" || true
+  curl -ksS -o /dev/null "${BASE_URL}/ready" || true
+  sleep 2
+done
+
 step "Running Playwright against ${BASE_URL}"
 cd "$REPO_ROOT/web"
 [ -d node_modules ] || npm ci
