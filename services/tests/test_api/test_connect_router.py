@@ -759,3 +759,71 @@ class TestMeasureThenCommit:
         # Older CLI that can't handle probe_required → old behaviour (the guess).
         resp = await self._run(self._req(), candidates=self._two_edges())
         assert resp.session_id == "issued"
+
+
+@pytest.mark.asyncio
+class TestSessionEdgeConsistency:
+    """The session must record the SELECTED bridge's actual edge so the
+    reconnect decrement matches the connect increment (#266)."""
+
+    async def test_stores_bridge_edge_and_increments_matching_set(
+        self, connect_client, mock_redis, mock_db
+    ):
+        resource = _mock_resource()
+
+        def get_side_effect(key):
+            return "online" if "status" in key else None
+
+        mock_redis.get.side_effect = get_side_effect
+        mock_redis.zrangebyscore.return_value = [("bridge-0", 0)]
+        # The selected bridge actually lives in edge "us" (e.g. bridge selection
+        # fell back to the global pool from a different requested edge).
+        mock_redis.hgetall.return_value = {"hostname": "0.bridge.us.example.com", "edge": "us"}
+        ca = _mock_ca()
+
+        with (
+            patch("bamf.api.routers.connect.get_resource", new=AsyncMock(return_value=resource)),
+            patch("bamf.api.routers.connect.check_access", new=AsyncMock(return_value=True)),
+            patch("bamf.api.routers.connect.get_ca", return_value=ca),
+            patch("bamf.api.routers.connect.serialize_certificate", return_value=b"CERT-PEM"),
+            patch("bamf.api.routers.connect.serialize_private_key", return_value=b"KEY-PEM"),
+            patch("bamf.api.routers.connect.log_audit_event", new=AsyncMock()),
+            patch("bamf.api.routers.connect.settings") as mock_settings,
+            patch(
+                "bamf.services.agent_instances.select_agent_instance",
+                new=AsyncMock(return_value="inst-1"),
+            ),
+            patch("bamf.services.agent_instances.increment_instance_tunnels", new=AsyncMock()),
+        ):
+            mock_settings.target_tunnels_per_pod = 10
+            mock_settings.bridge_tunnel_port = 443
+            mock_settings.bridge_internal_tunnel_port = 8443
+            mock_settings.namespace = "bamf"
+            mock_settings.default_edge_name = None
+
+            resp = await connect_client.post(
+                "/api/v1/connect",
+                json={"resource_name": "web-01"},
+                headers={"Authorization": "Bearer test"},
+            )
+
+        assert resp.status_code == 200
+
+        # The session JSON stored via setex carries the BRIDGE's edge (us).
+        session_writes = [
+            c
+            for c in mock_redis.setex.call_args_list
+            if c.args
+            and str(c.args[0]).startswith("session:")
+            and not str(c.args[0]).endswith(":client_creds")
+        ]
+        assert session_writes, "session was stored"
+        stored = json.loads(session_writes[0].args[2])
+        assert stored["edge_name"] == "us"
+
+        # …and the per-edge increment used that same set — so a later reconnect,
+        # which decrements bridges:available:{stored edge}, lands on it.
+        assert any(
+            c.args and c.args[0] == "bridges:available:us"
+            for c in mock_redis.zincrby.call_args_list
+        ), "per-edge counter incremented on the bridge's actual edge"
