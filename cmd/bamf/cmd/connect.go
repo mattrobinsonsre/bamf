@@ -250,7 +250,10 @@ func (rb *reconnectingBridge) doReconnect() error {
 			}
 		}
 
-		newSession, err := requestConnect(rb.ctx, rb.creds, rb.resourceName, rb.session.SessionID)
+		rb.mu.Lock()
+		sessionID := rb.session.SessionID
+		rb.mu.Unlock()
+		newSession, err := requestConnect(rb.ctx, rb.creds, rb.resourceName, sessionID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Reconnect attempt %d/%d: API error: %v\n",
 				attempt+1, maxReconnectAttempts, err)
@@ -270,7 +273,9 @@ func (rb *reconnectingBridge) doReconnect() error {
 			continue
 		}
 
+		rb.mu.Lock()
 		rb.session = newSession
+		rb.mu.Unlock()
 		fmt.Fprintf(os.Stderr, "Reconnected via %s\n", newSession.BridgeHostname)
 		return nil
 	}
