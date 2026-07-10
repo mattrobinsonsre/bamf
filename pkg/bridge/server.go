@@ -517,7 +517,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerWithAPI(ctx context.Context) error {
-	return s.apiClient.RegisterBridge(ctx, s.cfg.BridgeID, s.cfg.Hostname)
+	return s.apiClient.RegisterBridge(ctx, s.cfg.BridgeID, s.cfg.Hostname, s.cfg.EdgeName)
 }
 
 func (s *Server) notifyDraining(ctx context.Context) error {
