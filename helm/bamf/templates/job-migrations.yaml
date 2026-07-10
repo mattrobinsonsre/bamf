@@ -7,10 +7,18 @@ metadata:
   labels:
     {{- include "bamf.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrations
+  {{- if not .Values.core.postgresql.bundled.enabled }}
+  # External PostgreSQL exists before the release, so migrations run as a
+  # pre-install/upgrade hook (schema is ready before the app rolls out).
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  {{- end }}
+  # Bundled PostgreSQL is deployed by this same release, so migrations must NOT
+  # be a pre-install hook — the hook would run before the bundled DB Secret and
+  # StatefulSet exist and deadlock. Instead it runs as a normal Job with an
+  # init container that waits for PostgreSQL to accept connections (#285).
 spec:
   ttlSecondsAfterFinished: 600
   template:
@@ -28,6 +36,21 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       restartPolicy: OnFailure
+      {{- if .Values.core.postgresql.bundled.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "bamf.fullname" . }}-postgresql 5432; do
+                echo "waiting for postgresql..."; sleep 2
+              done
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+      {{- end }}
       containers:
         - name: migrations
           image: {{ include "bamf.api.image" . }}
