@@ -1,0 +1,91 @@
+# Evaluation profile — a throwaway, single-node k3d cluster with everything
+# co-located: control plane + edge + a demo agent, bundled Postgres/Redis, local
+# auth (admin/admin), and the Helm-generated internal CA. Driven by `make eval`
+# (scripts/eval.sh), which injects the dynamic bits (hostname, ports, TLS secret)
+# via --set. NOT for production — see docs/admin/deployment.md for that.
+
+core:
+  enabled: true
+  api:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: "1", memory: 512Mi }
+    config:
+      log_level: info
+  web:
+    standalone: true
+    replicas: 1
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  auth:
+    local:
+      enabled: true
+  # Seed the initial admin user + an agent join token (post-install job).
+  bootstrap:
+    adminEmail: admin
+    adminPassword: admin
+    joinToken: eval-join-token
+  postgresql:
+    bundled:
+      enabled: true
+    external:
+      enabled: false
+  redis:
+    bundled:
+      enabled: true
+    external:
+      enabled: false
+  migrations:
+    enabled: true
+
+edge:
+  enabled: true
+  name: local
+  proxy:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+  bridge:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+
+agent:
+  enabled: true
+  replicas: 1
+  clusterInternal: true
+  joinToken: eval-join-token
+  config:
+    name: eval-agent
+    labels:
+      env: eval
+    resources:
+      # A browser-visible demo target (traefik/whoami) deployed by eval.sh.
+      # Reachable at https://demo.tunnel.<host> once the stack is up.
+      - name: demo
+        type: http
+        hostname: bamf-eval-demo.bamf.svc.cluster.local
+        port: 80
+        tunnel_hostname: demo
+        labels:
+          env: eval
+
+gateway:
+  enabled: true
+  provider: traefik
+  # hostname / tunnelDomain / ports.https injected by eval.sh (sslip.io + k3d port).
+
+tls:
+  certManager:
+    enabled: false
+  # existingSecret injected by eval.sh (self-signed cert for the sslip.io names).
