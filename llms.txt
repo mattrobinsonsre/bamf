@@ -83,7 +83,11 @@ the repo — no hallucinated endpoints, Helm values, or config keys.
   Redis sliding-window limiter (`core.api.config.rate_limit`) with a strict
   `/auth/*` tier for login brute-force defence.
   [docs/reference/helm-values.md](docs/reference/helm-values.md).
-- **Edge deployments** — data-plane components deployed close to targets.
+- **Edge deployments** — regional proxy+bridge clusters close to targets; the
+  central API places each tunnel on the edge that minimizes measured
+  client→edge + edge→agent latency (the rendezvous), opening on the
+  agent-nearest guess and proactively hopping a long-lived tunnel to a better
+  edge as the client's background probe warms.
   [docs/architecture/edge-deployments.md](docs/architecture/edge-deployments.md).
 
 ## Enabling features (operator quick-reference)
