@@ -1,0 +1,53 @@
+# A tiny browser-visible demo target for the evaluation stack. traefik/whoami
+# echoes the request headers, so you can see BAMF injecting identity headers
+# (X-Forwarded-Email, X-Forwarded-Roles) when you reach it through the proxy.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bamf-eval-demo
+  namespace: bamf
+  labels:
+    app.kubernetes.io/name: bamf-eval-demo
+    app.kubernetes.io/component: eval-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bamf-eval-demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bamf-eval-demo
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10.4
+          args: ["--port", "80"]
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bamf-eval-demo
+  namespace: bamf
+  labels:
+    app.kubernetes.io/name: bamf-eval-demo
+spec:
+  selector:
+    app.kubernetes.io/name: bamf-eval-demo
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

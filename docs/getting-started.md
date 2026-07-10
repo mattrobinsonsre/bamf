@@ -3,6 +3,36 @@
 Get BAMF running in 10 minutes. This guide covers deploying the platform,
 registering an agent, and connecting to your first resource.
 
+## Evaluate in 5 minutes (k3d, no domain, no build)
+
+Just want to try it? One command spins up a throwaway [k3d](https://k3d.io)
+cluster with the whole stack — control plane, edge, a demo agent, bundled
+Postgres/Redis, and local auth — using published images. No domain, no
+`/etc/hosts` edits, no build.
+
+**Prerequisites:** Docker, [`k3d`](https://k3d.io), `helm`, `kubectl`, `openssl`.
+
+```sh
+make eval        # create the cluster and install BAMF
+# ... prints the URL, credentials, and next steps ...
+make eval-down   # delete everything when you're done
+```
+
+It uses [sslip.io](https://sslip.io) wildcard DNS (`bamf.127.0.0.1.sslip.io`
+and `*.tunnel.127.0.0.1.sslip.io`), so the tunnel hostnames resolve with no DNS
+setup. TLS is self-signed — accept the browser warning. Log in at the printed
+URL with **`admin` / `admin`**, and open the bundled demo web app at
+`https://demo.tunnel.127.0.0.1.sslip.io` to see BAMF proxying to it. Smoke the
+running stack with `BAMF_SMOKE_URL=<printed-url> make smoke`.
+
+If ports 443/80 are already in use, override them:
+`EVAL_HTTPS_PORT=8443 EVAL_HTTP_PORT=8080 make eval` (URLs then carry the port).
+Contributors testing local changes can install the local chart with
+`scripts/eval.sh up --local-build`.
+
+This eval profile is **not for production** — for a real deployment continue
+below.
+
 ## Prerequisites
 
 - Kubernetes cluster (1.27+) with **Traefik v3** or **Istio** as the ingress

@@ -12,7 +12,7 @@
 	release hooks dev dev-down \
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
-	smoke \
+	smoke eval eval-down \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
@@ -114,6 +114,13 @@ security-scan-go:       ## Run govulncheck (Go vulnerability scanner)
 
 security-scan-python:   ## Run pip-audit (Python vulnerability scanner)
 	scripts/security-scan.sh python
+
+# ── Evaluation (throwaway k3d cluster) ──────────────────
+eval:               ## One-command throwaway k3d eval cluster (no domain, no build)
+	scripts/eval.sh up
+
+eval-down:          ## Delete the eval cluster
+	scripts/eval.sh down
 
 # ── Live Smoke (release gate F) ─────────────────────────
 smoke:              ## Live smoke vs a running stack (auth + cert issuance + tunnel authz)
