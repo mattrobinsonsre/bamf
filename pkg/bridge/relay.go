@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mattrobinsonsre/bamf/pkg/logutil"
 )
 
 const relayIdleTimeout = 5 * time.Minute
@@ -68,7 +70,7 @@ func (p *RelayPool) Add(agentID string, conn net.Conn) {
 	poolSize := len(p.conns[agentID])
 	p.mu.Unlock()
 
-	p.logger.Info("relay connection added", "agent_id", agentID, "pool_size", poolSize)
+	p.logger.Info("relay connection added", "agent_id", logutil.Safe(agentID), "pool_size", poolSize)
 }
 
 // acquire returns an available (unlocked) relay connection for an agent.
@@ -109,7 +111,7 @@ func (p *RelayPool) acquire(agentID string) (*relayConn, bool) {
 		}
 	}
 
-	p.logger.Warn("relay pool acquire timeout", "agent_id", agentID,
+	p.logger.Warn("relay pool acquire timeout", "agent_id", logutil.Safe(agentID),
 		"pool_size", len(conns), "timeout", relayAcquireTimeout)
 	return nil, false
 }
@@ -159,7 +161,7 @@ func (p *RelayPool) Remove(agentID string) {
 		rc.conn.Close()
 	}
 	if len(pool) > 0 {
-		p.logger.Info("relay connections removed", "agent_id", agentID, "count", len(pool))
+		p.logger.Info("relay connections removed", "agent_id", logutil.Safe(agentID), "count", len(pool))
 	}
 }
 
@@ -181,7 +183,7 @@ func (p *RelayPool) Detach(agentID string) *relayConn {
 	}
 	p.mu.Unlock()
 
-	p.logger.Info("relay connection detached for upgrade", "agent_id", agentID)
+	p.logger.Info("relay connection detached for upgrade", "agent_id", logutil.Safe(agentID))
 	return rc
 }
 
@@ -303,7 +305,7 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Write request to relay connection
 	if err := innerReq.Write(rc.conn); err != nil {
-		p.logger.Error("relay write error", "agent_id", agentID, "error", err)
+		p.logger.Error("relay write error", "agent_id", logutil.Safe(agentID), "error", err)
 		rc.mu.Unlock()
 		http.Error(w, "relay connection error", http.StatusBadGateway)
 		p.removeConn(agentID, rc)
@@ -313,7 +315,7 @@ func (p *RelayPool) handleRelayRequest(w http.ResponseWriter, r *http.Request) {
 	// Read response from relay connection
 	resp, err := http.ReadResponse(rc.reader, innerReq)
 	if err != nil {
-		p.logger.Error("relay read error", "agent_id", agentID, "error", err)
+		p.logger.Error("relay read error", "agent_id", logutil.Safe(agentID), "error", err)
 		rc.mu.Unlock()
 		http.Error(w, "relay connection error", http.StatusBadGateway)
 		p.removeConn(agentID, rc)
@@ -438,7 +440,7 @@ func (p *RelayPool) handleUpgradeResponse(
 	}
 
 	p.logger.Info("upgrade: splicing API ↔ agent relay",
-		"agent_id", agentID,
+		"agent_id", logutil.Safe(agentID),
 		"upgrade", resp.Header.Get("Upgrade"),
 	)
 
@@ -469,5 +471,5 @@ func (p *RelayPool) handleUpgradeResponse(
 
 	apiConn.Close()
 	rc.conn.Close()
-	p.logger.Info("upgrade: splice ended", "agent_id", agentID)
+	p.logger.Info("upgrade: splice ended", "agent_id", logutil.Safe(agentID))
 }

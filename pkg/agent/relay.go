@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mattrobinsonsre/bamf/pkg/logutil"
 )
 
 // relayPoolSize is the number of concurrent relay connections the agent
@@ -261,8 +263,8 @@ func (rm *RelayManager) serve(w *relayWorker) {
 		// relay conn is dead and the worker exits.
 		if isUpgradeRequest(req) {
 			rm.logger.Info("relay handling upgrade request",
-				"path", req.URL.Path,
-				"upgrade", req.Header.Get("Upgrade"),
+				"path", logutil.Safe(req.URL.Path),
+				"upgrade", logutil.Safe(req.Header.Get("Upgrade")),
 			)
 			// Detach this worker's conn so Close()/Connect() won't
 			// interfere while the splice is running.
@@ -282,7 +284,7 @@ func (rm *RelayManager) serve(w *relayWorker) {
 			// Streaming response (SSE). Detach this worker and let
 			// the stream run in a background goroutine.
 			rm.logger.Info("relay handling streaming response",
-				"path", req.URL.Path,
+				"path", logutil.Safe(req.URL.Path),
 				"content_type", resp.Header.Get("Content-Type"),
 			)
 
@@ -444,7 +446,7 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 		targetConn, err = net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	}
 	if err != nil {
-		rm.logger.Error("upgrade: target dial failed", "target", targetAddr, "error", err)
+		rm.logger.Error("upgrade: target dial failed", "target", logutil.Safe(targetAddr), "error", err)
 		resp := errorResponse(req, http.StatusBadGateway, "target dial failed: "+err.Error())
 		_ = resp.Write(relayConn)
 		return
@@ -502,7 +504,7 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 	}
 
 	rm.logger.Info("upgrade: splicing relay ↔ target",
-		"path", outURL.Path,
+		"path", logutil.Safe(outURL.Path),
 		"upgrade", resp.Header.Get("Upgrade"),
 	)
 
@@ -524,7 +526,7 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 	}()
 	<-done
 
-	rm.logger.Info("upgrade: splice ended", "path", outURL.Path)
+	rm.logger.Info("upgrade: splice ended", "path", logutil.Safe(outURL.Path))
 }
 
 // replenishPool opens new relay connections to bring the pool back up to
@@ -703,7 +705,7 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 	resp, err := client.Do(outReq)
 	if err != nil {
 		rm.logger.Error("relay forward error",
-			"target", outURL.String(),
+			"target", logutil.Safe(outURL.String()),
 			"error", err,
 		)
 		return errorResponse(req, http.StatusBadGateway, "target error: "+err.Error())
