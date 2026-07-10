@@ -87,16 +87,23 @@ After this, plain `ssh user@web-prod-01.prod` routes through BAMF automatically.
 
 ## Host Key Verification
 
-Agents present host certificates signed by the BAMF CA. `bamf ssh` passes
-`UserKnownHostsFile ~/.bamf/known_hosts` to native ssh. To skip per-host TOFU
-prompts, add the BAMF CA as a cert-authority to that file yourself:
+`bamf ssh` passes `UserKnownHostsFile ~/.bamf/known_hosts` to native ssh, so
+BAMF keeps its own host-key cache separate from your personal
+`~/.ssh/known_hosts`. How the host key is verified depends on the resource type:
 
-```
-@cert-authority * <BAMF CA public key>
-```
+- **`ssh` (transparent tunnel):** the tunnel is a byte relay, so your ssh client
+  completes its handshake directly with the target host and sees the target's
+  own host key. Verification is standard ssh TOFU (Trust On First Use) against
+  `~/.bamf/known_hosts`.
+- **`ssh-audit` (recorded sessions):** the bridge terminates SSH to record the
+  session, so it presents BAMF's own SSH host key — a single Ed25519 key
+  generated once per deployment and shared by all bridge pods. The
+  bridge-to-target hop is secured by the mTLS tunnel, not by SSH host
+  verification.
 
-This eliminates per-host TOFU (Trust On First Use) prompts while maintaining
-cryptographic verification of host identity.
+BAMF does not issue per-host SSH certificates or use an `@cert-authority`
+model. The mTLS tunnel (CLI ↔ bridge ↔ agent), authenticated with BAMF-CA
+certificates, is the security boundary for the connection.
 
 ## Session Recording (`ssh-audit`)
 
