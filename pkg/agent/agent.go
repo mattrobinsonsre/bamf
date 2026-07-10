@@ -7,8 +7,10 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +48,15 @@ type Agent struct {
 	relays   map[string]*RelayManager
 	relaysMu sync.Mutex
 
+	// Agent-leg edge probing (#277). The heartbeat response lists the edges to
+	// probe; the agent TCP-times each bridge endpoint and records the RTT here,
+	// then reports them as edge_rtts on the next heartbeat. This populates the
+	// agent-leg table for every agent — not only those holding a web-app relay,
+	// which is the only thing that ever produced a relay RTT before.
+	probedRTTs map[string]int
+	probeMu    sync.Mutex
+	probing    atomic.Bool // guards against overlapping probe batches
+
 	// Metrics
 	sseConnected atomic.Bool // true when SSE connection is active
 
@@ -73,6 +84,7 @@ func New(cfg *Config, logger *slog.Logger) (*Agent, error) {
 		instanceID: generateInstanceID(),
 		tunnels:    make(map[string]*TunnelHandler),
 		relays:     make(map[string]*RelayManager),
+		probedRTTs: make(map[string]int),
 		shutdownCh: make(chan struct{}),
 	}
 
@@ -315,23 +327,84 @@ func (a *Agent) loadCertificates(ctx context.Context) error {
 // active tunnel count (for self-correcting Redis tunnel counts on drift), and
 // the measured agent→edge relay latencies (the agent-leg table, #246).
 func (a *Agent) sendHeartbeat(ctx context.Context) error {
-	return a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.cfg.Zone, a.instanceID, a.ActiveTunnelCount(), a.edgeRTTs())
+	targets, err := a.apiClient.Heartbeat(ctx, a.agentID, a.cfg.Resources, a.cfg.Labels, a.cfg.ClusterInternal, a.cfg.Zone, a.instanceID, a.ActiveTunnelCount(), a.edgeRTTs())
+	if err != nil {
+		return err
+	}
+	// Probe the edges the API asked us to, off the heartbeat path so a slow or
+	// unreachable edge never delays the next heartbeat. The single-flight guard
+	// drops a new batch if the previous one is still running.
+	if len(targets) > 0 && a.probing.CompareAndSwap(false, true) {
+		go func() {
+			defer a.probing.Store(false)
+			a.probeEdges(ctx, targets)
+		}()
+	}
+	return nil
+}
+
+// edgeProbeTimeout bounds a single edge probe. A probe is one TCP connect, so
+// this only needs to cover network round-trips, not a full handshake.
+const edgeProbeTimeout = 3 * time.Second
+
+// probeEdges TCP-times each edge's bridge endpoint and records the result as
+// the agent-leg RTT for that edge (#277): connect, measure, drop — no
+// persistent connection. Results are reported as edge_rtts on the next
+// heartbeat. Edges that fail to probe are left untouched (their prior sample,
+// if any, ages out with the agent TTL on the API side).
+func (a *Agent) probeEdges(ctx context.Context, targets []AgentEdgeProbeTarget) {
+	for _, t := range targets {
+		rtt, err := probeEdgeRTT(ctx, net.JoinHostPort(t.Host, strconv.Itoa(t.Port)))
+		if err != nil {
+			a.logger.Debug("edge probe failed", "edge", t.Edge, "host", t.Host, "port", t.Port, "err", err)
+			continue
+		}
+		a.probeMu.Lock()
+		a.probedRTTs[t.Edge] = int(rtt.Milliseconds())
+		a.probeMu.Unlock()
+	}
+}
+
+// probeEdgeRTT measures the TCP connect time to addr — a proxy for the
+// agent→edge network latency. It deliberately does not complete a TLS or bridge
+// handshake; the bridge/ingress sees a connection that opens and immediately
+// closes.
+func probeEdgeRTT(ctx context.Context, addr string) (time.Duration, error) {
+	dctx, cancel := context.WithTimeout(ctx, edgeProbeTimeout)
+	defer cancel()
+	var d net.Dialer
+	start := time.Now()
+	conn, err := d.DialContext(dctx, "tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	rtt := time.Since(start)
+	_ = conn.Close()
+	return rtt, nil
 }
 
 // edgeRTTs snapshots each edge relay's smoothed latency in milliseconds,
 // keyed by edge name. Only edges with at least one dial sample are included.
 func (a *Agent) edgeRTTs() map[string]int {
-	a.relaysMu.Lock()
-	defer a.relaysMu.Unlock()
-	if len(a.relays) == 0 {
-		return nil
+	rtts := make(map[string]int)
+
+	// Probe samples cover every edge the API asked us to measure (#277).
+	a.probeMu.Lock()
+	for edge, ms := range a.probedRTTs {
+		rtts[edge] = ms
 	}
-	rtts := make(map[string]int, len(a.relays))
+	a.probeMu.Unlock()
+
+	// A live relay's own dial EWMA is a stronger signal for edges we hold one
+	// to, so let it override the probe sample for those edges.
+	a.relaysMu.Lock()
 	for edge, rl := range a.relays {
 		if rtt, ok := rl.RTT(); ok {
 			rtts[edge] = int(rtt.Milliseconds())
 		}
 	}
+	a.relaysMu.Unlock()
+
 	if len(rtts) == 0 {
 		return nil
 	}

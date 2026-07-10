@@ -181,3 +181,44 @@ def build_bridge_relay_host(relay_bridge: str) -> str:
     """Return the FQDN of a bridge pod's internal relay endpoint."""
     headless_svc = settings.bridge_headless_service
     return f"{relay_bridge}.{headless_svc}.{settings.namespace}.svc.cluster.local"
+
+
+async def build_agent_edge_probe_targets(r, agent_id: str) -> list[tuple[str, str, int]]:
+    """Edges the agent should latency-probe to measure its agent-leg (#277).
+
+    Returns ``(edge, host, port)`` for every edge that has a live bridge, where
+    ``(host, port)`` is the agent-reachable endpoint of that edge's least-loaded
+    bridge (resolved per the agent's network zone, exactly as a real relay/tunnel
+    dial would be). The agent TCP-times each and reports it as ``edge_rtts`` on
+    its next heartbeat.
+
+    This decouples the agent-leg measurement from web-app relays: before, an
+    RTT only existed for edges the agent happened to hold a relay to, so
+    SSH/DB/TCP-only and idle agents measured nothing and measured-latency
+    selection silently fell back to the default edge. Now every online agent
+    measures every reachable edge.
+    """
+    prefix = "bridges:available:"
+    targets: list[tuple[str, str, int]] = []
+    seen: set[str] = set()
+    cursor = "0"
+    while True:
+        cursor, keys = await r.scan(cursor=cursor, match=f"{prefix}*", count=50)
+        for key in keys:
+            edge = key[len(prefix) :]
+            if not edge or edge in seen:
+                continue
+            seen.add(edge)
+            bridges = await r.zrangebyscore(key, "-inf", "+inf", start=0, num=1)
+            if not bridges:
+                continue
+            bridge_id = bridges[0]
+            info = await r.hgetall(f"bridge:{bridge_id}")
+            hostname = info.get("hostname")
+            if not hostname:
+                continue
+            host, port = await resolve_agent_bridge_endpoint(r, agent_id, bridge_id, hostname)
+            targets.append((edge, host, port))
+        if cursor == 0 or cursor == "0":
+            break
+    return targets
