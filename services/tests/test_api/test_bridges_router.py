@@ -33,6 +33,7 @@ def _make_mock_redis():
     r.set = AsyncMock()
     r.delete = AsyncMock()
     r.srem = AsyncMock()
+    r.sadd = AsyncMock()
     r.exists = AsyncMock(return_value=True)
     r.hset = AsyncMock()
     r.hget = AsyncMock(return_value=None)
@@ -194,6 +195,8 @@ class TestRegisterBridge:
         assert resp.status_code == 200
         # Should add to both global and per-edge sorted sets
         assert mock_redis.zadd.call_count == 2
+        # ...and record the edge in the registry set for probe-target building (#280)
+        mock_redis.sadd.assert_called_once_with("bamf:edges", "eu")
 
 
 # ── Tests: Heartbeat ──────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import bamf
 from bamf.auth.sessions import SESSION_PREFIX
 from bamf.redis_keys import (
     agent_edge_rtt_key,
+    edges_registry_key,
     tunnel_session_creds_key,
     tunnel_session_key,
 )
@@ -22,6 +23,10 @@ _BAMF_SRC = Path(bamf.__file__).resolve().parent
 def test_tunnel_session_key_formats():
     assert tunnel_session_key("abc") == "session:abc"
     assert tunnel_session_creds_key("abc") == "session:abc:client_creds"
+
+
+def test_edges_registry_key_format():
+    assert edges_registry_key() == "bamf:edges"
 
 
 def test_agent_edge_rtt_key_format():

@@ -36,3 +36,16 @@ def agent_edge_rtt_key(agent_id: str, edge: str) -> str:
     assignment key, so per-agent cleanup scans reach it.
     """
     return f"agent:{agent_id}:edge_rtt:{edge}"
+
+
+def edges_registry_key() -> str:
+    """Redis SET of known edge names (#280).
+
+    A bridge SADDs its edge here on registration. It lets the agent probe-target
+    builder enumerate edges with a single SMEMBERS instead of a per-heartbeat
+    ``SCAN bridges:available:*`` over the whole keyspace. Membership is not
+    reaped (edge names are a small, stable set), which is safe: the builder gates
+    every edge on a live bridge (``bridges:available:{edge}``), so a stale entry
+    for a fully-drained edge is simply skipped.
+    """
+    return "bamf:edges"
