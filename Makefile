@@ -12,7 +12,7 @@
 	release hooks dev dev-down \
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
-	smoke eval eval-down \
+	smoke eval eval-down test-e2e \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
@@ -114,6 +114,10 @@ security-scan-go:       ## Run govulncheck (Go vulnerability scanner)
 
 security-scan-python:   ## Run pip-audit (Python vulnerability scanner)
 	scripts/security-scan.sh python
+
+# ── Web E2E (Playwright on k3d) ─────────────────────────
+test-e2e:           ## Web E2E: boot core-only k3d stack + run Playwright (web/e2e)
+	scripts/e2e.sh
 
 # ── Evaluation (throwaway k3d cluster) ──────────────────
 eval:               ## One-command throwaway k3d eval cluster (no domain, no build)
