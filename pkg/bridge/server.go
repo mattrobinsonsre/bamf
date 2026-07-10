@@ -762,7 +762,16 @@ func (s *Server) handleTunnelConnection(ctx context.Context, conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		s.logger.Error("failed to read first line", "protocol", protocol, "error", err)
+		// The TLS handshake above already validated a BAMF-CA cert, so this peer
+		// is trusted. A trusted peer that connects and closes without sending a
+		// session line is benign — an agent edge-latency probe (#278), a
+		// cancelled dial, or an authenticated health check — not a server error.
+		if err == io.EOF {
+			s.logger.Debug("peer closed before sending session line",
+				"protocol", protocol, "cn", peerCert.Subject.CommonName)
+		} else {
+			s.logger.Warn("failed to read first line", "protocol", protocol, "error", err)
+		}
 		conn.Close()
 		return
 	}

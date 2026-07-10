@@ -347,14 +347,18 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 // this only needs to cover network round-trips, not a full handshake.
 const edgeProbeTimeout = 3 * time.Second
 
-// probeEdges TCP-times each edge's bridge endpoint and records the result as
-// the agent-leg RTT for that edge (#277): connect, measure, drop — no
-// persistent connection. Results are reported as edge_rtts on the next
-// heartbeat. Edges that fail to probe are left untouched (their prior sample,
-// if any, ages out with the agent TTL on the API side).
+// probeEdges measures the agent→edge RTT for each target and records it as that
+// edge's agent-leg (#277/#278): mTLS-dial the bridge, time the handshake, drop —
+// no persistent connection. Results are reported as edge_rtts on the next
+// heartbeat. An edge that fails to probe keeps its prior sample; an edge no
+// longer offered as a target is dropped so a removed edge's stale RTT isn't
+// re-reported forever.
 func (a *Agent) probeEdges(ctx context.Context, targets []AgentEdgeProbeTarget) {
+	tlsCfg := a.tlsConfig
+	current := make(map[string]struct{}, len(targets))
 	for _, t := range targets {
-		rtt, err := probeEdgeRTT(ctx, net.JoinHostPort(t.Host, strconv.Itoa(t.Port)))
+		current[t.Edge] = struct{}{}
+		rtt, err := probeEdgeRTT(ctx, t.Host, t.Port, tlsCfg)
 		if err != nil {
 			a.logger.Debug("edge probe failed", "edge", t.Edge, "host", t.Host, "port", t.Port, "err", err)
 			continue
@@ -363,18 +367,32 @@ func (a *Agent) probeEdges(ctx context.Context, targets []AgentEdgeProbeTarget) 
 		a.probedRTTs[t.Edge] = int(rtt.Milliseconds())
 		a.probeMu.Unlock()
 	}
+	a.probeMu.Lock()
+	for edge := range a.probedRTTs {
+		if _, ok := current[edge]; !ok {
+			delete(a.probedRTTs, edge)
+		}
+	}
+	a.probeMu.Unlock()
 }
 
-// probeEdgeRTT measures the TCP connect time to addr — a proxy for the
-// agent→edge network latency. It deliberately does not complete a TLS or bridge
-// handshake; the bridge/ingress sees a connection that opens and immediately
-// closes.
-func probeEdgeRTT(ctx context.Context, addr string) (time.Duration, error) {
+// probeEdgeRTT measures the TCP+TLS handshake time to a bridge — the same work a
+// real tunnel/relay dial pays, so it's a faithful agent→edge leg. It completes
+// the mTLS handshake (the agent presents its valid BAMF-CA cert, exactly like
+// the relay dial) and then closes, rather than sending a bare TCP connect that
+// the bridge would log as a failed handshake. ServerName is set to the target
+// host so SNI-passthrough ingress routes to the right bridge pod.
+func probeEdgeRTT(ctx context.Context, host string, port int, tlsCfg *tls.Config) (time.Duration, error) {
+	if tlsCfg == nil {
+		return 0, fmt.Errorf("no TLS config for edge probe")
+	}
 	dctx, cancel := context.WithTimeout(ctx, edgeProbeTimeout)
 	defer cancel()
-	var d net.Dialer
+	cfg := tlsCfg.Clone()
+	cfg.ServerName = host
+	d := tls.Dialer{Config: cfg}
 	start := time.Now()
-	conn, err := d.DialContext(dctx, "tcp", addr)
+	conn, err := d.DialContext(dctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return 0, err
 	}
