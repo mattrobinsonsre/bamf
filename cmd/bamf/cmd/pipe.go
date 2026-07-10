@@ -115,6 +115,12 @@ func runPipe(cmd *cobra.Command, args []string) error {
 	}
 	defer rb.Close()
 
+	// Plain SSH is migratable, so give it the same background probe + proactive
+	// edge hop that bamf tcp gets (#269) — long-lived interactive SSH is exactly
+	// the session type the hop benefits. (ssh-audit returned above; recorded
+	// sessions are non-migratable and never reach here.)
+	go rb.maybeHopToBetterEdge(session.CandidateEdges)
+
 	// Splice stdin/stdout <-> bridge
 	return splice(ctx, readWriteCloser{os.Stdin, os.Stdout}, rb)
 }
