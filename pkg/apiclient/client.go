@@ -16,12 +16,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/mattrobinsonsre/bamf/pkg/logutil"
 )
 
 const (
-	maxRetries      = 3
-	retryMaxDelay   = 10 * time.Second
-	retryBaseDelay  = 1 * time.Second
+	maxRetries     = 3
+	retryMaxDelay  = 10 * time.Second
+	retryBaseDelay = 1 * time.Second
 )
 
 // Config holds options for creating a Client.
@@ -173,7 +175,7 @@ func (c *Client) do(req *http.Request, response any) error {
 	for attempt := range maxRetries + 1 {
 		c.logger.Debug("API request",
 			"method", req.Method,
-			"path", req.URL.Path,
+			"path", logutil.Safe(req.URL.Path),
 			"attempt", attempt+1,
 		)
 
@@ -197,7 +199,7 @@ func (c *Client) do(req *http.Request, response any) error {
 			c.logger.Warn("rate limited, retrying",
 				"attempt", attempt+1,
 				"delay", delay,
-				"path", req.URL.Path,
+				"path", logutil.Safe(req.URL.Path),
 			)
 
 			// Reset body for retry — http.NewRequest with *bytes.Reader
