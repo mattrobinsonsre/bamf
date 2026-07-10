@@ -33,6 +33,10 @@ type ConnectResponse struct {
 	SessionExpiresAt time.Time         `json:"session_expires_at"`
 	ResourceType     string            `json:"resource_type"`
 	CandidateEdges   []EdgeProbeTarget `json:"candidate_edges"`
+	// ProbeRequired means no session was issued: this is a recorded
+	// (non-migratable) resource and the client must probe CandidateEdges and
+	// retry with fresh client_edge_rtts so it lands on the rendezvous edge (#267).
+	ProbeRequired bool `json:"probe_required"`
 }
 
 // connectBridge is the shared tunnel setup: load creds, request session, dial bridge,
@@ -49,7 +53,9 @@ func connectBridge(ctx context.Context, resourceName string) (*reconnectingBridg
 		return nil, nil, fmt.Errorf("credentials expired. Run 'bamf login' to refresh")
 	}
 
-	session, err := requestConnect(ctx, creds, resourceName, "")
+	// bamf tcp / psql / mysql are always migratable, so they keep the optimistic
+	// guess (they hop to correct it) — no probe-then-commit needed here.
+	session, err := requestConnect(ctx, creds, resourceName, "", false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to request session: %w", err)
 	}
@@ -253,7 +259,7 @@ func (rb *reconnectingBridge) doReconnect() error {
 		rb.mu.Lock()
 		sessionID := rb.session.SessionID
 		rb.mu.Unlock()
-		newSession, err := requestConnect(rb.ctx, rb.creds, rb.resourceName, sessionID)
+		newSession, err := requestConnect(rb.ctx, rb.creds, rb.resourceName, sessionID, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Reconnect attempt %d/%d: API error: %v\n",
 				attempt+1, maxReconnectAttempts, err)
@@ -373,7 +379,7 @@ func loadCredentials() (*tokenResponse, error) {
 // requestConnect calls POST /api/v1/connect. If reconnectSessionID is non-empty,
 // it requests reconnection of an existing session through a new bridge.
 // Retries up to 3 times on 429 (rate limited) responses with backoff.
-func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconnectSessionID string) (*ConnectResponse, error) {
+func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconnectSessionID string, probeRetrySupported bool) (*ConnectResponse, error) {
 	api := resolveAPIURL()
 	if api == "" {
 		return nil, fmt.Errorf("API URL not configured. Use --api flag or set BAMF_API_URL")
@@ -390,6 +396,11 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 	}
 	if reconnectSessionID != "" {
 		reqBody["reconnect_session_id"] = reconnectSessionID
+	}
+	// Declare we can handle a probe_required response, so the API asks us to
+	// measure-then-commit for a recorded (non-migratable) session (#267).
+	if probeRetrySupported {
+		reqBody["probe_retry_supported"] = true
 	}
 	// Send the cached client-leg latency vector (#119) so the API can pick the
 	// true client+agent rendezvous edge. Omitted when the cache is cold or

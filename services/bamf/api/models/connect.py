@@ -30,6 +30,13 @@ class ConnectRequest(BAMFBaseModel):
         "with the agent-leg to pick the rendezvous edge. Empty on a cold "
         "client — the API then routes to the agent-nearest edge.",
     )
+    probe_retry_supported: bool = Field(
+        default=False,
+        description="Client can handle a probe_required response: for a "
+        "non-migratable (recorded) session it will probe the returned "
+        "candidate_edges and retry with fresh client_edge_rtts, so the API "
+        "can place the un-hoppable session on the true rendezvous edge (#267).",
+    )
 
 
 class ReevaluateRequest(BAMFBaseModel):
@@ -85,4 +92,11 @@ class ConnectResponse(BAMFBaseModel):
         default_factory=list,
         description="Edges the client should latency-probe in the background to "
         "measure its client-leg (#119). Empty in single-edge deployments.",
+    )
+    probe_required: bool = Field(
+        default=False,
+        description="No session was issued — this is a non-migratable (recorded) "
+        "session and the client must probe candidate_edges and retry the connect "
+        "with fresh client_edge_rtts so it is placed on the rendezvous edge (#267). "
+        "When true, the session fields above are empty placeholders.",
     )
