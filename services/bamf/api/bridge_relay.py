@@ -19,6 +19,7 @@ from bamf.api.agent_commands import enqueue_agent_command
 from bamf.auth.ca import get_ca
 from bamf.config import settings
 from bamf.logging_config import get_logger
+from bamf.redis_keys import edges_registry_key
 from bamf.services.bridge_routing import resolve_agent_bridge_endpoint
 
 logger = get_logger(__name__)
@@ -198,27 +199,21 @@ async def build_agent_edge_probe_targets(r, agent_id: str) -> list[tuple[str, st
     selection silently fell back to the default edge. Now every online agent
     measures every reachable edge.
     """
-    prefix = "bridges:available:"
+    # Enumerate edges from the registry SET (#280) rather than a per-heartbeat
+    # SCAN of the whole keyspace. Each edge is still gated on a live bridge, so a
+    # stale registry entry for a drained edge is skipped.
     targets: list[tuple[str, str, int]] = []
-    seen: set[str] = set()
-    cursor = "0"
-    while True:
-        cursor, keys = await r.scan(cursor=cursor, match=f"{prefix}*", count=50)
-        for key in keys:
-            edge = key[len(prefix) :]
-            if not edge or edge in seen:
-                continue
-            seen.add(edge)
-            bridges = await r.zrangebyscore(key, "-inf", "+inf", start=0, num=1)
-            if not bridges:
-                continue
-            bridge_id = bridges[0]
-            info = await r.hgetall(f"bridge:{bridge_id}")
-            hostname = info.get("hostname")
-            if not hostname:
-                continue
-            host, port = await resolve_agent_bridge_endpoint(r, agent_id, bridge_id, hostname)
-            targets.append((edge, host, port))
-        if cursor == 0 or cursor == "0":
-            break
+    for edge in await r.smembers(edges_registry_key()):
+        if not edge:
+            continue
+        bridges = await r.zrangebyscore(f"bridges:available:{edge}", "-inf", "+inf", start=0, num=1)
+        if not bridges:
+            continue
+        bridge_id = bridges[0]
+        info = await r.hgetall(f"bridge:{bridge_id}")
+        hostname = info.get("hostname")
+        if not hostname:
+            continue
+        host, port = await resolve_agent_bridge_endpoint(r, agent_id, bridge_id, hostname)
+        targets.append((edge, host, port))
     return targets

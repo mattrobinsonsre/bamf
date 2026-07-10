@@ -60,6 +60,7 @@ def _make_mock_redis():
     r.hgetall = AsyncMock(return_value={})
     r.publish = AsyncMock()
     r.scan = AsyncMock(return_value=("0", []))
+    r.smembers = AsyncMock(return_value=set())
     return r
 
 

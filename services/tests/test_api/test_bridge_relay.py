@@ -10,16 +10,15 @@ from bamf.api.bridge_relay import build_agent_edge_probe_targets
 
 
 def _redis_with(edges: dict[str, list[str]], bridges: dict[str, dict]):
-    """A mock async Redis whose SCAN yields ``bridges:available:{edge}`` keys.
+    """A mock async Redis whose ``bamf:edges`` SET holds the edge names.
 
     ``edges`` maps edge name → the bridge ids in its available set (order =
     score order). ``bridges`` maps bridge id → its ``bridge:{id}`` hash.
     """
     r = AsyncMock()
 
-    async def scan(cursor="0", match=None, count=None):
-        keys = [f"bridges:available:{e}" for e in edges]
-        return ("0", keys)
+    async def smembers(key):
+        return set(edges.keys())
 
     async def zrangebyscore(key, *a, **k):
         edge = key.removeprefix("bridges:available:")
@@ -28,7 +27,7 @@ def _redis_with(edges: dict[str, list[str]], bridges: dict[str, dict]):
     async def hgetall(key):
         return bridges.get(key.removeprefix("bridge:"), {})
 
-    r.scan = scan
+    r.smembers = smembers
     r.zrangebyscore = zrangebyscore
     r.hgetall = hgetall
     return r

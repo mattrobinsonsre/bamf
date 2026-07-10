@@ -57,7 +57,7 @@ from bamf.db.models import Edge, SessionRecording, utc_now
 from bamf.db.session import async_session_factory_read, get_db
 from bamf.logging_config import get_logger
 from bamf.redis.client import get_redis
-from bamf.redis_keys import tunnel_session_creds_key, tunnel_session_key
+from bamf.redis_keys import edges_registry_key, tunnel_session_creds_key, tunnel_session_key
 from bamf.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -245,9 +245,12 @@ async def register_bridge(
 
     # Add to available bridges sorted set (score = 0 active tunnels)
     await r.zadd("bridges:available", {request.bridge_id: 0})
-    # Also add to per-edge sorted set if edge is known
+    # Also add to per-edge sorted set if edge is known, and record the edge in
+    # the registry set so probe-target building can enumerate edges without a
+    # keyspace SCAN (#280).
     if sat:
         await r.zadd(f"bridges:available:{sat}", {request.bridge_id: 0})
+        await r.sadd(edges_registry_key(), sat)
 
     logger.info(
         "Bridge registered",
