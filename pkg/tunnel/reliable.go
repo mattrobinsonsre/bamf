@@ -66,6 +66,10 @@ type ReliableStream struct {
 	conn     net.Conn
 	connLost bool
 	closed   bool
+	// connGen identifies the current underlying connection; Reconnect bumps it
+	// on each swap. DropConn uses it to close only the connection the caller
+	// observed, never one a concurrent Reconnect just established (#266).
+	connGen uint64
 
 	// Write path — writeMu serializes ALL writes to conn (data frames and
 	// ACK frames). This prevents interleaved partial writes.
@@ -345,6 +349,7 @@ func (s *ReliableStream) Reconnect(newConn net.Conn) error {
 	oldConn := s.conn
 	s.conn = newConn
 	s.connLost = false
+	s.connGen++
 	s.connMu.Unlock()
 
 	// Close old connection (may already be dead).
@@ -460,15 +465,31 @@ func (s *ReliableStream) Close() error {
 // a new bridge. This is how a healthy tunnel is proactively migrated to a
 // better edge (#260): the bridge relays the break to the peer, so both ends
 // reconnect and resume via the normal retransmit path — no data is lost (any
-// unACKed frames are replayed on Reconnect). No-op on an already-closed stream.
-func (s *ReliableStream) DropConn() {
+// unACKed frames are replayed on Reconnect).
+//
+// id is a connection generation from ConnID: DropConn is a no-op unless the
+// current connection is still that generation, so it never closes a connection
+// a concurrent Reconnect established after the caller decided to drop (#266).
+// Also a no-op on an already-closed stream.
+func (s *ReliableStream) DropConn(id uint64) {
 	s.connMu.Lock()
-	conn := s.conn
-	closed := s.closed
+	var conn net.Conn
+	if s.connGen == id && !s.closed {
+		conn = s.conn
+	}
 	s.connMu.Unlock()
-	if conn != nil && !closed {
+	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+// ConnID returns an identifier for the current underlying connection. Pass it
+// to DropConn so a proactive drop is ignored if a concurrent Reconnect has
+// swapped the connection in the meantime (#266).
+func (s *ReliableStream) ConnID() uint64 {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.connGen
 }
 
 // IsConnLost reports whether the stream's connection is currently broken.

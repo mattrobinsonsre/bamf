@@ -468,7 +468,7 @@ func TestDropConnMakesBlockedReadReturnConnLost(t *testing.T) {
 	}()
 
 	time.Sleep(20 * time.Millisecond) // let the Read block on the (healthy) conn
-	s.DropConn()
+	s.DropConn(s.ConnID())
 
 	select {
 	case err := <-errCh:
@@ -477,4 +477,29 @@ func TestDropConnMakesBlockedReadReturnConnLost(t *testing.T) {
 		t.Fatal("Read did not unblock after DropConn")
 	}
 	require.True(t, s.IsConnLost())
+}
+
+func TestDropConnOnlyClosesMatchingGeneration(t *testing.T) {
+	// A DropConn carrying a generation other than the current one must be a
+	// no-op — this is what stops a proactive hop from closing a connection a
+	// concurrent Reconnect just established (#266).
+	connA, _ := tcpPair(t)
+	s := NewStream(connA, DefaultBufSize)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Stale/wrong generation → connection untouched.
+	s.DropConn(s.ConnID() + 1)
+	require.False(t, s.IsConnLost())
+
+	// Matching generation → connection dropped (a blocked Read sees ErrConnLost).
+	errCh := make(chan error, 1)
+	go func() { _, err := s.Read(make([]byte, 8)); errCh <- err }()
+	time.Sleep(20 * time.Millisecond)
+	s.DropConn(s.ConnID())
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, ErrConnLost)
+	case <-time.After(2 * time.Second):
+		t.Fatal("matching-generation DropConn did not close the conn")
+	}
 }
