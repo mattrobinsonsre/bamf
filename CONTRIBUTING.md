@@ -48,6 +48,28 @@ code↔tests contracts, and the conventions.
    commit title (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`,
    `ci:`). CI (lint, test, build) must be green.
 
+## Good first issues
+
+New contributors: look for issues labelled
+[`good first issue`](https://github.com/mattrobinsonsre/bamf/labels/good%20first%20issue)
+and [`documentation`](https://github.com/mattrobinsonsre/bamf/labels/documentation).
+Comment on the issue to claim it before starting so work isn't duplicated.
+
+## Maintainers
+
+BAMF is currently maintained by [@mattrobinsonsre](https://github.com/mattrobinsonsre),
+who reviews and squash-merges PRs (see [`CODEOWNERS`](.github/CODEOWNERS)). If
+you'd like to become a maintainer, the path is a track record of merged,
+well-tested PRs — open a discussion once you're there.
+
+## License
+
+BAMF is [MPL-2.0](LICENSE), and there is **no CLA**. Contributions are
+inbound=outbound: by opening a PR you agree that your contribution is licensed
+under the MPL-2.0, and you confirm you have the right to submit it (you wrote it,
+or it's compatibly licensed and attributed). MPL-2.0 is file-level copyleft — new
+files should carry the same license as the surrounding code.
+
 ## Content hygiene (please read)
 
 BAMF's history and source are public forever. Two hard rules:
