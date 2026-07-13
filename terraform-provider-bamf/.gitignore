@@ -1,4 +1,0 @@
-terraform-provider-bamf
-*.tfstate*
-.terraform*
-dev.tfrc
