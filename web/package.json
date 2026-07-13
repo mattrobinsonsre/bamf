@@ -17,22 +17,22 @@
     "@zxcvbn-ts/core": "^3.0.4",
     "@zxcvbn-ts/language-common": "^4.1.2",
     "asciinema-player": "^3.17.0",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.24.0",
     "next": "^16.2.10",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.2.2",
-    "@types/node": "^20",
-    "@types/react": "^19.2.14",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.3.2",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "postcss": "^8.5.10"
