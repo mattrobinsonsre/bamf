@@ -27,7 +27,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.add_column(
         "users",
-        sa.Column(
-            "is_sso_only", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("is_sso_only", sa.Boolean(), nullable=False, server_default=sa.text("false")),
     )
