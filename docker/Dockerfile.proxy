@@ -33,7 +33,7 @@ LABEL org.opencontainers.image.source=https://github.com/mattrobinsonsre/bamf
 
 # Runtime-only libraries (no gcc, no Poetry). apt-get upgrade pulls base-OS
 # security patches; bump APT_REFRESH to bust the cache and re-pull new patches.
-ARG APT_REFRESH=2026-07-06
+ARG APT_REFRESH=2026-07-13
 RUN echo "apt-refresh=${APT_REFRESH}" \
     && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
