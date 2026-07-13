@@ -9,6 +9,15 @@ updates:
     commit-message:
       prefix: "deps(go):"
 
+  - package-ecosystem: gomod
+    directory: /terraform-provider-bamf
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, go]
+    commit-message:
+      prefix: "deps(go):"
+
   - package-ecosystem: pip
     directory: /services
     schedule:
