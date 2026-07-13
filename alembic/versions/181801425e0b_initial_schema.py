@@ -56,13 +56,22 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column(
-            "allow_names", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+            "allow_names",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column(
-            "deny_labels", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
+            "deny_labels",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column(
-            "deny_names", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+            "deny_names",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column(
             "created_at",
@@ -196,7 +205,10 @@ def upgrade() -> None:
         sa.Column("target_id", sa.String(255), nullable=True),
         sa.Column("request_id", sa.String(36), nullable=True),
         sa.Column(
-            "details", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
+            "details",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column("success", sa.Boolean(), nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
