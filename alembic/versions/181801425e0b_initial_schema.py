@@ -27,8 +27,12 @@ def upgrade() -> None:
         sa.Column("email", sa.String(255), primary_key=True),
         sa.Column("display_name", sa.String(255), nullable=True),
         sa.Column("password_hash", sa.String(255), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("is_sso_only", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
+        sa.Column(
+            "is_sso_only", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
@@ -56,13 +60,22 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column(
-            "allow_names", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+            "allow_names",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column(
-            "deny_labels", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
+            "deny_labels",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column(
-            "deny_names", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+            "deny_names",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column(
             "created_at",
@@ -153,14 +166,18 @@ def upgrade() -> None:
         sa.Column("name", sa.String(63), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("max_uses", sa.Integer(), nullable=True),
-        sa.Column("use_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column(
+            "use_count", sa.Integer(), nullable=False, server_default=sa.text("0")
+        ),
         sa.Column(
             "agent_labels",
             postgresql.JSONB(),
             nullable=False,
             server_default=sa.text("'{}'::jsonb"),
         ),
-        sa.Column("is_revoked", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_revoked", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -196,7 +213,10 @@ def upgrade() -> None:
         sa.Column("target_id", sa.String(255), nullable=True),
         sa.Column("request_id", sa.String(36), nullable=True),
         sa.Column(
-            "details", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
+            "details",
+            postgresql.JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column("success", sa.Boolean(), nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
@@ -205,7 +225,9 @@ def upgrade() -> None:
     op.create_index("ix_audit_logs_event_type", "audit_logs", ["event_type"])
     op.create_index("ix_audit_logs_action", "audit_logs", ["action"])
     op.create_index("ix_audit_logs_request_id", "audit_logs", ["request_id"])
-    op.create_index("ix_audit_logs_timestamp_event", "audit_logs", ["timestamp", "event_type"])
+    op.create_index(
+        "ix_audit_logs_timestamp_event", "audit_logs", ["timestamp", "event_type"]
+    )
     op.create_index("ix_audit_logs_actor", "audit_logs", ["actor_type", "actor_id"])
 
     # ── session_recordings ────────────────────────────────────────────────
@@ -224,8 +246,12 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index("ix_session_recordings_session_id", "session_recordings", ["session_id"])
-    op.create_index("ix_session_recordings_started_at", "session_recordings", ["started_at"])
+    op.create_index(
+        "ix_session_recordings_session_id", "session_recordings", ["session_id"]
+    )
+    op.create_index(
+        "ix_session_recordings_started_at", "session_recordings", ["started_at"]
+    )
 
     # ── certificate_authority ─────────────────────────────────────────────
     op.create_table(

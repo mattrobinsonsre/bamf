@@ -22,7 +22,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "session_recordings",
-        sa.Column("recording_type", sa.String(20), nullable=False, server_default="terminal"),
+        sa.Column(
+            "recording_type", sa.String(20), nullable=False, server_default="terminal"
+        ),
     )
 
 

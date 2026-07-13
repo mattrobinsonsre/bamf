@@ -21,8 +21,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column("certificate_authority", "ca_key_encrypted", new_column_name="ca_key_pem")
+    op.alter_column(
+        "certificate_authority", "ca_key_encrypted", new_column_name="ca_key_pem"
+    )
 
 
 def downgrade() -> None:
-    op.alter_column("certificate_authority", "ca_key_pem", new_column_name="ca_key_encrypted")
+    op.alter_column(
+        "certificate_authority", "ca_key_pem", new_column_name="ca_key_encrypted"
+    )
