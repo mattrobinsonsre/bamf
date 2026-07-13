@@ -30,6 +30,10 @@ updates:
       # eslint-plugin-react (via eslint-config-next) doesn't support ESLint 10 yet
       - dependency-name: eslint
         versions: [">=10"]
+      # typescript-eslint (via eslint-config-next) + the Next build worker don't
+      # support the TypeScript 7 (native) toolchain yet.
+      - dependency-name: typescript
+        versions: [">=7"]
 
   - package-ecosystem: docker
     directory: /docker
