@@ -17,7 +17,7 @@
     "@zxcvbn-ts/core": "^3.0.4",
     "@zxcvbn-ts/language-common": "^4.1.2",
     "asciinema-player": "^3.17.0",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.24.0",
     "next": "^16.2.10",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
