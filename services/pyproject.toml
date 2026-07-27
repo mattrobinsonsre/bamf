@@ -9,7 +9,7 @@ packages = [{include = "bamf"}]
 
 [tool.poetry.dependencies]
 python = "^3.14"
-fastapi = "^0.139.0"
+fastapi = ">=0.139,<0.141"
 # starlette is a direct dependency with an explicit upper bound on purpose:
 # fastapi only floors it (starlette>=0.46, no ceiling), so without this pin it
 # floats to the newest release on every build (it has already jumped to 1.x).
