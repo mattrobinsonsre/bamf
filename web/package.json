@@ -18,7 +18,7 @@
     "@zxcvbn-ts/language-common": "^4.1.2",
     "asciinema-player": "^3.17.0",
     "lucide-react": "^1.24.0",
-    "next": "^16.2.10",
+    "next": "^16.2.11",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
