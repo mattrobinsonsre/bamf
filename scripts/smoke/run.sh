@@ -17,4 +17,10 @@ echo
 
 RESOURCE="$resource" ./smoke-cert-issue.sh
 echo
+
+./smoke-rbac.sh
+echo
+
+./smoke-revoke.sh
+echo
 echo "${GREEN}All smoke checks passed.${NC}"
