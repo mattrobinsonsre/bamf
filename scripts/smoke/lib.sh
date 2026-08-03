@@ -23,8 +23,16 @@ BAMF_SMOKE_INSECURE="${BAMF_SMOKE_INSECURE:-1}"
 
 API="${BAMF_SMOKE_URL%/}/api/v1"
 
-_curl_opts=(--fail-with-body -sS --max-time 20)
+# --retry makes curl transparently retry the ingress rate-limit (429) and 5xx
+# with backoff (honoring Retry-After) — the smoke does a burst of logins and the
+# gateway rate-limits auth. curl's --retry set is 408/429/500/502/503/504 only,
+# so a negative-path 401/403 is NOT retried (the status helper still sees it).
+_retry=(--retry 6 --retry-delay 1 --retry-max-time 45 --retry-connrefused)
+_curl_opts=(--fail-with-body -sS --max-time 20 "${_retry[@]}")
 [ "$BAMF_SMOKE_INSECURE" = "1" ] && _curl_opts+=(-k)
+# Same, but WITHOUT --fail-with-body, for asserting on non-2xx status codes.
+_curl_status_opts=(-sS --max-time 20 "${_retry[@]}" -o /dev/null -w '%{http_code}')
+[ "$BAMF_SMOKE_INSECURE" = "1" ] && _curl_status_opts+=(-k)
 
 RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; NC=$'\033[0m'
 info()  { echo "${YELLOW}==>${NC} $*"; }
@@ -33,6 +41,10 @@ fail()  { echo "${RED}  ✗ $*${NC}" >&2; exit 1; }
 
 req() { curl "${_curl_opts[@]}" "$@"; }
 
+# status <method> <url> [curl args...] — echo the HTTP status code, never fail.
+# Use for negative-path assertions (a non-admin must get 403, a revoked token 401).
+status() { local m="$1" u="$2"; shift 2; curl "${_curl_status_opts[@]}" -X "$m" "$u" "$@"; }
+
 # base64url without padding.
 _b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
@@ -40,9 +52,12 @@ _b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 pkce_verifier()  { openssl rand -hex 32; }              # 64 unreserved chars
 pkce_challenge() { printf '%s' "$1" | openssl dgst -binary -sha256 | _b64url; }
 
-# smoke_login — drive the scriptable local PKCE flow and echo a session token.
+# smoke_login [email] [password] — drive the scriptable local PKCE flow and echo
+# a session token. Defaults to the admin creds; pass args to log in as another
+# user (used by the RBAC negative-path smoke).
 # POST /auth/local/authorize (JSON creds + PKCE) -> code -> POST /auth/token.
 smoke_login() {
+  local email="${1:-$BAMF_SMOKE_EMAIL}" password="${2:-$BAMF_SMOKE_PASSWORD}"
   local verifier challenge code token
   verifier="$(pkce_verifier)"
   challenge="$(pkce_challenge "$verifier")"
@@ -50,7 +65,7 @@ smoke_login() {
   code="$(req -X POST "$API/auth/local/authorize" \
     -H 'Content-Type: application/json' \
     -d "$(printf '{"email":"%s","password":"%s","code_challenge":"%s","code_challenge_method":"S256","state":"smoke"}' \
-          "$BAMF_SMOKE_EMAIL" "$BAMF_SMOKE_PASSWORD" "$challenge")" \
+          "$email" "$password" "$challenge")" \
     | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   [ -n "$code" ] || return 1
 
