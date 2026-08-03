@@ -69,9 +69,9 @@ GHCR retention cleanup is in
 ## Patching an older release line
 
 Ordinary releases are cut by tagging `main`. A **patch for a line that `main`
-has already moved past** is different — [`SECURITY.md`](../SECURITY.md) offers
-*security fixes only* for the previous minor, and this is how you discharge that
-promise.
+has already moved past** is different — [`SECURITY.md`](https://github.com/mattrobinsonsre/bamf/blob/main/SECURITY.md)
+offers *security fixes only* for the previous minor, and this is how you
+discharge that promise.
 
 **The tag push is the gate.** A cherry-picked or hand-written commit is a *new*
 commit, so no `sha-<commit>` images exist for it and the tag workflow runs the
