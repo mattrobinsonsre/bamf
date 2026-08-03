@@ -66,6 +66,71 @@ All release logic is in [`.github/workflows/ci.yml`](https://github.com/mattrobi
 GHCR retention cleanup is in
 [`.github/workflows/cleanup.yml`](https://github.com/mattrobinsonsre/bamf/blob/main/.github/workflows/cleanup.yml).
 
+## Patching an older release line
+
+Ordinary releases are cut by tagging `main`. A **patch for a line that `main`
+has already moved past** is different — [`SECURITY.md`](https://github.com/mattrobinsonsre/bamf/blob/main/SECURITY.md)
+offers *security fixes only* for the previous minor, and this is how you
+discharge that promise.
+
+**The tag push is the gate.** A cherry-picked or hand-written commit is a *new*
+commit, so no `sha-<commit>` images exist for it and the tag workflow runs the
+full lint/test/build set before publishing. If any of it fails, `cleanup.yml`
+deletes the tag and re-tagging the same version after a fix is safe.
+
+```sh
+git fetch origin --tags
+git checkout -b release/v0.1 v0.1.1   # branch from the tag, not from main
+# ...apply the fix (see below)...
+git push -u origin release/v0.1
+git tag v0.1.2 && git push origin v0.1.2   # the gate and the release
+```
+
+**Two mechanisms — pick the smallest change that fixes it, not "did it come from
+`main`":**
+
+- **Cherry-pick** when the fix already exists on `main` as a discrete commit
+  that still applies: `git cherry-pick -x <sha>` (`-x` records the origin for
+  free).
+- **A minimal fix written directly on the release branch** when it doesn't —
+  and for some fixes this is the *only* correct mechanism. The case that forces
+  it: a vulnerable dependency whose fix on `main` is a lockfile regenerated a
+  whole minor later. Cherry-picking that lockfile drags `main`'s entire
+  dependency tree onto the old line — the "fix without the features" rule
+  violated by the tool meant to uphold it. Bump the specific package on the
+  release branch instead (`npm install next@X`, or a single Poetry constraint +
+  re-lock) and regenerate only what that requires. Say so in the commit message
+  — a reviewer needs to know a patch-branch commit has no `main` counterpart.
+
+**The trap — a patch with nothing to cherry-pick.** A base-image CVE is cleared
+by *rebuilding* against a refreshed base, with no code change. Tagging the
+existing commit **retags the identical images under a new version** (the
+pipeline skips building when `sha-<commit>` images already exist) — a release
+that claims a fix and ships the same bytes. Force a real build with an empty
+commit: `git commit --allow-empty -m "chore: rebuild v0.1.x against a refreshed base image"`.
+
+**Rules:**
+
+- **Never merge `main` into the release branch** (defeats "fix without the
+  features"), and **never merge the release branch back into `main`** (its
+  commits are already there). Keep the branch — it's where the next patch on
+  that line starts.
+- **Bring the accepted-risk register forward with the patch.** The release
+  pipeline reads the scanner suppression allowlists (`pentest/trivy/.trivyignore`,
+  `pentest/pip-audit/ignore-vulns.txt`, `pentest/npm-audit-allow.txt`) **from
+  the branch it runs on**, so an old line carries an old register and will block
+  itself on risks already accepted since. Copy the current register onto the
+  release branch in the same commit as the fix — it applies the position already
+  held, it doesn't change it.
+- **Rebuilding an old tag runs today's advisory data against yesterday's tree**,
+  so expect the first attempt to fail on something unpublished when the tag was
+  cut — that's the mechanism working. Prefer the upstream fix (a targeted bump
+  on the branch); reach for the register only where no fix exists.
+- **A security-driven patch is still a release** — same pre-release audit and
+  independent third-party review as any other; being prompted by a scanner earns
+  no shortcut. Name the advisories it clears in the release notes so an operator
+  can match them against their own scan output.
+
 ## Published artifacts
 
 | Artifact | Registry |

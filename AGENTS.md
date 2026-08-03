@@ -102,6 +102,12 @@ Per-surface verification before you push (lint alone is **not** enough):
     When a plain `def` endpoint genuinely needs sync libraries, prefer `def` —
     FastAPI runs it in a threadpool for you; that rescue does **not** apply to
     `async def`.
+11. **Original implementation only.** BAMF reproduces the *behaviour* of an
+    established access platform (Teleport) — the concepts, the protocols on the
+    wire, the UX. All implementation code must be **entirely original**. Reading
+    public docs or a public protocol spec to understand a contract is expected;
+    copying implementation logic from Teleport (or any other project's)
+    AGPL/proprietary source is not. BAMF is MPL-2.0; keep the provenance clean.
 
 ## The API ↔ Consumer contract (hard)
 
@@ -161,6 +167,31 @@ Routing rules of thumb:
   if a future change violates it.
 - A **behaviour-changing fix for a reported bug** → a regression test named
   after the failure mode that fails pre-fix and passes after.
+- A **new optional parameter that gates a wrapper, cache, or alternate code
+  path** → a test that exercises the path **with the parameter supplied**,
+  driven through the real caller. This is its own rule because the default is
+  the trap: an optional parameter makes the *bypass* the default, and tests take
+  defaults — so a green suite says nothing about the new path. Mock at the
+  boundary *below* the new wrapper, not at the wrapper itself (patching the
+  wrapper is how tests end up asserting on a function that never runs in
+  production's configuration).
+
+Testing anti-patterns (don't):
+
+- **Don't mock past the layer you're testing.** A router test mocks the service;
+  a service test mocks the DB/Redis — neither patches an internal helper
+  mid-function. Per-test patching of internals makes refactoring brittle and
+  lets the test pass while the real path is broken.
+- **Don't write tests that pass trivially.** A happy-path assertion with no
+  negative/error-path counterpart gives false confidence; pair them.
+- **Don't rely on fixed `setTimeout`/sleeps in E2E** — use Playwright's
+  auto-waiting (`expect(...).toBeVisible({timeout})`); CI latency defeats any
+  fixed sleep.
+
+E2E isolation invariants (higher worker/shard counts make violations flaky, not
+deterministic): every test creates its own uniquely-named resources and tears
+them down; never assert global counts or absolute list positions; never depend
+on another spec having run.
 
 ## Cross-component contract registry
 
@@ -189,6 +220,13 @@ boundary pointing at the peer.
 - **Branches** — feature branches off `main`; never push directly to `main`;
   never stack a PR on another open feature branch (always base on `main`). All
   PRs require passing CI (lint, test, build).
+- **Merging — one PR at a time.** Branch protection requires branches be up to
+  date with `main`, so the instant one PR merges, every other open PR goes
+  `BEHIND` and un-mergeable until updated (`gh pr update-branch`). Land PRs
+  **strictly sequentially**: update → merge → *then* update the next. Never arm
+  auto-merge (`gh pr merge --auto`) on two or more PRs at once — the second
+  silently stalls the moment the first lands. Don't bypass a failing required
+  check with an admin override; fix the check.
 - **Python** — FastAPI app via `create_application()` factory + lifespan;
   Pydantic `BaseSettings` for config; `structlog` only (no `print`/stdlib
   `logging`); async everywhere (asyncpg, httpx); Ruff for lint+format; type
@@ -199,8 +237,15 @@ boundary pointing at the peer.
   `context.Context` as the first argument.
 - **TypeScript / React** — strict TS; functional components + custom hooks
   only; no `any` without an explanatory comment.
-- **Migrations** — Alembic with async SQLAlchemy; every migration has a real
-  `upgrade()` **and** `downgrade()`.
+- **Migrations — reversible + expand/contract** — Alembic with async
+  SQLAlchemy; every migration has a real `upgrade()` **and** `downgrade()` (no
+  stubs). Because the API runs multiple replicas, a rolling upgrade runs **old
+  and new code against the same database at once**, so a migration must never
+  **contract** the schema (drop/rename/retype a column or table in `upgrade()`)
+  in the same release the code stops using it — that breaks the old replica
+  still serving traffic. Follow **expand → migrate → wait a release →
+  contract**: add the new column and dual-write/backfill in release N, switch
+  reads in N, and only drop the old column in N+1 or later.
 - **The Helm values-schema contract (hard requirement)** —
   `helm/bamf/values.schema.json` validates chart values with
   `additionalProperties: false` on BAMF-specific objects, so `helm lint` fails
@@ -224,6 +269,30 @@ boundary pointing at the peer.
   to its `PUBLIC_ROUTES` allowlist **with a reason**, which a reviewer sees.
   (Reject-by-default; see issue #193, where agent endpoints once shipped
   unauthenticated and enabled tunnel hijack.)
+- **Client operations use bounded backoff/retry by default (hard
+  requirement)** — every outbound HTTP call a BAMF process makes (agent →
+  API heartbeats/SSE/cert requests, bridge → API registration/recording
+  uploads, CLI → API, API → bridge relay) MUST use a bounded retry with
+  backoff. A transient timeout or 5xx must never silently drop the operation.
+  Pair it with idempotency: retry is only safe when the server handler is
+  idempotent, so the rule is **make the handler idempotent, then retry** —
+  don't skip the retry because a write isn't idempotent; fix the idempotency.
+  Retry transient failures (timeouts, connection errors, 5xx); a definitive
+  **4xx is final and never retried**. Deliberately best-effort calls may skip
+  retry but MUST say so in a comment.
+- **Fix the bug you just found, then carry on (hard requirement)** — when you
+  hit a bug, error, failing test, or broken endpoint while doing something
+  else, **stop and fix it**, then resume. Don't work around it, don't leave a
+  TODO, don't carry on as though it isn't there — whether it is pre-existing or
+  something you just introduced.
+- **Never label a failure "unrelated" to get past it (hard requirement)** — if
+  a build, test, or check fails during your work, the default assumption is
+  that **you** caused it, including when the message looks environmental
+  ("missing binary", "flaky", "wrong arch"). Investigate and fix the root
+  cause. If after investigating you are confident it is pre-existing, say so
+  **with evidence** (the commit where it broke, or the same failure reproducing
+  on `main`) rather than asserting it. Same for a flaky test: prove it's flaky,
+  then fix the flake — re-running until green just hides it for the next person.
 
 ## Release discipline
 
@@ -288,13 +357,12 @@ world-readable forever.
 
 - **No internal references** — commit messages, PR text, **and source comments
   / docstrings** must never reference any company, internal hostname, internal
-  repo/project name, internal cluster name, or specific customer/deployment
-  (this includes `acrolinx`, `acrolinx-cloud.net`, `markup.ai`, `markupai`,
-  `markup-ai` — e.g. `markup-ai.atlassian.net` — and anything under a private
-  tailnet). When describing an issue motivated by a
-  real deployment, anonymise it ("a multi-cluster estate", "an internal CI
-  cluster"), never name the source. If you catch a leak in your own draft,
-  scrub it before pushing.
+  repo/project name, internal cluster name, or specific customer/deployment.
+  When describing an issue motivated by a real deployment, anonymise it ("a
+  multi-cluster estate", "an internal CI cluster"), never name the source. If
+  you catch a leak in your own draft, scrub it before pushing. (Enumerating the
+  actual forbidden strings here would itself be a leak, so the concrete list is
+  kept out of this committed file — maintainers hold it privately.)
 - **Respect peer open-source projects** — Teleport (and any peer project) is a
   respected fellow project, not an enemy to disparage. Never denigrate it — not
   in commits, PRs, comments, docs, issues, release notes, or conversation — and
