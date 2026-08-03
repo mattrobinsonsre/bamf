@@ -380,6 +380,14 @@ func (rm *RelayManager) handleUpgrade(req *http.Request, relayConn net.Conn) {
 		return
 	}
 
+	// Reject-by-default (same as forwardRequest): only upgrade to a host this
+	// agent actually serves — never an arbitrary header-supplied destination.
+	if !rm.isAllowedTarget(parsed.Hostname()) {
+		resp := errorResponse(req, http.StatusForbidden, "target not permitted")
+		_ = resp.Write(relayConn)
+		return
+	}
+
 	// For K8s requests: strip forwarded headers and set impersonation headers
 	if isK8sRequest {
 		req.Header.Del("X-Forwarded-K8s-Groups")
@@ -594,6 +602,27 @@ func (rm *RelayManager) reconnectIfNeeded(bridgeHost string, bridgePort int) {
 	}
 }
 
+// isAllowedTarget reports whether host is one of the target hosts this agent is
+// configured to serve. The API proxy sets X-Bamf-Target from the resolved
+// resource, but the agent does not trust that header to choose a destination:
+// it only forwards to a host present in its own resource config. This is the
+// reject-by-default defense against request forgery (SSRF) — a spoofed or
+// mis-set target cannot redirect the agent at arbitrary internal endpoints.
+// Host match only (case-insensitive); the port is not matched so legitimate
+// port-defaulting between proxy and agent can never cause a false rejection.
+func (rm *RelayManager) isAllowedTarget(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	for _, r := range rm.resources {
+		if strings.ToLower(strings.TrimSpace(r.Hostname)) == host {
+			return true
+		}
+	}
+	return false
+}
+
 // forwardRequest forwards an HTTP request to the target resource and returns
 // the response. The target is determined from the X-Bamf-Target header.
 //
@@ -619,6 +648,17 @@ func (rm *RelayManager) forwardRequest(req *http.Request) *http.Response {
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
 		return errorResponse(req, http.StatusBadGateway, "invalid X-Bamf-Target: "+err.Error())
+	}
+
+	// Reject-by-default: the API proxy sets X-Bamf-Target from the resolved
+	// resource, but the agent must never trust a header to pick an arbitrary
+	// destination. Only forward to a host this agent actually serves — otherwise
+	// a spoofed target would turn the agent into an SSRF pivot (cloud metadata,
+	// internal services, …). See pkg/agent/relay.go isAllowedTarget.
+	if !rm.isAllowedTarget(parsed.Hostname()) {
+		rm.logger.Warn("relay target is not a served resource host — rejecting",
+			"target_host", logutil.Safe(parsed.Hostname()))
+		return errorResponse(req, http.StatusForbidden, "target not permitted")
 	}
 
 	// Build the outgoing request URL

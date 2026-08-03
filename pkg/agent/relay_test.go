@@ -126,11 +126,71 @@ func TestIsStreamingResponse(t *testing.T) {
 // newTestRelayManager creates a RelayManager suitable for unit tests.
 func newTestRelayManager() *RelayManager {
 	return &RelayManager{
-		agentID:   "test-agent",
-		resources: nil,
+		agentID: "test-agent",
+		// The httptest servers these tests target listen on 127.0.0.1. The agent
+		// only forwards to hosts in its resource config (isAllowedTarget, the SSRF
+		// guard), so the loopback host must be a served resource here.
+		resources: []ResourceConfig{{Name: "test", Hostname: "127.0.0.1"}},
 		tlsConfig: &tls.Config{},
 		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+}
+
+func TestIsAllowedTarget(t *testing.T) {
+	rm := &RelayManager{
+		resources: []ResourceConfig{
+			{Name: "web", Hostname: "grafana.internal.corp"},
+			{Name: "k8s", Hostname: "kubernetes.default.svc"},
+			{Name: "lo", Hostname: "127.0.0.1"},
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	tests := []struct {
+		name string
+		host string
+		want bool
+	}{
+		{"served host", "grafana.internal.corp", true},
+		{"served k8s api", "kubernetes.default.svc", true},
+		{"served loopback", "127.0.0.1", true},
+		{"case-insensitive", "GRAFANA.Internal.Corp", true},
+		{"unserved host", "evil.example.com", false},
+		{"cloud metadata (SSRF pivot)", "169.254.169.254", false},
+		{"empty", "", false},
+		{"substring is not a match", "grafana.internal.corp.evil.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, rm.isAllowedTarget(tt.host))
+		})
+	}
+}
+
+// A target host the agent does not serve must be rejected with 403, even though
+// the X-Bamf-Target header is well-formed — the agent must not be an SSRF pivot.
+func TestForwardRequest_RejectsUnservedTarget(t *testing.T) {
+	reached := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	rm := &RelayManager{
+		agentID:   "test-agent",
+		resources: []ResourceConfig{{Name: "only", Hostname: "something-else.internal"}},
+		tlsConfig: &tls.Config{},
+		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	req := &http.Request{
+		Method: "GET",
+		URL:    &url.URL{Path: "/"},
+		Header: http.Header{"X-Bamf-Target": {ts.URL}}, // 127.0.0.1 — not served
+		Body:   http.NoBody,
+	}
+	resp := rm.forwardRequest(req)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.False(t, reached, "request must not reach an unserved target")
 }
 
 func TestForwardRequest_PreservesForwardedHeadersForHTTP(t *testing.T) {
