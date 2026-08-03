@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
+import { login } from './helpers'
 
 const ADMIN_EMAIL = process.env.BAMF_E2E_ADMIN_EMAIL || 'admin'
 const ADMIN_PASSWORD = process.env.BAMF_E2E_ADMIN_PASSWORD || 'admin'
@@ -7,19 +8,6 @@ const ADMIN_PASSWORD = process.env.BAMF_E2E_ADMIN_PASSWORD || 'admin'
 const AUTH_KEY = 'bamf_auth'
 // User creation enforces a zxcvbn score >= 3; this random mixed string scores 4.
 const NONADMIN_PASSWORD = 'x7Kq!mZ2rTvB9pLw3nD'
-
-async function login(page: Page, email: string, password: string) {
-  await page.goto('/login')
-  // The standalone Next server can be slow to render the form on a cold route;
-  // wait for it explicitly before interacting.
-  await expect(page.locator('#email')).toBeVisible({ timeout: 20_000 })
-  await page.locator('#email').fill(email)
-  await page.locator('#password').fill(password)
-  await page.getByRole('button', { name: /sign in/i }).click()
-  // On success the SPA does the PKCE exchange and navigates off /login; give the
-  // constrained CI stack room for those round-trips.
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 })
-}
 
 test.describe('RBAC', () => {
   test('a non-admin session is denied the admin Users page', async ({ page }) => {
