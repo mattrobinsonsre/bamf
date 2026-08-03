@@ -59,9 +59,28 @@ kubectl --context "$KCTX" create namespace "$NS" --dry-run=client -o yaml | kube
 # install races ahead of them: "no matches for kind Middleware in
 # traefik.io/v1alpha1". No `|| true` here — a real timeout must fail the run.
 step "Waiting for Traefik CRDs + deployment (k3d installs Traefik async)"
+# Poll each CRD's Established condition via jsonpath rather than
+# `kubectl wait --for=condition=established`: that command errors out
+# (".status.conditions accessor error: <nil> is of the type <nil>") if it runs
+# in the brief window after the CRD exists but before its status.conditions is
+# populated. The jsonpath is empty while the CRD is absent OR conditionless, so
+# the loop just keeps waiting until it flips to True.
 for crd in middlewares.traefik.io ingressroutes.traefik.io ingressroutetcps.traefik.io; do
-  until kubectl --context "$KCTX" get crd "$crd" >/dev/null 2>&1; do sleep 2; done
-  kubectl --context "$KCTX" wait --for=condition=established --timeout=120s "crd/$crd"
+  deadline=$((SECONDS + 120))
+  until [ "$(kubectl --context "$KCTX" get crd "$crd" \
+      -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' 2>/dev/null)" = "True" ]; do
+    [ "$SECONDS" -ge "$deadline" ] && { echo "timed out waiting for CRD $crd to be Established"; exit 1; }
+    sleep 2
+  done
+done
+# The traefik Deployment is created by a separate HelmChart CR *after* the CRDs,
+# so it may not exist yet — `rollout status` errors ("deployments.apps traefik
+# not found") on a missing deployment instead of waiting. Wait for it to appear,
+# then wait for the rollout.
+deadline=$((SECONDS + 120))
+until kubectl --context "$KCTX" -n kube-system get deploy/traefik >/dev/null 2>&1; do
+  [ "$SECONDS" -ge "$deadline" ] && { echo "timed out waiting for the traefik deployment to appear"; exit 1; }
+  sleep 2
 done
 kubectl --context "$KCTX" -n kube-system rollout status deploy/traefik --timeout=150s
 
