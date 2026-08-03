@@ -439,10 +439,19 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Load npm audit allowlist
+        # Single source of truth for accepted web advisories, shared with the
+        # npm Audit job so the two gates can never drift. Strips comments/blanks
+        # (same parsing as the npm Audit filter) and joins the GHSA ids.
+        id: allow
+        run: |
+          ids=$(sed 's/#.*//' pentest/npm-audit-allow.txt | tr -d '[:blank:]' | grep . | paste -sd, -)
+          echo "ghsas=$ids" >> "$GITHUB_OUTPUT"
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
         with:
           fail-on-severity: high
+          allow-ghsas: ${{ steps.allow.outputs.ghsas }}
           comment-summary-in-pr: on-failure
 
   # ── Build Images ────────────────────────────────────────
