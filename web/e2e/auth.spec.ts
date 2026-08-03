@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { login } from './helpers'
 
 const ADMIN_EMAIL = process.env.BAMF_E2E_ADMIN_EMAIL || 'admin'
 const ADMIN_PASSWORD = process.env.BAMF_E2E_ADMIN_PASSWORD || 'admin'
@@ -20,11 +21,8 @@ test.describe('authentication', () => {
   })
 
   test('admin can log in with local credentials', async ({ page }) => {
-    await page.goto('/login')
-    await page.locator('#email').fill(ADMIN_EMAIL)
-    await page.locator('#password').fill(ADMIN_PASSWORD)
-    await page.getByRole('button', { name: /sign in/i }).click()
-    // On success the SPA navigates off /login to the dashboard.
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 })
+    // login() asserts the SPA navigates off /login on success (hydration-safe).
+    await login(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+    await expect(page).not.toHaveURL(/\/login/)
   })
 })
