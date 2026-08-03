@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels: [dependencies, go]
     commit-message:
       prefix: "deps(go):"
@@ -14,6 +16,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels: [dependencies, python]
     commit-message:
       prefix: "deps(python):"
@@ -23,6 +27,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels: [dependencies, web]
     commit-message:
       prefix: "deps(web):"
@@ -40,6 +46,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels: [dependencies, docker]
     commit-message:
       prefix: "deps(docker):"
@@ -49,6 +57,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels: [dependencies, ci]
     commit-message:
       prefix: "deps(ci):"
