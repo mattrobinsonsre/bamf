@@ -255,8 +255,9 @@ since the previous tag (`git log vPREV..HEAD`) and audit:
   that mutates infrastructure, issues certificates, or opens tunnels is smoke-
   tested end-to-end on the live Tilt stack, not only unit-tested.
 - **G. Ignored-vulnerability review** — sweep the committed scanner suppression
-  allowlists (`pentest/trivy/.trivyignore`, `pentest/pip-audit/ignore-vulns.txt`;
-  govulncheck has none) and drop any that a version bump now fixes. The
+  allowlists (`pentest/trivy/.trivyignore`, `pentest/pip-audit/ignore-vulns.txt`,
+  `pentest/npm-audit-allow.txt`; govulncheck has none) and drop any that a
+  version bump now fixes. The
   suppression policy — when an ignore is permitted and the required justification
   + "drop when" format — is in `SECURITY.md`.
 - **H. AI-agent onboarding** — confirm a fresh, repo-only agent pointed at the

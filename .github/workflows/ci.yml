@@ -34,7 +34,7 @@ jobs:
       is_pr: ${{ steps.meta.outputs.is_pr }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Compute metadata
         id: meta
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/lint.sh go
 
   go-test:
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/test.sh go
 
   go-build:
@@ -124,7 +124,7 @@ jobs:
           - windows/amd64
           - windows/arm64
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/build.sh binaries --platform=${{ matrix.platform }}
 
   go-security:
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/security-scan.sh go
 
   # ── Python ──────────────────────────────────────────────
@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/lint.sh python
 
   python-test:
@@ -155,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/test.sh python
 
   # A broken Alembic migration otherwise merges green (CI never ran it). This
@@ -167,7 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/test.sh migrations
 
   python-security:
@@ -177,7 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/security-scan.sh python
 
   # A source comment or contract-registry row pointing at a moved/renamed file
@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/docs-xref.sh
 
   # Builds the mkdocs site with --strict: a broken internal link or an
@@ -201,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/docs.sh build
 
   # Automates the AGENTS.md content-hygiene HARD gate: fails if a tracked file
@@ -214,7 +214,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/content-hygiene.sh
 
   # ── Web ─────────────────────────────────────────────────
@@ -225,7 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: scripts/lint.sh web
 
   # AGENTS.md requires `npm run build` for web changes — the Next.js prerender
@@ -242,7 +242,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: npm ci
       - run: npm run build
 
@@ -257,11 +257,37 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install dependencies
         run: npm ci
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        # Fail on any high/critical advisory except those allowlisted in
+        # pentest/npm-audit-allow.txt, which carries the reasoning and exit
+        # condition for each (mirrors pip-audit's ignore file and trivy's
+        # .trivyignore; policy in SECURITY.md).
+        run: |
+          npm audit --audit-level=high --json > audit.json || true
+          node -e '
+            const a = require("./audit.json");
+            const allow = new Set(
+              require("fs").readFileSync("../pentest/npm-audit-allow.txt", "utf8")
+                .split("\n").map((l) => l.split("#")[0].trim()).filter(Boolean),
+            );
+            const bad = [];
+            for (const [name, v] of Object.entries(a.vulnerabilities || {})) {
+              if (!["high", "critical"].includes(v.severity)) continue;
+              const ids = (v.via || [])
+                .filter((x) => x && typeof x === "object" && x.url)
+                .map((x) => x.url.split("/").pop());
+              const unhandled = ids.filter((id) => !allow.has(id));
+              if (unhandled.length) bad.push(`${name} [${v.severity}]: ${unhandled.join(", ")}`);
+            }
+            if (bad.length) {
+              console.error("Non-allowlisted high/critical npm advisories:\n" + bad.join("\n"));
+              process.exit(1);
+            }
+            console.log("npm audit: clean (only allowlisted advisories remain — see pentest/npm-audit-allow.txt).");
+          '
 
   # Boots a minimal core-only BAMF stack on k3d (API+Web+Postgres+Redis+bootstrap,
   # built from this commit) and runs the Playwright suite (web/e2e) against it —
@@ -274,7 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install k3d
         run: |
           curl -fsSL https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64 \
@@ -290,7 +316,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Helm lint (containerized)
         run: |
           docker run --rm -v "$PWD:/chart" -w /chart \
@@ -326,7 +352,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run Semgrep
         run: |
           docker run --rm \
@@ -347,7 +373,7 @@ jobs:
               --output "/src/semgrep-results.sarif"
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           sarif_file: semgrep-results.sarif
           category: semgrep
@@ -360,7 +386,7 @@ jobs:
     timeout-minutes: 10
     container: zricethezav/gitleaks:latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run gitleaks
         run: gitleaks detect --source . --no-git --config .gitleaks.toml
 
@@ -385,9 +411,9 @@ jobs:
           - language: javascript-typescript
             build-mode: none
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -399,7 +425,7 @@ jobs:
               - exclude:
                   id: py/partial-ssrf
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           category: codeql-${{ matrix.language }}
 
@@ -412,11 +438,20 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Load npm audit allowlist
+        # Single source of truth for accepted web advisories, shared with the
+        # npm Audit job so the two gates can never drift. Strips comments/blanks
+        # (same parsing as the npm Audit filter) and joins the GHSA ids.
+        id: allow
+        run: |
+          ids=$(sed 's/#.*//' pentest/npm-audit-allow.txt | tr -d '[:blank:]' | grep . | paste -sd, -)
+          echo "ghsas=$ids" >> "$GITHUB_OUTPUT"
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
         with:
           fail-on-severity: high
+          allow-ghsas: ${{ steps.allow.outputs.ghsas }}
           comment-summary-in-pr: on-failure
 
   # ── Build Images ────────────────────────────────────────
@@ -446,7 +481,7 @@ jobs:
           - image: bamf-proxy
             dockerfile: docker/Dockerfile.proxy
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -488,7 +523,7 @@ jobs:
       matrix:
         image: [bamf-api, bamf-bridge, bamf-agent, bamf-web, bamf-proxy]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to GHCR
         uses: ./.github/actions/ghcr-login
@@ -510,7 +545,7 @@ jobs:
 
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
@@ -555,7 +590,7 @@ jobs:
     steps:
       # Checkout is required for the local ./.github/actions/ghcr-login composite
       # action (and its with-retry.sh helper); this job otherwise needs no repo.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to GHCR
         uses: ./.github/actions/ghcr-login
@@ -587,7 +622,7 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -725,7 +760,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Delete tag and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
