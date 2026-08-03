@@ -337,6 +337,25 @@ jobs:
             echo "all 4 topologies rendered"
           '
 
+      # Stock defaults must produce a *working* stack, not merely render — guards
+      # the "lint green, install produces nothing usable" class of bug — and the
+      # values schema must REJECT an unknown key, or an operator's typo silently
+      # no-ops (additionalProperties:false is the whole point of the schema).
+      - name: Helm smoke — stock defaults work + schema rejects typos
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD:/chart" -w /chart alpine/helm:3.17.2 -euc '
+            out="$(helm template bamf helm/bamf)"
+            echo "$out" | grep -qE "name: bamf-api$"    || { echo "stock render: no API deployment"; exit 1; }
+            echo "$out" | grep -qE "name: bamf-bridge$" || { echo "stock render: no bridge StatefulSet"; exit 1; }
+            echo "$out" | grep -q  "kind: IngressRoute"  || { echo "stock render: no ingress route (stack unreachable)"; exit 1; }
+            echo "$out" | grep -q  "bamf-migrations"      || { echo "stock render: no migrations job (no schema init)"; exit 1; }
+            echo "stock defaults produce a working stack (api + bridge + route + migrations)"
+            if helm template bamf helm/bamf --set core.api.replicasTYPO=3 >/dev/null 2>&1; then
+              echo "values.schema.json accepted unknown key core.api.replicasTYPO — additionalProperties not enforced"; exit 1
+            fi
+            echo "values schema rejects unknown keys"
+          '
+
       # Enforce "secrets never land in a ConfigMap" (AGENTS.md) across topologies.
       - name: Helm config contract (no secrets in ConfigMaps)
         run: scripts/helm-config-contract.sh
