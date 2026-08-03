@@ -27,8 +27,18 @@ BASE_URL="https://${HOST}${PORT_SUFFIX}"
 Y=$'\033[1;33m'; NC=$'\033[0m'
 step() { echo "${Y}==>${NC} $*"; }
 
-cleanup() { [ "${E2E_KEEP:-0}" = "1" ] || k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+on_exit() {
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "${Y}==> E2E failed (rc=$rc) — cluster diagnostics:${NC}"
+    kubectl --context "$KCTX" -n "$NS" get pods,events 2>/dev/null || true
+    kubectl --context "$KCTX" -n "$NS" describe pods 2>/dev/null | tail -80 || true
+    kubectl --context "$KCTX" -n "$NS" logs -l app.kubernetes.io/instance=bamf \
+      --tail=60 --all-containers --prefix 2>/dev/null || true
+  fi
+  [ "${E2E_KEEP:-0}" = "1" ] || k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
+}
+trap on_exit EXIT
 
 step "Building API + Web images from the current tree (tag: $TAG)"
 docker build -q -f "$REPO_ROOT/docker/Dockerfile.api" -t "bamf-api:$TAG" "$REPO_ROOT" >/dev/null
@@ -40,7 +50,20 @@ k3d cluster create "$CLUSTER" \
   --kubeconfig-switch-context=false --wait
 k3d image import -c "$CLUSTER" "bamf-api:$TAG" "bamf-web:$TAG"
 kubectl --context "$KCTX" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$KCTX" apply -f - >/dev/null
-kubectl --context "$KCTX" -n kube-system rollout status deploy/traefik --timeout=150s || true
+
+# k3d reconciles its bundled Traefik asynchronously (k3s helm-controller) AFTER
+# `k3d cluster create --wait` returns, so the Traefik Deployment AND its CRDs may
+# not exist yet. A ready Deployment does not imply the traefik.io/v1alpha1 CRDs
+# are Established — and the BAMF chart renders a Middleware + IngressRoute(TCP).
+# Wait for the CRDs to exist and be Established before `helm install`, or the
+# install races ahead of them: "no matches for kind Middleware in
+# traefik.io/v1alpha1". No `|| true` here — a real timeout must fail the run.
+step "Waiting for Traefik CRDs + deployment (k3d installs Traefik async)"
+for crd in middlewares.traefik.io ingressroutes.traefik.io ingressroutetcps.traefik.io; do
+  until kubectl --context "$KCTX" get crd "$crd" >/dev/null 2>&1; do sleep 2; done
+  kubectl --context "$KCTX" wait --for=condition=established --timeout=120s "crd/$crd"
+done
+kubectl --context "$KCTX" -n kube-system rollout status deploy/traefik --timeout=150s
 
 step "Self-signed TLS for ${HOST}"
 tlsdir="$(mktemp -d)"
