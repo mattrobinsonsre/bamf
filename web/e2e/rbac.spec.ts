@@ -1,36 +1,29 @@
 import { test, expect } from '@playwright/test'
-import { login } from './helpers'
+import { mintSession, injectSession } from './helpers'
 
 const ADMIN_EMAIL = process.env.BAMF_E2E_ADMIN_EMAIL || 'admin'
 const ADMIN_PASSWORD = process.env.BAMF_E2E_ADMIN_PASSWORD || 'admin'
-
-// The SPA stores its session (token, email, roles) in localStorage under this key.
-const AUTH_KEY = 'bamf_auth'
 // User creation enforces a zxcvbn score >= 3; this random mixed string scores 4.
 const NONADMIN_PASSWORD = 'x7Kq!mZ2rTvB9pLw3nD'
 
 test.describe('RBAC', () => {
   test('a non-admin session is denied the admin Users page', async ({ page }) => {
-    // Log in as admin so we can mint a non-admin user through the API.
-    await login(page, ADMIN_EMAIL, ADMIN_PASSWORD)
-    const token = await page.evaluate((k) => {
-      const raw = localStorage.getItem(k)
-      return raw ? (JSON.parse(raw).token as string) : null
-    }, AUTH_KEY)
-    expect(token, 'admin session token should be stored after login').toBeTruthy()
+    // Mint an admin session via the API (deterministic) to create the user.
+    const adminToken = await mintSession(page, ADMIN_EMAIL, ADMIN_PASSWORD)
 
     // Create a local user with no roles (a non-admin). Unique email per attempt
     // so a Playwright retry doesn't 409 on an already-created user.
     const email = `e2e-viewer-${Date.now()}@example.com`
     const created = await page.request.post('/api/v1/users', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${adminToken}` },
       data: { email, password: NONADMIN_PASSWORD, roles: [] },
     })
     expect(created.ok(), `create user failed: ${created.status()} ${await created.text()}`).toBeTruthy()
 
-    // Re-authenticate as the non-admin.
-    await page.evaluate((k) => localStorage.removeItem(k), AUTH_KEY)
-    await login(page, email, NONADMIN_PASSWORD)
+    // Boot the SPA as the non-admin by injecting a real session (minted via the
+    // API), rather than driving the flaky SSR login form for the second login.
+    const viewerToken = await mintSession(page, email, NONADMIN_PASSWORD)
+    await injectSession(page, viewerToken, email, [])
 
     // The Users page is admin-only — the SPA redirects a non-admin away from it.
     await page.goto('/users')
