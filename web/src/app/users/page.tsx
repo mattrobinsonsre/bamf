@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, KeyRound, Trash2 } from 'lucide-react'
-import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core'
+import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
 import NavBar from '@/components/nav-bar'
 import { getAuthState, isAdmin, clearAuth, loginRedirectUrl } from '@/lib/auth'
 
-zxcvbnOptions.setOptions({
+const zxcvbn = new ZxcvbnFactory({
   dictionary: { ...zxcvbnCommonPackage.dictionary },
   graphs: zxcvbnCommonPackage.adjacencyGraphs,
 })
@@ -26,7 +26,7 @@ function usePasswordStrength(password: string) {
   useEffect(() => {
     if (!password) return
     let cancelled = false
-    zxcvbnAsync(password).then((r) => {
+    zxcvbn.checkAsync(password).then((r) => {
       if (!cancelled) {
         setResult({
           score: r.score,
