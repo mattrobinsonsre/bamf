@@ -261,7 +261,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        # Fail on any high/critical advisory except those allowlisted in
+        # pentest/npm-audit-allow.txt, which carries the reasoning and exit
+        # condition for each (mirrors pip-audit's ignore file and trivy's
+        # .trivyignore; policy in SECURITY.md).
+        run: |
+          npm audit --audit-level=high --json > audit.json || true
+          node -e '
+            const a = require("./audit.json");
+            const allow = new Set(
+              require("fs").readFileSync("../pentest/npm-audit-allow.txt", "utf8")
+                .split("\n").map((l) => l.split("#")[0].trim()).filter(Boolean),
+            );
+            const bad = [];
+            for (const [name, v] of Object.entries(a.vulnerabilities || {})) {
+              if (!["high", "critical"].includes(v.severity)) continue;
+              const ids = (v.via || [])
+                .filter((x) => x && typeof x === "object" && x.url)
+                .map((x) => x.url.split("/").pop());
+              const unhandled = ids.filter((id) => !allow.has(id));
+              if (unhandled.length) bad.push(`${name} [${v.severity}]: ${unhandled.join(", ")}`);
+            }
+            if (bad.length) {
+              console.error("Non-allowlisted high/critical npm advisories:\n" + bad.join("\n"));
+              process.exit(1);
+            }
+            console.log("npm audit: clean (only allowlisted advisories remain — see pentest/npm-audit-allow.txt).");
+          '
 
   # Boots a minimal core-only BAMF stack on k3d (API+Web+Postgres+Redis+bootstrap,
   # built from this commit) and runs the Playwright suite (web/e2e) against it —

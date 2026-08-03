@@ -69,6 +69,7 @@ safe/unavoidable, and an explicit **"drop when …"** re-evaluation condition.
 |---|---|---|
 | Trivy (images) | [`pentest/trivy/.trivyignore`](pentest/trivy/.trivyignore) | one CVE per line + justification comment |
 | pip-audit (Python) | [`pentest/pip-audit/ignore-vulns.txt`](pentest/pip-audit/ignore-vulns.txt) | one ID per line + justification comment (read by `scripts/security-scan.sh`) |
+| npm audit (web) | [`pentest/npm-audit-allow.txt`](pentest/npm-audit-allow.txt) | one GHSA id per line + justification comment (read by the `npm Audit` CI job) |
 | govulncheck (Go) | none — reports only reachable code, so a finding is fixed; a genuinely unfixable, unreachable case is documented here | — |
 
 Item G of the pre-release audit (see `AGENTS.md`) re-reviews every active
