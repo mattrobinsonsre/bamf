@@ -329,9 +329,35 @@ func (s *Server) Run(ctx context.Context) error {
 		Handler: s.healthHandler(),
 	}
 
-	// Register with API server
-	if err := s.registerWithAPI(ctx); err != nil {
-		return fmt.Errorf("failed to register with API: %w", err)
+	errCh := make(chan error, 5)
+
+	// Serve the health endpoints BEFORE registering, so the liveness probe
+	// (/health) is satisfied while register retries. Otherwise a slow/retrying
+	// register — the API still coming up on a fresh install or rolling restart —
+	// would leave the health server unstarted and the kubelet would crashloop
+	// the pod before it ever registers. Readiness (/ready) gates separately.
+	go func() {
+		if err := s.healthServer.Serve(s.healthListener); err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("health server error: %w", err)
+		}
+	}()
+
+	// Register with the API, retrying on transient failure rather than exiting
+	// (which would crashloop the pod before the API is reachable).
+	for {
+		if err := s.registerWithAPI(ctx); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.logger.Warn("register with API failed, retrying", "error", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+		break
 	}
 
 	// Start heartbeat
@@ -340,18 +366,10 @@ func (s *Server) Run(ctx context.Context) error {
 	// Start certificate renewal loop
 	go s.certRenewalLoop(ctx)
 
-	// Start all handlers
-	errCh := make(chan error, 5)
-
+	// Start the remaining handlers
 	go func() {
 		if err := s.httpServer.Serve(s.httpsListener); err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("HTTPS server error: %w", err)
-		}
-	}()
-
-	go func() {
-		if err := s.healthServer.Serve(s.healthListener); err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("health server error: %w", err)
 		}
 	}()
 
