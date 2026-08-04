@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/mattrobinsonsre/bamf/pkg/bridge"
 )
@@ -31,31 +30,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Context for graceful shutdown. Set up signal handling first so the
-	// bootstrap retry below can be interrupted.
+	// Create the bridge server. NewServer no longer touches the network — the
+	// API-dependent startup (bootstrap, TLS, register) is retried inside Run
+	// after the health server is serving, so this can't crashloop the pod.
+	srv, err := bridge.NewServer(cfg, logger)
+	if err != nil {
+		slog.Error("failed to create bridge server", "error", err)
+		os.Exit(1)
+	}
+
+	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Handle shutdown signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	// Create the bridge server, retrying bootstrap on transient failure rather
-	// than exiting. On a fresh install or rolling restart the API may not be
-	// reachable yet; exiting here crashloops the pod. Retry until it comes up.
-	var srv *bridge.Server
-	for {
-		srv, err = bridge.NewServer(cfg, logger)
-		if err == nil {
-			break
-		}
-		slog.Warn("failed to create bridge server, retrying", "error", err)
-		select {
-		case sig := <-sigCh:
-			slog.Info("received shutdown signal during bootstrap", "signal", sig)
-			os.Exit(0)
-		case <-time.After(2 * time.Second):
-		}
-	}
 
 	// Start server
 	errCh := make(chan error, 1)
