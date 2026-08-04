@@ -464,7 +464,7 @@ jobs:
         # (same parsing as the npm Audit filter) and joins the GHSA ids.
         id: allow
         run: |
-          ids=$(sed 's/#.*//' pentest/npm-audit-allow.txt | tr -d '[:blank:]' | grep . | paste -sd, -)
+          ids=$(sed 's/#.*//' pentest/npm-audit-allow.txt | tr -d '[:blank:]' | grep . | paste -sd, - || true)
           echo "ghsas=$ids" >> "$GITHUB_OUTPUT"
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
