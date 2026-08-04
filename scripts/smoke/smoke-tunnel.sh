@@ -2,10 +2,12 @@
 # Smoke: the data-path tunnel actually carries bytes end-to-end.
 #
 # smoke-cert-issue.sh proves a session certificate is issued (the authorization
-# path). This proves the *byte path*: open a `bamf tcp` tunnel to an SSH resource
-# and read the SSH protocol banner off the local listener. An SSH server sends
-# "SSH-2.0-…" the instant a TCP connection lands, so receiving it can only mean
-# real bytes traversed CLI → bridge → agent → sshd.
+# path). This proves the *byte path*: open a `bamf tcp` tunnel to an SSH resource,
+# send an SSH client identification string, and read the server's back. The agent
+# dials the target lazily — only on the first client byte through the tunnel (so
+# `bamf tcp` doesn't start the target's auth timeout before a client connects) —
+# so we must send first, exactly as a real ssh client does. Getting "SSH-2.0-…"
+# back can only mean real bytes traversed CLI → bridge → agent → sshd and back.
 #
 # Unlike the API-only `make smoke`, this needs the full stack (bridge + agent +
 # the ssh test fixture) and the bamf CLI — so it's a separate `make smoke-tunnel`
@@ -47,40 +49,54 @@ printf '{"session_token":"%s","api_url":"%s","expires_at":"%s"}\n' \
 chmod 600 "$bamf_home/.bamf/credentials.json"
 pass "session written to an isolated BAMF home"
 
-# --- Open the tunnel in the background ---
-info "Opening 'bamf tcp $RESOURCE' on 127.0.0.1:$LOCAL_PORT"
+# --- Exchange SSH banners through the tunnel ---
+# `bamf tcp` is one-shot: it establishes the bridge tunnel eagerly, serves
+# exactly ONE local connection, then exits. So each attempt must (re)start
+# `bamf tcp`, wait for its listener via the "Listening on" log line (NOT by
+# opening a probe connection — that would consume the one-and-only connection),
+# then make the single connection a real SSH-style exchange: send a client
+# identification string first (the agent dials the target lazily on the first
+# client byte) and read the server's banner back. Getting "SSH-2.0-…" back
+# proves bytes traversed CLI → bridge → agent → sshd and back.
+info "Exchanging the SSH protocol banner through the tunnel"
 tcp_log="$(mktemp)"
-HOME="$bamf_home" BAMF_API_URL="$BAMF_SMOKE_URL" \
-  "$BAMF_BIN" tcp "$RESOURCE" -p "$LOCAL_PORT" >"$tcp_log" 2>&1 &
-tcp_pid=$!
-cleanup() { kill "$tcp_pid" 2>/dev/null || true; }
+tcp_pid=""
+cleanup() { [ -n "$tcp_pid" ] && kill "$tcp_pid" 2>/dev/null || true; }
 trap cleanup EXIT
 
-# Wait for the listener (or a fast failure).
-up=0
-for _ in $(seq 1 40); do
-  kill -0 "$tcp_pid" 2>/dev/null || fail "tunnel exited early:"$'\n'"$(cat "$tcp_log")"
-  if (exec 3<>"/dev/tcp/127.0.0.1/$LOCAL_PORT") 2>/dev/null; then up=1; break; fi
-  sleep 0.5
-done
-[ "$up" = 1 ] || fail "tunnel listener never came up:"$'\n'"$(cat "$tcp_log")"
-pass "tunnel listener up on 127.0.0.1:$LOCAL_PORT"
-
-# --- Read the SSH banner through the tunnel ---
-# Each connection to the local listener triggers a fresh CLI → bridge → agent →
-# sshd dial, so retry: the agent's relay may still be settling, and a transient
-# hiccup on any hop yields an empty read rather than a wrong one.
-info "Reading the SSH protocol banner through the tunnel"
 banner=""
-for _ in $(seq 1 20); do
-  banner="$(timeout 8 bash -c "exec 3<>/dev/tcp/127.0.0.1/$LOCAL_PORT; head -c 32 <&3" 2>/dev/null || true)"
+for attempt in $(seq 1 12); do
+  : >"$tcp_log"
+  HOME="$bamf_home" BAMF_API_URL="$BAMF_SMOKE_URL" \
+    "$BAMF_BIN" tcp "$RESOURCE" -p "$LOCAL_PORT" >"$tcp_log" 2>&1 &
+  tcp_pid=$!
+
+  # Wait for the listener without consuming the single connection: the CLI
+  # prints "Listening on …" once the local listener is bound.
+  up=0
+  for _ in $(seq 1 40); do
+    kill -0 "$tcp_pid" 2>/dev/null || break
+    grep -q "Listening on" "$tcp_log" 2>/dev/null && { up=1; break; }
+    sleep 0.25
+  done
+  if [ "$up" != 1 ]; then
+    kill "$tcp_pid" 2>/dev/null || true
+    wait "$tcp_pid" 2>/dev/null || true
+    sleep 1
+    continue
+  fi
+
+  banner="$(timeout 8 bash -c "exec 3<>/dev/tcp/127.0.0.1/$LOCAL_PORT; printf 'SSH-2.0-BAMF-smoke\r\n' >&3; head -c 32 <&3" 2>/dev/null || true)"
   banner="${banner%%$'\r'*}"
+  kill "$tcp_pid" 2>/dev/null || true
+  wait "$tcp_pid" 2>/dev/null || true
+  tcp_pid=""
   case "$banner" in SSH-2.0-*|SSH-1.*) break ;; esac
   sleep 2
 done
 case "$banner" in
   SSH-2.0-*|SSH-1.*) pass "tunnel carried bytes end-to-end: $banner" ;;
-  *) fail "no SSH banner through the tunnel (got: '$banner')"$'\n'"tunnel log: $(cat "$tcp_log")" ;;
+  *) fail "no SSH banner through the tunnel (got: '$banner')"$'\n'"last tunnel log: $(cat "$tcp_log")" ;;
 esac
 
 echo
