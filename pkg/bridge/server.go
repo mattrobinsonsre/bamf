@@ -96,20 +96,9 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 		certExpiredCh: make(chan struct{}),
 	}
 
-	// Bootstrap certificates if they don't exist
-	if err := s.bootstrapIfNeeded(); err != nil {
-		return nil, fmt.Errorf("failed to bootstrap: %w", err)
-	}
-
-	// Load TLS certificates
-	certPEM, err := s.loadTLSConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS config: %w", err)
-	}
-
-	// Initialize API client with certificate auth
+	// Initialize the API client. Certificate auth is attached later, in
+	// prepare(), once the bridge has bootstrapped its cert.
 	s.apiClient = NewAPIClient(cfg.APIServerURL, logger)
-	s.apiClient.Client.SetClientCert(certPEM)
 
 	// Initialize tunnel manager
 	s.tunnels = NewTunnelManager(logger)
@@ -121,33 +110,60 @@ func NewServer(cfg *Config, logger *slog.Logger) (*Server, error) {
 	s.metrics = newMetricsProvider(s.tunnels, s.relays)
 	prometheus.MustRegister(s.metrics)
 
-	// Initialize SSH proxy for ssh-audit sessions. Use the shared SSH host
-	// key from the database (distributed via bootstrap), which is stable
-	// across pod restarts and identical on all bridge pods.
-	sshKeyPath := filepath.Join(cfg.DataDir, "ssh_host_key")
-	sshKeyPEM, err := os.ReadFile(sshKeyPath)
-	if err != nil {
-		// SSH host key not available — ssh-audit won't work, but don't
-		// block bridge startup (older API may not have the key yet).
-		logger.Warn("SSH host key not found, ssh-audit sessions will fail", "path", sshKeyPath, "error", err)
-		proxy, proxyErr := sshproxy.NewProxy(logger.With("component", "sshproxy"))
-		if proxyErr != nil {
-			return nil, fmt.Errorf("failed to create SSH proxy: %w", proxyErr)
-		}
-		s.sshProxy = proxy
-	} else {
-		proxy, proxyErr := sshproxy.NewProxyFromTLSKey(sshKeyPEM, logger.With("component", "sshproxy"))
-		if proxyErr != nil {
-			return nil, fmt.Errorf("failed to create SSH proxy from host key: %w", proxyErr)
-		}
-		s.sshProxy = proxy
-	}
-
 	// Initialize pending connections map and web terminal sessions map
 	s.pendingConns = make(map[string]*pendingConnection)
 	s.webTermSessions = make(map[string]*webterm.Session)
 
+	// Bootstrap, TLS loading, and SSH proxy init are deferred to prepare()
+	// (called and retried from Run after the health server starts) so that a
+	// slow or unreachable API at startup cannot crashloop the pod before the
+	// liveness probe has a health endpoint to hit.
 	return s, nil
+}
+
+// prepare performs the startup steps that depend on the API being reachable:
+// bootstrapping the bridge certificate, loading the TLS config, attaching cert
+// auth to the API client, and initializing the SSH proxy from the shared host
+// key. It is called (and retried) from Run once the health server is serving,
+// so a transient API outage delays readiness instead of crashlooping the pod.
+func (s *Server) prepare() error {
+	// Bootstrap certificates if they don't exist
+	if err := s.bootstrapIfNeeded(); err != nil {
+		return fmt.Errorf("failed to bootstrap: %w", err)
+	}
+
+	// Load TLS certificates
+	certPEM, err := s.loadTLSConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load TLS config: %w", err)
+	}
+
+	// Attach certificate auth to the API client (X-Bamf-Client-Cert header)
+	s.apiClient.Client.SetClientCert(certPEM)
+
+	// Initialize SSH proxy for ssh-audit sessions. Use the shared SSH host
+	// key from the database (distributed via bootstrap), which is stable
+	// across pod restarts and identical on all bridge pods.
+	sshKeyPath := filepath.Join(s.cfg.DataDir, "ssh_host_key")
+	sshKeyPEM, err := os.ReadFile(sshKeyPath)
+	if err != nil {
+		// SSH host key not available — ssh-audit won't work, but don't
+		// block bridge startup (older API may not have the key yet).
+		s.logger.Warn("SSH host key not found, ssh-audit sessions will fail", "path", sshKeyPath, "error", err)
+		proxy, proxyErr := sshproxy.NewProxy(s.logger.With("component", "sshproxy"))
+		if proxyErr != nil {
+			return fmt.Errorf("failed to create SSH proxy: %w", proxyErr)
+		}
+		s.sshProxy = proxy
+	} else {
+		proxy, proxyErr := sshproxy.NewProxyFromTLSKey(sshKeyPEM, s.logger.With("component", "sshproxy"))
+		if proxyErr != nil {
+			return fmt.Errorf("failed to create SSH proxy from host key: %w", proxyErr)
+		}
+		s.sshProxy = proxy
+	}
+
+	return nil
 }
 
 // bootstrapIfNeeded requests a certificate from the API if one doesn't exist
@@ -301,46 +317,56 @@ func (s *Server) getConfigForClient(hello *tls.ClientHelloInfo) (*tls.Config, er
 func (s *Server) Run(ctx context.Context) error {
 	var err error
 
-	// Start HTTPS listener
-	s.httpsListener, err = tls.Listen("tcp", s.cfg.HTTPSAddr, s.tlsConfig)
-	if err != nil {
-		return fmt.Errorf("failed to start HTTPS listener: %w", err)
-	}
-
-	// Start health listener (plain HTTP for Kubernetes probes)
+	// Start the health listener + server FIRST, before any API-dependent
+	// startup, so the liveness probe (/health) has an endpoint to hit while
+	// bootstrap and register retry. Otherwise a slow API at startup leaves
+	// :8080 refusing connections and the kubelet crashloops the pod
+	// mid-bootstrap (health is always 200; readiness gates on draining).
 	s.healthListener, err = net.Listen("tcp", s.cfg.HealthAddr)
 	if err != nil {
 		return fmt.Errorf("failed to start health listener: %w", err)
 	}
-
-	// Start tunnel listener (mTLS - single port for all tunnel protocols)
-	s.tunnelListener, err = tls.Listen("tcp", s.cfg.TunnelAddr, s.mtlsConfig)
-	if err != nil {
-		return fmt.Errorf("failed to start tunnel listener: %w", err)
-	}
-
-	// Setup HTTP server
-	s.httpServer = &http.Server{
-		Handler: s.httpHandler(),
-	}
-
-	// Setup health server (plain HTTP for Kubernetes probes)
 	s.healthServer = &http.Server{
 		Handler: s.healthHandler(),
 	}
-
 	errCh := make(chan error, 5)
-
-	// Serve the health endpoints BEFORE registering, so the liveness probe
-	// (/health) is satisfied while register retries. Otherwise a slow/retrying
-	// register — the API still coming up on a fresh install or rolling restart —
-	// would leave the health server unstarted and the kubelet would crashloop
-	// the pod before it ever registers. Readiness (/ready) gates separately.
 	go func() {
 		if err := s.healthServer.Serve(s.healthListener); err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("health server error: %w", err)
 		}
 	}()
+
+	// Bootstrap the certificate, load TLS, and init the SSH proxy — retrying on
+	// transient API unavailability (fresh install, rolling restart) rather than
+	// exiting. Liveness is already satisfied above.
+	for {
+		if err := s.prepare(); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.logger.Warn("bridge startup preparation failed, retrying", "error", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
+		break
+	}
+
+	// Now that the TLS config is loaded, start the mTLS/HTTPS listeners.
+	s.httpsListener, err = tls.Listen("tcp", s.cfg.HTTPSAddr, s.tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to start HTTPS listener: %w", err)
+	}
+	s.tunnelListener, err = tls.Listen("tcp", s.cfg.TunnelAddr, s.mtlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel listener: %w", err)
+	}
+	s.httpServer = &http.Server{
+		Handler: s.httpHandler(),
+	}
 
 	// Register with the API, retrying on transient failure rather than exiting
 	// (which would crashloop the pod before the API is reachable).
