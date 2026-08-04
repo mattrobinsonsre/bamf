@@ -12,7 +12,7 @@
 	release hooks dev dev-down \
 	security-scan security-scan-go security-scan-python \
 	pentest pentest-dast pentest-images pentest-sast \
-	smoke eval eval-down test-e2e preflight-identity \
+	smoke smoke-tunnel eval eval-down test-e2e test-tunnel-e2e preflight-identity \
 	clean clean-cache test-down \
 	db-migrate db-rollback db-reset \
 	migration-check docs-xref helm-config-contract \
@@ -123,6 +123,9 @@ preflight-identity: ## Doctor a deployed stack: API↔DB/Redis, CA init, agent i
 test-e2e:           ## Web E2E: boot core-only k3d stack + run Playwright (web/e2e)
 	scripts/e2e.sh
 
+test-tunnel-e2e:    ## Tunnel E2E: boot the full stack on k3d + prove a tunnel carries bytes
+	scripts/tunnel-e2e.sh
+
 # ── Evaluation (throwaway k3d cluster) ──────────────────
 eval:               ## One-command throwaway k3d eval cluster (no domain, no build)
 	scripts/eval.sh up
@@ -133,6 +136,9 @@ eval-down:          ## Delete the eval cluster
 # ── Live Smoke (release gate F) ─────────────────────────
 smoke:              ## Live smoke vs a running stack (auth + cert issuance + tunnel authz)
 	scripts/smoke/run.sh
+
+smoke-tunnel:       ## Live data-path smoke: bamf tcp tunnel carries bytes (needs full stack + CLI)
+	scripts/smoke/smoke-tunnel.sh
 
 # ── Penetration Testing ─────────────────────────────────
 pentest:            ## Run all pen tests (DAST + image scan + SAST)
