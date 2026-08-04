@@ -332,8 +332,13 @@ async def bridge_heartbeat(
             },
         )
 
-    # Update tunnel count and refresh TTL
+    # Update tunnel count and refresh TTL. Keep hostname/edge fresh from the
+    # heartbeat too, so a registration that went stale (e.g. an older re-register
+    # that fell back to the bridge_id before the bridge sent its hostname) heals
+    # on the next heartbeat instead of only on expiry.
     await r.hset(bridge_key, "active_tunnels", str(request.active_tunnels))
+    if request.hostname:
+        await r.hset(bridge_key, "hostname", request.hostname)
     if sat:
         await r.hset(bridge_key, "edge", sat)
     await r.expire(bridge_key, BRIDGE_TTL_SECONDS)

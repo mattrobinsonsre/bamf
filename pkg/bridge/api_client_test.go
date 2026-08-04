@@ -138,13 +138,17 @@ func TestBridgeAPIClient_SendHeartbeat(t *testing.T) {
 		var body map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, float64(5), body["active_tunnels"])
+		// hostname + edge must ride on every heartbeat so an expired-hash
+		// re-register restores the routable SNI hostname, not the pod name.
+		require.Equal(t, "0.bridge.local.tunnel.bamf.local", body["hostname"])
+		require.Equal(t, "local", body["edge_name"])
 
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := NewAPIClient(srv.URL, slog.Default())
-	err := c.SendHeartbeat(context.Background(), "bridge-0", 5)
+	err := c.SendHeartbeat(context.Background(), "bridge-0", 5, "0.bridge.local.tunnel.bamf.local", "local")
 	require.NoError(t, err)
 }
 
