@@ -100,6 +100,16 @@ spec:
             - { name: USER_NAME, value: "testuser" }
             - { name: USER_PASSWORD, value: "testpass" }
           ports: [ { containerPort: 2222 } ]
+          # The container is "Started" well before sshd actually binds 2222 —
+          # the s6 init does first-run user setup for ~15-40s first. Gate
+          # pod-Ready on sshd genuinely accepting so `rollout status` below
+          # blocks until the banner is available; otherwise the smoke can dial
+          # a not-yet-listening sshd and read an empty banner.
+          readinessProbe:
+            tcpSocket: { port: 2222 }
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            failureThreshold: 40
 ---
 apiVersion: v1
 kind: Service
