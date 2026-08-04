@@ -22,6 +22,32 @@ import (
 	"github.com/mattrobinsonsre/bamf/pkg/tunnel"
 )
 
+// apiHTTPClient returns the HTTP client for public-HTTPS calls to the BAMF API.
+// It honors SSL_CERT_FILE (the de-facto standard env other tools like curl/git
+// respect): when set, its certificates are trusted in addition to the system
+// roots. This lets the CLI reach a self-hosted API fronted by a corporate/custom
+// CA, or a dev stack with a self-signed cert, without OS-specific trust setup
+// (Go reads SSL_CERT_FILE automatically on Linux but not macOS — this makes it
+// uniform). When SSL_CERT_FILE is unset, the default client is used unchanged.
+func apiHTTPClient() *http.Client {
+	certFile := os.Getenv("SSL_CERT_FILE")
+	if certFile == "" {
+		return http.DefaultClient
+	}
+	pem, err := os.ReadFile(certFile)
+	if err != nil {
+		return http.DefaultClient
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	pool.AppendCertsFromPEM(pem)
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}},
+	}
+}
+
 // ConnectResponse matches the Python API response model
 type ConnectResponse struct {
 	BridgeHostname   string            `json:"bridge_hostname"`
@@ -422,7 +448,7 @@ func requestConnect(ctx context.Context, creds *tokenResponse, resource, reconne
 		req.Header.Set("Authorization", "Bearer "+creds.SessionToken)
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := apiHTTPClient().Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -509,7 +535,7 @@ func requestReevaluate(ctx context.Context, creds *tokenResponse, sessionID stri
 	req.Header.Set("Authorization", "Bearer "+creds.SessionToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiHTTPClient().Do(req)
 	if err != nil {
 		return "", err
 	}
