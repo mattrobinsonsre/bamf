@@ -124,14 +124,38 @@ func New(cfg *Config, logger *slog.Logger) (*Agent, error) {
 
 // Run starts the agent
 func (a *Agent) Run(ctx context.Context) error {
+	// Start the health/metrics server FIRST, before joining, so the liveness
+	// probe (/health) succeeds immediately. Otherwise a slow or retrying join —
+	// e.g. the API/DB still coming up on a fresh install — leaves the server
+	// unstarted, and the kubelet kills and crashloops the pod before it ever
+	// connects. Readiness (/ready) still gates on join + SSE, so the pod isn't
+	// marked Ready until the agent is actually usable.
+	go a.serveMetrics(ctx)
+
 	// Check if we have existing certificates
 	if !a.hasCertificates(ctx) {
 		// Need to join the cluster
 		if a.cfg.JoinToken == "" {
 			return fmt.Errorf("no certificates found and no join token provided")
 		}
-		if err := a.join(ctx); err != nil {
-			return fmt.Errorf("failed to join cluster: %w", err)
+		// Retry the join with backoff rather than exiting on the first failure:
+		// a transient API-unavailability (fresh install, rolling restart) must
+		// not crashloop the agent — liveness is already satisfied above.
+		for {
+			if err := a.join(ctx); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				delay := a.calculateBackoff()
+				a.logger.Warn("join failed, retrying", "error", err, "delay", delay.String())
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(delay):
+				}
+				continue
+			}
+			break
 		}
 	}
 
@@ -493,8 +517,8 @@ func (a *Agent) mainLoop(ctx context.Context) error {
 	// Start heartbeat ticker
 	go a.heartbeatLoop(ctx)
 
-	// Start metrics/health server
-	go a.serveMetrics(ctx)
+	// (The metrics/health server is started at the top of Run(), before join,
+	// so the liveness probe is satisfied during startup.)
 
 	// Connect to API via SSE for tunnel requests.
 	// The SSE client handles reconnection internally.
