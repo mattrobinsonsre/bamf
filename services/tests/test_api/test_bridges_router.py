@@ -218,20 +218,71 @@ class TestBridgeHeartbeat:
         mock_redis.expire.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_heartbeat_reregisters_expired(self, bridges_client, mock_redis):
-        """If bridge hash expired, heartbeat re-registers it."""
+    async def test_heartbeat_reregisters_expired_with_routable_hostname(
+        self, bridges_client, mock_redis
+    ):
+        """An expired-hash re-register must store the SNI hostname the heartbeat
+        carries — NOT the pod-name bridge_id — or external clients can't reach the
+        bridge (regression: the heartbeat used to omit hostname/edge, so the
+        re-register fell back to bridge_id and a broken empty edge)."""
         mock_redis.exists.return_value = False
         mock_redis.hget.return_value = "ready"
 
         resp = await bridges_client.post(
             "/api/v1/internal/bridges/bamf-bridge-0/heartbeat",
-            json={"active_tunnels": 0, "hostname": "0.bridge.tunnel.example.com"},
+            json={
+                "active_tunnels": 0,
+                "hostname": "0.bridge.tunnel.example.com",
+                "edge_name": "eu",
+            },
         )
 
         assert resp.status_code == 200
-        # Should call hset with full mapping for re-registration
-        calls = mock_redis.hset.call_args_list
-        assert any("hostname" in str(c) for c in calls)
+        mapping_calls = [
+            c.kwargs["mapping"] for c in mock_redis.hset.call_args_list if "mapping" in c.kwargs
+        ]
+        assert mapping_calls, "expired hash should re-register with a full mapping"
+        m = mapping_calls[0]
+        assert m["hostname"] == "0.bridge.tunnel.example.com"
+        assert m["hostname"] != "bamf-bridge-0"
+        assert m["edge"] == "eu"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_falls_back_to_bridge_id_without_hostname(
+        self, bridges_client, mock_redis
+    ):
+        """Only when the heartbeat carries no hostname does re-register fall back
+        to the bridge_id (older bridge that doesn't send it yet)."""
+        mock_redis.exists.return_value = False
+        mock_redis.hget.return_value = "ready"
+
+        resp = await bridges_client.post(
+            "/api/v1/internal/bridges/bamf-bridge-0/heartbeat",
+            json={"active_tunnels": 0},
+        )
+
+        assert resp.status_code == 200
+        mapping_calls = [
+            c.kwargs["mapping"] for c in mock_redis.hset.call_args_list if "mapping" in c.kwargs
+        ]
+        assert mapping_calls[0]["hostname"] == "bamf-bridge-0"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_refreshes_stale_hostname(self, bridges_client, mock_redis):
+        """A live (non-expired) bridge whose stored hostname went stale self-heals:
+        a heartbeat carrying the hostname refreshes it."""
+        mock_redis.exists.return_value = True
+        mock_redis.hget.return_value = "ready"
+
+        resp = await bridges_client.post(
+            "/api/v1/internal/bridges/bamf-bridge-0/heartbeat",
+            json={"active_tunnels": 3, "hostname": "0.bridge.tunnel.example.com"},
+        )
+
+        assert resp.status_code == 200
+        mock_redis.hset.assert_any_call(
+            "bridge:bamf-bridge-0", "hostname", "0.bridge.tunnel.example.com"
+        )
 
 
 # ── Tests: Status Update ──────────────────────────────────────────────

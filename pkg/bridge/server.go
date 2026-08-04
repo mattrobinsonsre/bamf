@@ -535,7 +535,7 @@ func (s *Server) heartbeatLoop(ctx context.Context) {
 		case <-s.shutdownCh:
 			return
 		case <-ticker.C:
-			if err := s.apiClient.SendHeartbeat(ctx, s.cfg.BridgeID, s.tunnels.Count()); err != nil {
+			if err := s.apiClient.SendHeartbeat(ctx, s.cfg.BridgeID, s.tunnels.Count(), s.cfg.Hostname, s.cfg.EdgeName); err != nil {
 				s.logger.Warn("heartbeat failed", "error", err)
 			}
 		}

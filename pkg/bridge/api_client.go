@@ -106,9 +106,16 @@ func (c *APIClient) UpdateBridgeStatus(ctx context.Context, bridgeID, status str
 
 // SendHeartbeat sends a heartbeat to the API server.
 // Calls: POST /api/v1/internal/bridges/{id}/heartbeat
-func (c *APIClient) SendHeartbeat(ctx context.Context, bridgeID string, activeTunnels int) error {
+//
+// hostname and edgeName are carried on every heartbeat so that if the bridge's
+// Redis registration has expired (API/Redis restart, or a >TTL heartbeat gap),
+// the API's re-register-on-heartbeat path restores the correct routable SNI
+// hostname and edge — not the pod name / empty edge it would fall back to.
+func (c *APIClient) SendHeartbeat(ctx context.Context, bridgeID string, activeTunnels int, hostname, edgeName string) error {
 	body := map[string]any{
 		"active_tunnels": activeTunnels,
+		"hostname":       hostname,
+		"edge_name":      edgeName,
 	}
 
 	return c.Client.Post(ctx, fmt.Sprintf("/api/v1/internal/bridges/%s/heartbeat", bridgeID), body, nil)
