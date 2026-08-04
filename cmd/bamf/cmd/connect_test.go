@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -524,4 +525,23 @@ func TestMaybeHopToBetterEdge_NoCandidatesColdCacheIsNoop(t *testing.T) {
 	require.False(t, rb.hopped, "must not attempt a hop with no candidates/legs")
 	rb.mu.Unlock()
 	require.False(t, rb.stream.IsConnLost(), "live connection must be untouched")
+}
+
+func TestAPIHTTPClient_HonorsSSLCertFile(t *testing.T) {
+	// Unset → the default client (unchanged behavior).
+	t.Setenv("SSL_CERT_FILE", "")
+	require.Same(t, http.DefaultClient, apiHTTPClient())
+
+	// Set to a readable file → a custom client (not the default) trusting it.
+	dir := t.TempDir()
+	certPath := dir + "/ca.crt"
+	require.NoError(t, os.WriteFile(certPath, []byte("-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n"), 0o600))
+	t.Setenv("SSL_CERT_FILE", certPath)
+	c := apiHTTPClient()
+	require.NotSame(t, http.DefaultClient, c)
+	require.NotNil(t, c.Transport)
+
+	// Unreadable file → falls back to the default client, never panics.
+	t.Setenv("SSL_CERT_FILE", dir+"/does-not-exist.crt")
+	require.Same(t, http.DefaultClient, apiHTTPClient())
 }
