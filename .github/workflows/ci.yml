@@ -308,6 +308,25 @@ jobs:
       - name: Web E2E (core-only k3d + Playwright)
         run: scripts/e2e.sh
 
+  # Separate from Web E2E on purpose: the full stack (edge bridge/proxy + a demo
+  # agent + an SSH fixture) is heavier and slower, so it gets its own job and its
+  # own k3d cluster rather than weighing down the fast web gate. Proves a tunnel
+  # carries bytes end-to-end (bamf tcp -> bridge -> agent -> sshd banner).
+  tunnel-e2e:
+    name: Tunnel E2E
+    needs: prepare
+    if: needs.prepare.outputs.images_exist != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install k3d
+        run: |
+          curl -fsSL https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64 \
+            -o /usr/local/bin/k3d && chmod +x /usr/local/bin/k3d && k3d version
+      - name: Tunnel E2E (full stack k3d + data-path byte check)
+        run: scripts/tunnel-e2e.sh
+
   # ── Helm ────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint
@@ -811,6 +830,7 @@ jobs:
       - web-build
       - web-audit
       - web-e2e
+      - tunnel-e2e
       - helm-lint
       - sast
       - secret-scan
@@ -839,6 +859,7 @@ jobs:
             "${{ needs.web-build.result }}"
             "${{ needs.web-audit.result }}"
             "${{ needs.web-e2e.result }}"
+            "${{ needs.tunnel-e2e.result }}"
             "${{ needs.docs-xref.result }}"
             "${{ needs.docs-build.result }}"
             "${{ needs.content-hygiene.result }}"
